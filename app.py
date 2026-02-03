@@ -1306,4 +1306,4 @@ st.markdown("""
     </div>
 </div>
 """, unsafe_allow_html=True)
- i want to add a light team so it can be see goodand others like red blue etc
+
