@@ -13,119 +13,277 @@ from datetime import datetime, timedelta
 import ee
 import traceback
 
-# Custom CSS for Clean Green & Black TypeScript/React Style
-st.markdown("""
+# Theme Configuration
+THEMES = {
+    "dark": {
+        "name": "Dark (Default)",
+        "primary": "#00ff88",
+        "accent": "#00cc6a",
+        "bg": "#000000",
+        "card": "#0a0a0a",
+        "secondary": "#111111",
+        "border": "#222222",
+        "text": "#ffffff",
+        "text_secondary": "#999999",
+        "text_light": "#cccccc",
+        "success": "#00ff88",
+        "warning": "#ffaa00",
+        "error": "#ff4444",
+        "plot_bg": "#0a0a0a",
+        "plot_grid": "#222222"
+    },
+    "light": {
+        "name": "Light",
+        "primary": "#0066ff",
+        "accent": "#0052cc",
+        "bg": "#f8f9fa",
+        "card": "#ffffff",
+        "secondary": "#f1f3f5",
+        "border": "#dee2e6",
+        "text": "#212529",
+        "text_secondary": "#6c757d",
+        "text_light": "#495057",
+        "success": "#28a745",
+        "warning": "#ffc107",
+        "error": "#dc3545",
+        "plot_bg": "#ffffff",
+        "plot_grid": "#e9ecef"
+    },
+    "blue": {
+        "name": "Blue",
+        "primary": "#3b82f6",
+        "accent": "#2563eb",
+        "bg": "#0f172a",
+        "card": "#1e293b",
+        "secondary": "#334155",
+        "border": "#475569",
+        "text": "#f1f5f9",
+        "text_secondary": "#94a3b8",
+        "text_light": "#cbd5e1",
+        "success": "#10b981",
+        "warning": "#f59e0b",
+        "error": "#ef4444",
+        "plot_bg": "#1e293b",
+        "plot_grid": "#334155"
+    },
+    "red": {
+        "name": "Red",
+        "primary": "#ef4444",
+        "accent": "#dc2626",
+        "bg": "#0c0a09",
+        "card": "#1c1917",
+        "secondary": "#292524",
+        "border": "#44403c",
+        "text": "#fafaf9",
+        "text_secondary": "#a8a29e",
+        "text_light": "#d6d3d1",
+        "success": "#22c55e",
+        "warning": "#eab308",
+        "error": "#ef4444",
+        "plot_bg": "#1c1917",
+        "plot_grid": "#292524"
+    },
+    "purple": {
+        "name": "Purple",
+        "primary": "#8b5cf6",
+        "accent": "#7c3aed",
+        "bg": "#1e1b4b",
+        "card": "#312e81",
+        "secondary": "#4338ca",
+        "border": "#6366f1",
+        "text": "#f5f3ff",
+        "text_secondary": "#c4b5fd",
+        "text_light": "#ddd6fe",
+        "success": "#10b981",
+        "warning": "#f59e0b",
+        "error": "#ef4444",
+        "plot_bg": "#312e81",
+        "plot_grid": "#4338ca"
+    },
+    "green": {
+        "name": "Green",
+        "primary": "#10b981",
+        "accent": "#059669",
+        "bg": "#022c22",
+        "card": "#064e3b",
+        "secondary": "#065f46",
+        "border": "#047857",
+        "text": "#ecfdf5",
+        "text_secondary": "#a7f3d0",
+        "text_light": "#d1fae5",
+        "success": "#10b981",
+        "warning": "#f59e0b",
+        "error": "#ef4444",
+        "plot_bg": "#064e3b",
+        "plot_grid": "#065f46"
+    },
+    "orange": {
+        "name": "Orange",
+        "primary": "#f97316",
+        "accent": "#ea580c",
+        "bg": "#1c1917",
+        "card": "#292524",
+        "secondary": "#44403c",
+        "border": "#57534e",
+        "text": "#fafaf9",
+        "text_secondary": "#a8a29e",
+        "text_light": "#d6d3d1",
+        "success": "#22c55e",
+        "warning": "#eab308",
+        "error": "#ef4444",
+        "plot_bg": "#292524",
+        "plot_grid": "#44403c"
+    },
+    "teal": {
+        "name": "Teal",
+        "primary": "#14b8a6",
+        "accent": "#0d9488",
+        "bg": "#134e4a",
+        "card": "#0f766e",
+        "secondary": "#115e59",
+        "border": "#0d9488",
+        "text": "#f0fdfa",
+        "text_secondary": "#99f6e4",
+        "text_light": "#ccfbf1",
+        "success": "#10b981",
+        "warning": "#f59e0b",
+        "error": "#ef4444",
+        "plot_bg": "#0f766e",
+        "plot_grid": "#115e59"
+    }
+}
+
+# Initialize session state for theme
+if 'theme' not in st.session_state:
+    st.session_state.theme = "dark"
+
+# Function to generate CSS based on theme
+def get_css_for_theme(theme_name):
+    theme = THEMES[theme_name]
+    
+    # Convert hex to RGB for rgba values
+    def hex_to_rgb(hex_color):
+        hex_color = hex_color.lstrip('#')
+        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    
+    primary_rgb = hex_to_rgb(theme['primary'])
+    
+    return f"""
 <style>
     /* Base styling */
-    .stApp {
-        background: #000000;
-        color: #ffffff;
-    }
+    .stApp {{
+        background: {theme['bg']};
+        color: {theme['text']};
+    }}
     
     /* Remove Streamlit default padding */
-    .main .block-container {
+    .main .block-container {{
         padding-top: 1rem;
         padding-bottom: 1rem;
-    }
+    }}
     
-    /* Green & Black Theme */
-    :root {
-        --primary-green: #00ff88;
-        --accent-green: #00cc6a;
-        --primary-black: #000000;
-        --card-black: #0a0a0a;
-        --secondary-black: #111111;
-        --border-gray: #222222;
-        --text-white: #ffffff;
-        --text-gray: #999999;
-        --text-light-gray: #cccccc;
-    }
+    /* Theme Variables */
+    :root {{
+        --primary-color: {theme['primary']};
+        --accent-color: {theme['accent']};
+        --bg-color: {theme['bg']};
+        --card-color: {theme['card']};
+        --secondary-color: {theme['secondary']};
+        --border-color: {theme['border']};
+        --text-color: {theme['text']};
+        --text-secondary: {theme['text_secondary']};
+        --text-light: {theme['text_light']};
+        --success-color: {theme['success']};
+        --warning-color: {theme['warning']};
+        --error-color: {theme['error']};
+        --primary-rgb: {primary_rgb[0]}, {primary_rgb[1]}, {primary_rgb[2]};
+    }}
     
     /* Typography */
-    h1, h2, h3, h4, h5, h6 {
+    h1, h2, h3, h4, h5, h6 {{
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         font-weight: 600;
         letter-spacing: -0.025em;
-        color: var(--text-white) !important;
-    }
+        color: var(--text-color) !important;
+    }}
     
-    h1 {
+    h1 {{
         font-size: 2rem !important;
-        background: linear-gradient(90deg, var(--primary-green), var(--accent-green));
+        background: linear-gradient(90deg, var(--primary-color), var(--accent-color));
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
         margin-bottom: 0.5rem !important;
-    }
+    }}
     
-    h2 {
+    h2 {{
         font-size: 1.5rem !important;
-        color: var(--primary-green) !important;
-    }
+        color: var(--primary-color) !important;
+    }}
     
-    h3 {
+    h3 {{
         font-size: 1.25rem !important;
         margin-bottom: 1rem !important;
-    }
+    }}
     
     /* Layout Container */
-    .main-container {
+    .main-container {{
         display: flex;
         gap: 20px;
         max-width: 1800px;
         margin: 0 auto;
-    }
+    }}
     
-    .sidebar-container {
+    .sidebar-container {{
         width: 320px;
         flex-shrink: 0;
-    }
+    }}
     
-    .content-container {
+    .content-container {{
         flex: 1;
         min-width: 0;
-    }
+    }}
     
     /* Cards */
-    .card {
-        background: var(--card-black);
-        border: 1px solid var(--border-gray);
+    .card {{
+        background: var(--card-color);
+        border: 1px solid var(--border-color);
         border-radius: 10px;
         padding: 20px;
         margin-bottom: 15px;
         transition: all 0.2s ease;
-    }
+    }}
     
-    .card:hover {
-        border-color: var(--primary-green);
-    }
+    .card:hover {{
+        border-color: var(--primary-color);
+    }}
     
-    .card-title {
+    .card-title {{
         display: flex;
         align-items: center;
         gap: 10px;
         margin-bottom: 15px;
         padding-bottom: 10px;
-        border-bottom: 1px solid var(--border-gray);
-    }
+        border-bottom: 1px solid var(--border-color);
+    }}
     
-    .card-title .icon {
+    .card-title .icon {{
         width: 32px;
         height: 32px;
-        background: rgba(0, 255, 136, 0.1);
+        background: rgba(var(--primary-rgb), 0.1);
         border-radius: 8px;
         display: flex;
         align-items: center;
         justify-content: center;
-        color: var(--primary-green);
+        color: var(--primary-color);
         font-size: 16px;
-    }
+    }}
     
     /* Buttons */
-    .stButton > button {
+    .stButton > button {{
         width: 100%;
-        background: linear-gradient(90deg, var(--primary-green), var(--accent-green));
-        color: var(--primary-black) !important;
+        background: linear-gradient(90deg, var(--primary-color), var(--accent-color));
+        color: var(--bg-color) !important;
         border: none;
         padding: 12px 20px;
         border-radius: 8px;
@@ -134,156 +292,181 @@ st.markdown("""
         letter-spacing: 0.5px;
         transition: all 0.3s ease;
         margin: 5px 0;
-    }
+    }}
     
-    .stButton > button:hover {
+    .stButton > button:hover {{
         transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
-    }
+        box-shadow: 0 5px 15px rgba(var(--primary-rgb), 0.3);
+    }}
+    
+    /* Secondary buttons */
+    .stButton > button[kind="secondary"] {{
+        background: var(--secondary-color) !important;
+        color: var(--text-color) !important;
+        border: 1px solid var(--border-color) !important;
+    }}
     
     /* Input fields */
     .stTextInput > div > div > input,
     .stSelectbox > div > div > select,
     .stDateInput > div > div > input,
     .stNumberInput > div > div > input,
-    .stTextArea > div > div > textarea {
-        background: var(--secondary-black) !important;
-        border: 1px solid var(--border-gray) !important;
-        color: var(--text-white) !important;
+    .stTextArea > div > div > textarea {{
+        background: var(--secondary-color) !important;
+        border: 1px solid var(--border-color) !important;
+        color: var(--text-color) !important;
         border-radius: 6px !important;
         padding: 10px 12px !important;
         font-size: 14px !important;
-    }
+    }}
     
     .stTextInput > div > div > input:focus,
     .stSelectbox > div > div > select:focus,
-    .stDateInput > div > div > input:focus {
-        border-color: var(--primary-green) !important;
-        box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.2) !important;
-    }
+    .stDateInput > div > div > input:focus {{
+        border-color: var(--primary-color) !important;
+        box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.2) !important;
+    }}
     
     /* Map container */
-    .map-container {
-        border: 1px solid var(--border-gray);
+    .map-container {{
+        border: 1px solid var(--border-color);
         border-radius: 10px;
         overflow: hidden;
         height: 600px;
-    }
-    
-    /* 3D Globe container */
-    .globe-container {
-        border: 1px solid var(--border-gray);
-        border-radius: 10px;
-        overflow: hidden;
-        height: 600px;
-        background: #000;
-        position: relative;
-    }
-    
-    /* Mapbox specific */
-    #map {
-        width: 100%;
-        height: 100%;
-        border-radius: 8px;
-    }
-    
-    .mapboxgl-popup {
-        max-width: 300px;
-    }
-    
-    .mapboxgl-popup-content {
-        background: var(--card-black);
-        color: var(--text-white);
-        border: 1px solid var(--border-gray);
-        border-radius=8px;
-        padding: 15px;
-    }
-    
-    .mapboxgl-popup-content h3 {
-        color: var(--primary-green);
-        margin: 0 0 10px 0;
-        font-size: 16px;
-    }
-    
-    .mapboxgl-popup-content p {
-        margin: 0;
-        color: var(--text-light-gray);
-        font-size: 14px;
-    }
+    }}
     
     /* Status badges */
-    .status-badge {
+    .status-badge {{
         display: inline-flex;
         align-items: center;
         padding: 4px 12px;
-        background: rgba(0, 255, 136, 0.1);
-        color: var(--primary-green);
-        border: 1px solid rgba(0, 255, 136, 0.3);
+        background: rgba(var(--primary-rgb), 0.1);
+        color: var(--primary-color);
+        border: 1px solid rgba(var(--primary-rgb), 0.3);
         border-radius: 20px;
         font-size: 12px;
         font-weight: 600;
         letter-spacing: 0.5px;
-    }
+    }}
     
     /* Info panel */
-    .info-panel {
-        background: var(--card-black);
-        border: 1px solid var(--border-gray);
-        border-radius=8px;
+    .info-panel {{
+        background: var(--card-color);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
         padding: 15px;
         margin-top: 15px;
-    }
+    }}
     
-    .info-item {
+    .info-item {{
         margin-bottom: 10px;
-    }
+    }}
     
-    .info-label {
-        color: var(--text-gray);
+    .info-label {{
+        color: var(--text-secondary);
         font-size: 12px;
         font-weight: 500;
         margin-bottom: 2px;
-    }
+    }}
     
-    .info-value {
-        color: var(--text-white);
+    .info-value {{
+        color: var(--text-color);
         font-size: 14px;
         font-weight: 500;
-    }
+    }}
     
-    /* View toggle */
-    .view-toggle {
-        display: flex;
-        background: var(--card-black);
-        border-radius: 8px;
-        padding: 4px;
-        border: 1px solid var(--border-gray);
-        margin-bottom: 15px;
-    }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {{
+        width: 8px;
+        height: 8px;
+    }}
     
-    .view-option {
-        flex: 1;
-        padding: 8px 12px;
-        text-align: center;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 500;
-        border-radius: 6px;
-        transition: all 0.2s;
-        color: var(--text-gray);
-    }
+    ::-webkit-scrollbar-track {{
+        background: var(--secondary-color);
+        border-radius: 4px;
+    }}
     
-    .view-option.active {
-        background: var(--primary-green);
-        color: var(--primary-black);
-    }
+    ::-webkit-scrollbar-thumb {{
+        background: var(--primary-color);
+        border-radius: 4px;
+    }}
+    
+    ::-webkit-scrollbar-thumb:hover {{
+        background: var(--accent-color);
+    }}
+    
+    /* Plotly chart styling */
+    .js-plotly-plot .plotly .modebar {{
+        background: var(--card-color) !important;
+        border: 1px solid var(--border-color) !important;
+    }}
+    
+    .js-plotly-plot .plotly .modebar-btn path {{
+        fill: var(--text-color) !important;
+    }}
+    
+    /* Dataframe styling */
+    .dataframe {{
+        background: var(--card-color) !important;
+        color: var(--text-color) !important;
+        border: 1px solid var(--border-color) !important;
+    }}
+    
+    .dataframe th {{
+        background: var(--secondary-color) !important;
+        color: var(--text-color) !important;
+        border: 1px solid var(--border-color) !important;
+    }}
+    
+    .dataframe td {{
+        background: var(--card-color) !important;
+        color: var(--text-color) !important;
+        border: 1px solid var(--border-color) !important;
+    }}
     
     /* Hide Streamlit default elements */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    #MainMenu {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
+    header {{visibility: hidden;}}
+    
+    /* Theme preview dots */
+    .theme-preview {{
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 8px;
+        vertical-align: middle;
+        border: 2px solid var(--border-color);
+    }}
+    
+    /* Theme selector styles */
+    .theme-selector-container {{
+        margin-bottom: 20px;
+    }}
+    
+    .theme-button {{
+        width: 100%;
+        margin-bottom: 5px;
+        text-align: left;
+        padding: 8px 12px;
+        border-radius: 6px;
+        transition: all 0.2s;
+    }}
+    
+    .theme-button:hover {{
+        background: rgba(var(--primary-rgb), 0.1);
+    }}
+    
+    .theme-button.active {{
+        background: rgba(var(--primary-rgb), 0.2);
+        border-left: 4px solid var(--primary-color);
+    }}
 </style>
-""", unsafe_allow_html=True)
+"""
+
+# Apply the selected theme CSS
+st.markdown(get_css_for_theme(st.session_state.theme), unsafe_allow_html=True)
 
 # Earth Engine Auto-Authentication with Service Account
 def auto_initialize_earth_engine():
@@ -353,7 +536,7 @@ if 'ee_auto_initialized' not in st.session_state:
 
 # Initialize session state
 if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = True  # Set to True since we're removing authentication
+    st.session_state.authenticated = True
 if 'ee_initialized' not in st.session_state:
     st.session_state.ee_initialized = False
 if 'selected_geometry' not in st.session_state:
@@ -373,25 +556,63 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Set authenticated to True since we're removing authentication
+# Set authenticated to True
 st.session_state.authenticated = True
 
-# Main Dashboard Layout
-st.markdown("""
+# Create a theme selector in the main sidebar area (top of the page)
+st.sidebar.markdown("### 🎨 Theme Selector")
+
+# Create a simple theme selector with buttons that actually work
+theme_cols = st.sidebar.columns(2)
+theme_keys = list(THEMES.keys())
+
+# Store the current theme before rendering buttons
+current_theme = st.session_state.theme
+
+# Create theme buttons with visual indicators
+for i, theme_key in enumerate(theme_keys):
+    theme = THEMES[theme_key]
+    col_idx = i % 2
+    
+    # Determine button type based on whether it's the current theme
+    button_type = "primary" if theme_key == current_theme else "secondary"
+    
+    # Create button with custom styling
+    with theme_cols[col_idx]:
+        # Create a custom label with color dot
+        button_label = f'<span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: {theme["primary"]}; margin-right: 8px;"></span>{theme["name"]}'
+        
+        # Use st.button with HTML label
+        if st.button(
+            button_label,
+            key=f"theme_btn_{theme_key}",
+            use_container_width=True,
+            type=button_type
+        ):
+            st.session_state.theme = theme_key
+            st.rerun()
+
+# Add a divider
+st.sidebar.markdown("---")
+
+# Main Dashboard Layout with theme-aware colors
+current_theme_data = THEMES[st.session_state.theme]
+
+st.markdown(f"""
 <div class="compact-header">
     <div>
         <h1>🌍 KHISBA GIS</h1>
-        <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics</p>
+        <p style="color: {current_theme_data['text_secondary']}; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics • Theme: {current_theme_data['name']}</p>
     </div>
     <div style="display: flex; gap: 10px;">
         <span class="status-badge">Connected</span>
-        <span class="status-badge">3D Mapbox Globe</span>
+        <span class="status-badge">3D Mapbox</span>
         <span class="status-badge">v2.0</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# Helper Functions for Earth Engine
+# Helper Functions for Earth Engine (same as before)
 def get_admin_boundaries(level, country_code=None, admin1_code=None):
     """Get administrative boundaries from Earth Engine"""
     try:
@@ -444,7 +665,6 @@ def get_geometry_coordinates(geometry):
         center_lat = sum(lats) / len(lats)
         center_lon = sum(lons) / len(lons)
         
-        # Get bounds for drawing rectangle
         min_lat = min(lats)
         max_lat = max(lats)
         min_lon = min(lons)
@@ -464,12 +684,11 @@ col1, col2 = st.columns([0.25, 0.75], gap="large")
 
 # LEFT SIDEBAR - All controls
 with col1:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown(f'<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="card-title"><div class="icon">🌍</div><h3 style="margin: 0;">Area Selection</h3></div>', unsafe_allow_html=True)
     
     if st.session_state.ee_initialized:
         try:
-            # Get countries
             countries_fc = get_admin_boundaries(0)
             if countries_fc:
                 country_names = get_boundary_names(countries_fc, 0)
@@ -482,10 +701,8 @@ with col1:
                 )
                 
                 if selected_country and selected_country != "Select a country":
-                    # Get country code
                     country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
                     
-                    # Get admin1 regions for selected country
                     admin1_fc = get_admin_boundaries(1, country_feature.get('ADM0_CODE').getInfo())
                     if admin1_fc:
                         admin1_names = get_boundary_names(admin1_fc, 1)
@@ -498,10 +715,8 @@ with col1:
                         )
                         
                         if selected_admin1 and selected_admin1 != "Select state/province":
-                            # Get admin1 code
                             admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
                             
-                            # Get admin2 regions for selected admin1
                             admin2_fc = get_admin_boundaries(2, None, admin1_feature.get('ADM1_CODE').getInfo())
                             if admin2_fc:
                                 admin2_names = get_boundary_names(admin2_fc, 2)
@@ -544,7 +759,6 @@ with col1:
     # Update selected geometry when area is selected
     if selected_country and selected_country != "Select a country":
         try:
-            # Determine geometry
             if selected_admin2 and selected_admin2 != "Select municipality":
                 geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
                 area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
@@ -558,10 +772,8 @@ with col1:
                 area_name = selected_country
                 area_level = "Country"
             
-            # Get coordinates for the map
             coords_info = get_geometry_coordinates(geometry)
             
-            # Store in session state
             st.session_state.selected_geometry = geometry
             st.session_state.selected_coordinates = coords_info
             st.session_state.selected_area_name = area_name
@@ -639,31 +851,27 @@ with col1:
         
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Run Analysis Button - USING EXACT SAME LOGIC AS SECOND CODE
+        # Run Analysis Button
         if st.button("🚀 Run Analysis", type="primary", use_container_width=True, key="run_analysis"):
             if not selected_indices:
                 st.error("Please select at least one vegetation index")
             else:
                 with st.spinner("Running analysis..."):
                     try:
-                        # Define collection based on choice - EXACTLY LIKE SECOND CODE
                         if collection_choice == "Sentinel-2":
                             collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
                         else:
                             collection = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
                         
-                        # Filter collection - EXACTLY LIKE SECOND CODE
                         filtered_collection = (collection
                             .filterDate(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
                             .filterBounds(st.session_state.selected_geometry.geometry())
                             .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
                         )
                         
-                        # Import the vegetation indices functions - EXACTLY LIKE SECOND CODE
                         try:
                             from vegetation_indices import mask_clouds, add_vegetation_indices
                             
-                            # Apply cloud masking and add vegetation indices - EXACTLY LIKE SECOND CODE
                             if collection_choice == "Sentinel-2":
                                 processed_collection = (filtered_collection
                                     .map(mask_clouds)
@@ -673,7 +881,6 @@ with col1:
                                 processed_collection = filtered_collection.map(add_vegetation_indices)
                             
                         except ImportError:
-                            # If module not found, use simplified version
                             def simple_add_indices(image):
                                 nir = image.select('B8')
                                 red = image.select('B4')
@@ -693,25 +900,19 @@ with col1:
                             
                             processed_collection = filtered_collection.map(simple_add_indices)
                         
-                        # Calculate time series for selected indices - EXACTLY LIKE SECOND CODE
                         results = {}
                         for index in selected_indices:
                             try:
-                                # EXACTLY THE SAME AS SECOND CODE - no client-side operations in mapped function
                                 def add_date_and_reduce(image):
                                     reduced = image.select(index).reduceRegion(
                                         reducer=ee.Reducer.mean(),
                                         geometry=st.session_state.selected_geometry.geometry(),
-                                        scale=30,  # Same as second code
+                                        scale=30,
                                         maxPixels=1e9
                                     )
-                                    # This returns a server-side feature - NO CLIENT-SIDE OPERATIONS
                                     return ee.Feature(None, reduced.set('date', image.date().format()))
                                 
-                                # Map over collection
                                 time_series = processed_collection.map(add_date_and_reduce)
-                                
-                                # Get results
                                 time_series_list = time_series.getInfo()
                                 
                                 dates = []
@@ -737,7 +938,7 @@ with col1:
                         st.error(f"❌ Analysis failed: {str(e)}")
                         st.error(f"Full error: {traceback.format_exc()}")
 
-# MAIN CONTENT AREA - 3D Mapbox Globe with Selected Area Highlight
+# MAIN CONTENT AREA - 3D Mapbox Globe
 with col2:
     # 3D Mapbox Globe
     st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
@@ -753,7 +954,16 @@ with col2:
         map_zoom = st.session_state.selected_coordinates['zoom']
         bounds_data = st.session_state.selected_coordinates['bounds']
     
-    # Generate HTML for Mapbox interactive globe with OUTDOORS as default
+    # Get current theme colors for the map
+    current_theme = THEMES[st.session_state.theme]
+    primary_color = current_theme['primary']
+    card_color = current_theme['card']
+    text_color = current_theme['text']
+    text_secondary = current_theme['text_secondary']
+    border_color = current_theme['border']
+    bg_color = current_theme['bg']
+    
+    # Generate HTML for Mapbox interactive globe
     mapbox_html = f"""
     <!DOCTYPE html>
     <html>
@@ -767,7 +977,7 @@ with col2:
         body {{ 
           margin: 0; 
           padding: 0; 
-          background: #000000;
+          background: {bg_color};
         }}
         #map {{ 
           position: absolute; 
@@ -780,23 +990,24 @@ with col2:
           position: absolute;
           top: 20px;
           right: 20px;
-          background: rgba(10, 10, 10, 0.9);
-          color: white;
+          background: {card_color};
+          color: {text_color};
           padding: 15px;
           border-radius: 8px;
-          border: 1px solid #222222;
+          border: 1px solid {border_color};
           max-width: 250px;
           z-index: 1000;
           font-family: 'Inter', sans-serif;
+          opacity: 0.95;
         }}
         .overlay-title {{
-          color: #00ff88;
+          color: {primary_color};
           font-weight: 600;
           margin-bottom: 10px;
           font-size: 14px;
         }}
         .overlay-text {{
-          color: #cccccc;
+          color: {text_secondary};
           font-size: 12px;
           line-height: 1.4;
         }}
@@ -804,36 +1015,38 @@ with col2:
           position: absolute;
           bottom: 20px;
           left: 20px;
-          background: rgba(10, 10, 10, 0.9);
-          color: white;
+          background: {card_color};
+          color: {text_color};
           padding: 10px 15px;
           border-radius: 6px;
-          border: 1px solid #222222;
+          border: 1px solid {border_color};
           font-family: monospace;
           font-size: 12px;
           z-index: 1000;
+          opacity: 0.9;
         }}
         .selected-area {{
           position: absolute;
           top: 20px;
           left: 20px;
-          background: rgba(10, 10, 10, 0.9);
-          color: white;
+          background: {card_color};
+          color: {text_color};
           padding: 15px;
           border-radius: 8px;
-          border: 1px solid #222222;
+          border: 1px solid {border_color};
           max-width: 300px;
           z-index: 1000;
           font-family: 'Inter', sans-serif;
+          opacity: 0.95;
         }}
         .area-title {{
-          color: #00ff88;
+          color: {primary_color};
           font-weight: 600;
           margin-bottom: 10px;
           font-size: 14px;
         }}
         .area-details {{
-          color: #cccccc;
+          color: {text_secondary};
           font-size: 12px;
           line-height: 1.4;
         }}
@@ -841,46 +1054,62 @@ with col2:
           position: absolute;
           top: 20px;
           right: 20px;
-          background: rgba(10, 10, 10, 0.9);
-          border: 1px solid #222222;
+          background: {card_color};
+          border: 1px solid {border_color};
           border-radius: 8px;
           overflow: hidden;
           z-index: 1000;
+          opacity: 0.95;
         }}
         .layer-button {{
           display: block;
           width: 120px;
           padding: 10px;
-          background: #0a0a0a;
-          color: #ffffff;
+          background: {card_color};
+          color: {text_color};
           border: none;
-          border-bottom: 1px solid #222222;
+          border-bottom: 1px solid {border_color};
           cursor: pointer;
           font-size: 12px;
           text-align: left;
           transition: all 0.2s;
         }}
         .layer-button:hover {{
-          background: #111111;
+          background: rgba({primary_color.replace('#', '')}, 0.1);
         }}
         .layer-button.active {{
-          background: #00ff88;
-          color: #000000;
+          background: {primary_color};
+          color: {bg_color};
           font-weight: bold;
         }}
         .layer-button:last-child {{
           border-bottom: none;
         }}
         .mapboxgl-ctrl-group {{
-          background: #0a0a0a !important;
-          border: 1px solid #222222 !important;
+          background: {card_color} !important;
+          border: 1px solid {border_color} !important;
         }}
         .mapboxgl-ctrl button {{
-          background-color: #0a0a0a !important;
-          color: #ffffff !important;
+          background-color: {card_color} !important;
+          color: {text_color} !important;
         }}
         .mapboxgl-ctrl button:hover {{
-          background-color: #111111 !important;
+          background-color: rgba({primary_color.replace('#', '')}, 0.1) !important;
+        }}
+        .mapboxgl-popup-content {{
+          background: {card_color} !important;
+          color: {text_color} !important;
+          border: 1px solid {border_color} !important;
+          border-radius: 8px !important;
+        }}
+        .mapboxgl-popup-tip {{
+          border-top-color: {card_color} !important;
+          border-bottom-color: {card_color} !important;
+        }}
+        .marker {{
+          background-color: {primary_color} !important;
+          border: 2px solid {text_color} !important;
+          box-shadow: 0 0 10px {primary_color}80 !important;
         }}
       </style>
     </head>
@@ -893,7 +1122,7 @@ with col2:
           • Drag to rotate the globe<br>
           • Scroll to zoom in/out<br>
           • Right-click to pan<br>
-          • Selected area highlighted in green
+          • Selected area highlighted
         </div>
       </div>
       
@@ -917,7 +1146,7 @@ with col2:
           <strong>{st.session_state.selected_area_name if hasattr(st.session_state, 'selected_area_name') else 'None'}</strong><br>
           Level: {st.session_state.selected_area_level if hasattr(st.session_state, 'selected_area_level') else 'None'}<br>
           Coordinates: {map_center[1]:.4f}°, {map_center[0]:.4f}°<br>
-          Status: <span style="color: #00ff88;">Ready for Analysis</span>
+          Status: <span style="color: {primary_color};">Ready for Analysis</span>
         </div>
       </div>
       ''' if st.session_state.selected_area_name else ''}
@@ -928,7 +1157,7 @@ with col2:
         // Create a new map instance with OUTDOORS as default
         const map = new mapboxgl.Map({{
           container: 'map',
-          style: 'mapbox://styles/mapbox/outdoors-v12',  // OUTDOORS is now default
+          style: 'mapbox://styles/mapbox/outdoors-v12',
           center: {map_center},
           zoom: {map_zoom},
           pitch: 45,
@@ -937,40 +1166,30 @@ with col2:
 
         // Add navigation controls
         map.addControl(new mapboxgl.NavigationControl());
-
-        // Add scale control
         map.addControl(new mapboxgl.ScaleControl({{
           unit: 'metric'
         }}));
-
-        // Add fullscreen control
         map.addControl(new mapboxgl.FullscreenControl());
 
         // Layer switcher functionality
         const layerButtons = document.querySelectorAll('.layer-button');
         layerButtons.forEach(button => {{
           button.addEventListener('click', () => {{
-            // Update active button
             layerButtons.forEach(btn => btn.classList.remove('active'));
             button.classList.add('active');
-            
-            // Change map style
             map.setStyle(button.dataset.style);
             
-            // Re-add selected area after style change
             setTimeout(() => {{
               {f'''
               if ({bounds_data}) {{
                 const bounds = {bounds_data};
                 
-                // Remove existing layers if they exist
                 if (map.getSource('selected-area')) {{
                   map.removeLayer('selected-area-fill');
                   map.removeLayer('selected-area-border');
                   map.removeSource('selected-area');
                 }}
                 
-                // Create a polygon for the selected area
                 map.addSource('selected-area', {{
                   'type': 'geojson',
                   'data': {{
@@ -988,26 +1207,24 @@ with col2:
                   }}
                 }});
 
-                // Add the polygon layer
                 map.addLayer({{
                   'id': 'selected-area-fill',
                   'type': 'fill',
                   'source': 'selected-area',
                   'layout': {{}},
                   'paint': {{
-                    'fill-color': '#00ff88',
+                    'fill-color': '{primary_color}',
                     'fill-opacity': 0.2
                   }}
                 }});
 
-                // Add border for the polygon
                 map.addLayer({{
                   'id': 'selected-area-border',
                   'type': 'line',
                   'source': 'selected-area',
                   'layout': {{}},
                   'paint': {{
-                    'line-color': '#00ff88',
+                    'line-color': '{primary_color}',
                     'line-width': 3,
                     'line-opacity': 0.8
                   }}
@@ -1020,18 +1237,15 @@ with col2:
 
         // Wait for map to load
         map.on('load', () => {{
-          // Add event listener for mouse move to show coordinates
           map.on('mousemove', (e) => {{
             document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(2) + '°';
             document.getElementById('lon-display').textContent = e.lngLat.lng.toFixed(2) + '°';
           }});
 
-          // Add selected area polygon if bounds are available
           {f'''
           if ({bounds_data}) {{
             const bounds = {bounds_data};
             
-            // Create a polygon for the selected area
             map.addSource('selected-area', {{
               'type': 'geojson',
               'data': {{
@@ -1049,32 +1263,29 @@ with col2:
               }}
             }});
 
-            // Add the polygon layer
             map.addLayer({{
               'id': 'selected-area-fill',
               'type': 'fill',
               'source': 'selected-area',
               'layout': {{}},
               'paint': {{
-                'fill-color': '#00ff88',
+                'fill-color': '{primary_color}',
                 'fill-opacity': 0.2
               }}
             }});
 
-            // Add border for the polygon
             map.addLayer({{
               'id': 'selected-area-border',
               'type': 'line',
               'source': 'selected-area',
               'layout': {{}},
               'paint': {{
-                'line-color': '#00ff88',
+                'line-color': '{primary_color}',
                 'line-width': 3,
                 'line-opacity': 0.8
               }}
             }});
 
-            // Fly to the selected area with animation
             map.flyTo({{
               center: {map_center},
               zoom: {map_zoom},
@@ -1084,7 +1295,7 @@ with col2:
           }}
           ''' if bounds_data else ''}
 
-          // Add some sample cities for interaction
+          // Add sample cities
           const cities = [
             {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital' }},
             {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical capital' }},
@@ -1093,31 +1304,27 @@ with col2:
             {{ name: 'Cairo', coordinates: [31.2357, 30.0444], country: 'Egypt', info: 'Nile Delta' }}
           ];
 
-          // Add city markers
           cities.forEach(city => {{
-            // Create a custom marker element
             const el = document.createElement('div');
             el.className = 'marker';
-            el.style.backgroundColor = '#ffaa00';
+            el.style.backgroundColor = '{primary_color}';
             el.style.width = '15px';
             el.style.height = '15px';
             el.style.borderRadius = '50%';
-            el.style.border = '2px solid #ffffff';
-            el.style.boxShadow = '0 0 10px rgba(255, 170, 0, 0.5)';
+            el.style.border = '2px solid {text_color}';
+            el.style.boxShadow = '0 0 10px {primary_color}80';
             el.style.cursor = 'pointer';
 
-            // Create a popup
             const popup = new mapboxgl.Popup({{
               offset: 25,
               closeButton: true,
               closeOnClick: false
             }}).setHTML(
-              `<h3>${{city.name}}</h3>
-               <p><strong>Country:</strong> ${{city.country}}</p>
-               <p>${{city.info}}</p>`
+              `<h3 style="color: {primary_color}; margin: 0 0 10px 0;">${{city.name}}</h3>
+               <p style="color: {text_secondary}; margin: 0 0 5px 0;"><strong>Country:</strong> ${{city.country}}</p>
+               <p style="color: {text_secondary}; margin: 0;">${{city.info}}</p>`
             );
 
-            // Create marker
             new mapboxgl.Marker(el)
               .setLngLat(city.coordinates)
               .setPopup(popup)
@@ -1165,7 +1372,7 @@ with col2:
             st.dataframe(summary_df, use_container_width=True, hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Charts Section
+        # Charts Section with theme-aware colors
         if results:
             st.markdown('<div class="card">', unsafe_allow_html=True)
             st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Vegetation Analytics</h3></div>', unsafe_allow_html=True)
@@ -1173,7 +1380,6 @@ with col2:
             for index, data in results.items():
                 if data['dates'] and data['values']:
                     try:
-                        # Parse dates
                         dates = []
                         for date_str in data['dates']:
                             try:
@@ -1191,29 +1397,34 @@ with col2:
                             df = pd.DataFrame({'Date': dates, 'Value': values})
                             df = df.sort_values('Date')
                             
-                            # Create chart with professional styling
-                            fig = go.Figure()
+                            # Get theme colors
+                            current_theme = THEMES[st.session_state.theme]
+                            primary_color = current_theme['primary']
+                            plot_bg = current_theme['plot_bg']
+                            plot_grid = current_theme['plot_grid']
+                            text_color = current_theme['text']
                             
                             # Calculate if value is increasing or decreasing
                             current_value = df['Value'].iloc[-1] if len(df) > 0 else 0
                             prev_value = df['Value'].iloc[-2] if len(df) > 1 else current_value
                             is_increasing = current_value >= prev_value
                             
+                            fig = go.Figure()
+                            
                             fig.add_trace(go.Scatter(
                                 x=df['Date'], 
                                 y=df['Value'],
                                 mode='lines+markers',
                                 name=f'{index} Index',
-                                line=dict(color='#00ff88' if is_increasing else '#ff4444', width=3),
+                                line=dict(color=primary_color if is_increasing else current_theme['error'], width=3),
                                 marker=dict(
                                     size=6,
-                                    color='#00ff88' if is_increasing else '#ff4444',
-                                    line=dict(width=1, color='#ffffff')
+                                    color=primary_color if is_increasing else current_theme['error'],
+                                    line=dict(width=1, color=text_color)
                                 ),
                                 hovertemplate='<b>%{fullData.name}</b><br>Date: %{x|%Y-%m-%d}<br>Value: %{y:.4f}<extra></extra>'
                             ))
                             
-                            # Add 5-day moving average
                             if len(df) >= 5:
                                 df['MA_5'] = df['Value'].rolling(window=min(5, len(df))).mean()
                                 fig.add_trace(go.Scatter(
@@ -1221,33 +1432,32 @@ with col2:
                                     y=df['MA_5'],
                                     mode='lines',
                                     name='MA 5-day',
-                                    line=dict(color='#ffaa00', width=2, dash='dot'),
+                                    line=dict(color=current_theme['warning'], width=2, dash='dot'),
                                     opacity=0.7
                                 ))
                             
-                            # Update layout
                             fig.update_layout(
                                 title=f'{index} - Vegetation Analysis',
-                                plot_bgcolor='#0a0a0a',
-                                paper_bgcolor='#0a0a0a',
-                                font=dict(color='#ffffff'),
+                                plot_bgcolor=plot_bg,
+                                paper_bgcolor=plot_bg,
+                                font=dict(color=text_color),
                                 xaxis=dict(
-                                    gridcolor='#222222',
-                                    zerolinecolor='#222222',
-                                    tickcolor='#444444',
-                                    title_font_color='#ffffff',
+                                    gridcolor=plot_grid,
+                                    zerolinecolor=plot_grid,
+                                    tickcolor=plot_grid,
+                                    title_font_color=text_color,
                                     tickformat='%Y-%m-%d'
                                 ),
                                 yaxis=dict(
-                                    gridcolor='#222222',
-                                    zerolinecolor='#222222',
-                                    tickcolor='#444444',
-                                    title_font_color='#ffffff',
+                                    gridcolor=plot_grid,
+                                    zerolinecolor=plot_grid,
+                                    tickcolor=plot_grid,
+                                    title_font_color=text_color,
                                     title=f'{index} Value'
                                 ),
                                 legend=dict(
-                                    bgcolor='rgba(0,0,0,0.5)',
-                                    bordercolor='#222222',
+                                    bgcolor=f'{plot_bg}CC',
+                                    bordercolor=current_theme['border'],
                                     borderwidth=1,
                                     x=0.01,
                                     y=0.99
@@ -1292,12 +1502,13 @@ with col2:
                 st.warning("No data available for export")
         st.markdown('</div>', unsafe_allow_html=True)
 
-# Footer
-st.markdown("""
+# Footer with theme colors
+current_theme = THEMES[st.session_state.theme]
+st.markdown(f"""
 <div class="section-divider"></div>
-<div style="text-align: center; color: #666666; font-size: 12px; padding: 20px 0;">
+<div style="text-align: center; color: {current_theme['text_secondary']}; font-size: 12px; padding: 20px 0;">
     <p style="margin: 5px 0;">KHISBA GIS • Interactive 3D Global Vegetation Analytics Platform</p>
-    <p style="margin: 5px 0;">Created by Taibi Farouk Djilali • Clean Green & Black Design</p>
+    <p style="margin: 5px 0;">Created by Taibi Farouk Djilali • Theme: {current_theme['name']}</p>
     <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
         <span class="status-badge">3D Mapbox</span>
         <span class="status-badge">Earth Engine</span>
@@ -1307,3 +1518,13 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# Force CSS refresh on theme change
+st.markdown(f"""
+<script>
+    // Force CSS refresh when theme changes
+    document.addEventListener('DOMContentLoaded', function() {{
+        // Add theme indicator to body
+        document.body.setAttribute('data-theme', '{st.session_state.theme}');
+    }});
+</script>
+""", unsafe_allow_html=True)
