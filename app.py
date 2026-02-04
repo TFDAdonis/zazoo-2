@@ -2,9 +2,10 @@ import streamlit as st
 import json
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, timedelta
 import ee
 import traceback
+import numpy as np
 
 # Custom CSS for Clean Green & Black TypeScript/React Style with Guided UI
 st.markdown("""
@@ -235,7 +236,7 @@ st.markdown("""
         gap: 10px;
         margin-bottom: 15px;
         padding-bottom: 10px;
-        border-bottom: 1px solid var(--border-gray);
+        border-bottom: 1px solid var(--border-gray)
     }
     
     .card-title .icon {
@@ -397,6 +398,353 @@ e5aU1RW6tlG8nzHHwK2FeyI=
         st.error(f"Earth Engine auto-initialization failed: {str(e)}")
         return False
 
+# CLIMATE ANALYSIS FUNCTIONS FROM COLAB - CORRECTED FOR ERA5-LAND
+def get_daily_climate_data_corrected(start_date, end_date, geometry, scale=50000):
+    """
+    CORRECTED version: Get daily temperature and precipitation data from ERA5-Land
+    Uses temperature_2m (mean temperature) and total_precipitation_sum
+    """
+    # Daily Temperature data (ERA5-Land Daily)
+    temperature = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR") \
+        .filterDate(start_date, end_date) \
+        .select(['temperature_2m'])  # This is the mean temperature
+
+    # Daily Precipitation data (CHIRPS Daily)
+    precipitation = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY") \
+        .filterDate(start_date, end_date) \
+        .select('precipitation')
+
+    # Create list of dates
+    start = ee.Date(start_date)
+    end = ee.Date(end_date)
+    n_days = end.difference(start, 'day')
+    days = ee.List.sequence(0, n_days.subtract(1))
+
+    def get_daily_data(day_offset):
+        """Get daily data for a specific day"""
+        day_offset = ee.Number(day_offset)
+        date = start.advance(day_offset, 'day')
+        date_str = date.format('YYYY-MM-dd')
+
+        # Get temperature for the date
+        temp_image = temperature.filterDate(date, date.advance(1, 'day')).first()
+
+        # Get precipitation for the date
+        precip_image = precipitation.filterDate(date, date.advance(1, 'day')).first()
+
+        # Extract temperature value
+        temp_result = ee.Algorithms.If(
+            temp_image,
+            temp_image.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=scale,
+                maxPixels=1e9
+            ).get('temperature_2m'),
+            None
+        )
+
+        # Extract precipitation value
+        precipitation_val = ee.Algorithms.If(
+            precip_image,
+            precip_image.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=scale,
+                maxPixels=1e9
+            ).get('precipitation'),
+            None
+        )
+
+        # Convert temperature from Kelvin to Celsius
+        temp_celsius = ee.Algorithms.If(
+            temp_result,
+            ee.Number(temp_result).subtract(273.15),  # Kelvin to Celsius
+            None
+        )
+
+        return ee.Feature(None, {
+            'date': date_str,
+            'temperature': temp_celsius,
+            'precipitation': precipitation_val
+        })
+
+    # Create feature collection with daily data
+    daily_data = ee.FeatureCollection(days.map(get_daily_data))
+
+    return daily_data
+
+def get_daily_climate_data_debug(start_date, end_date, geometry, scale=50000):
+    """
+    DEBUG version using MODIS for temperature and CHIRPS for precipitation
+    """
+    # MODIS Land Surface Temperature
+    modis_temp = ee.ImageCollection("MODIS/061/MOD11A1") \
+        .filterDate(start_date, end_date) \
+        .select('LST_Day_1km')
+
+    # Daily Precipitation data (CHIRPS Daily)
+    precipitation = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY") \
+        .filterDate(start_date, end_date) \
+        .select('precipitation')
+
+    # Create list of dates
+    start = ee.Date(start_date)
+    end = ee.Date(end_date)
+    n_days = end.difference(start, 'day')
+    days = ee.List.sequence(0, n_days.subtract(1))
+
+    def get_daily_data(day_offset):
+        """Get daily data for a specific day"""
+        day_offset = ee.Number(day_offset)
+        date = start.advance(day_offset, 'day')
+        date_str = date.format('YYYY-MM-dd')
+
+        # Get MODIS temperature for the date
+        modis_image = modis_temp.filterDate(date, date.advance(1, 'day')).first()
+
+        # Get precipitation for the date
+        precip_image = precipitation.filterDate(date, date.advance(1, 'day')).first()
+
+        # Extract MODIS temperature
+        modis_temp_val = ee.Algorithms.If(
+            modis_image,
+            modis_image.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=scale,
+                maxPixels=1e9
+            ).get('LST_Day_1km'),
+            None
+        )
+
+        # MODIS LST conversion: multiply by 0.02 then subtract 273.15
+        modis_temp_celsius = ee.Algorithms.If(
+            modis_temp_val,
+            ee.Number(modis_temp_val).multiply(0.02).subtract(273.15),
+            None
+        )
+
+        # Extract precipitation value
+        precipitation_val = ee.Algorithms.If(
+            precip_image,
+            precip_image.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=scale,
+                maxPixels=1e9
+            ).get('precipitation'),
+            None
+        )
+
+        return ee.Feature(None, {
+            'date': date_str,
+            'temperature': modis_temp_celsius,
+            'precipitation': precipitation_val,
+            'data_source': 'MODIS'
+        })
+
+    # Create feature collection with daily data
+    daily_data = ee.FeatureCollection(days.map(get_daily_data))
+
+    return daily_data
+
+def analyze_daily_climate_data(study_roi, start_date, end_date, data_source='era5'):
+    """
+    Integrated daily climate analysis with realistic temperature filtering
+    """
+    try:
+        # Get daily climate data based on selected source
+        if data_source == 'modis':
+            daily_data = get_daily_climate_data_debug(start_date, end_date, study_roi)
+            data_source_name = "MODIS"
+        else:
+            daily_data = get_daily_climate_data_corrected(start_date, end_date, study_roi)
+            data_source_name = "ERA5-Land"
+
+        # Convert to pandas DataFrame
+        features = daily_data.getInfo()['features']
+        data = []
+
+        for feature in features:
+            props = feature['properties']
+
+            # Handle temperature
+            temp_val = props['temperature'] if props['temperature'] is not None else np.nan
+            precip_val = props['precipitation'] if props['precipitation'] is not None else np.nan
+
+            data.append({
+                'date': props['date'],
+                'temperature': temp_val,
+                'precipitation': precip_val
+            })
+
+        df = pd.DataFrame(data)
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.sort_values('date')
+
+        # Remove rows with all NaN values
+        df = df.dropna(how='all')
+
+        if df.empty:
+            return None, None
+
+        # Filter out unrealistic temperatures (below -100°C or above 60°C)
+        df_clean = df[(df['temperature'] > -100) & (df['temperature'] < 60)].copy()
+
+        if len(df_clean) < len(df):
+            pass  # Filtering happened, but we don't show message in Streamlit
+
+        return df_clean, data_source_name
+
+    except Exception as e:
+        st.error(f"Error generating daily climate charts: {str(e)}")
+        return None, None
+
+def get_climate_timeseries(study_roi, start_date='2020-01-01'):
+    """Generate temperature and precipitation time series charts using ERA5-Land"""
+    try:
+        # Get a representative point from the ROI
+        centroid = study_roi.geometry().centroid()
+
+        # ERA5-Land Daily Aggregated dataset
+        era5 = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
+
+        # Get end date (current date)
+        end_date = datetime.now().strftime('%Y-%m-%d')
+
+        # Filter by date and region
+        climate_data = era5.filterBounds(study_roi.geometry()).filterDate(start_date, end_date)
+
+        # CORRECTED: Use temperature_2m (not mean_2m_air_temperature)
+        # Temperature data (Kelvin to Celsius)
+        temperature_data = climate_data.select(['temperature_2m']).map(
+            lambda image: image.subtract(273.15).rename('temperature_c')
+        )
+
+        # CORRECTED: Use total_precipitation_sum (not total_precipitation)
+        # Precipitation data (convert from meters to mm)
+        precipitation_data = climate_data.select(['total_precipitation_sum']).map(
+            lambda image: image.multiply(1000).rename('precipitation_mm')
+        )
+
+        # Get temperature time series
+        temp_timeseries = temperature_data.getRegion(centroid, 1000).getInfo()
+        if not temp_timeseries or len(temp_timeseries) <= 1:
+            return None, None
+
+        temp_df = pd.DataFrame(temp_timeseries[1:], columns=temp_timeseries[0])
+        temp_df['datetime'] = pd.to_datetime(temp_df['time'], unit='ms')
+        temp_df['temperature_c'] = pd.to_numeric(temp_df['temperature_c'], errors='coerce')
+        temp_df = temp_df.dropna(subset=['temperature_c'])
+
+        if temp_df.empty:
+            return None, None
+
+        temp_df = temp_df.set_index('datetime')['temperature_c']
+
+        # Get precipitation time series
+        precip_timeseries = precipitation_data.getRegion(centroid, 1000).getInfo()
+        if not precip_timeseries or len(precip_timeseries) <= 1:
+            return None, None
+
+        precip_df = pd.DataFrame(precip_timeseries[1:], columns=precip_timeseries[0])
+        precip_df['datetime'] = pd.to_datetime(precip_df['time'], unit='ms')
+        precip_df['precipitation_mm'] = pd.to_numeric(precip_df['precipitation_mm'], errors='coerce')
+        precip_df = precip_df.dropna(subset=['precipitation_mm'])
+
+        if precip_df.empty:
+            return None, None
+
+        precip_df = precip_df.set_index('datetime')['precipitation_mm']
+
+        return temp_df, precip_df
+
+    except Exception as e:
+        st.error(f"Error generating climate time series: {str(e)}")
+        return None, None
+
+def get_climate_data_simple(study_roi, start_date='2023-01-01', end_date='2023-12-31'):
+    """Simplified climate data retrieval for the study area"""
+    try:
+        # Get a representative point from the ROI
+        centroid = study_roi.geometry().centroid()
+        
+        # Use ERA5-Land Daily Aggregated dataset
+        era5 = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
+        
+        # Filter by date and region
+        climate_data = era5.filterBounds(study_roi.geometry()).filterDate(start_date, end_date)
+        
+        # Get temperature (mean temperature_2m) and precipitation data
+        temperature = climate_data.select(['temperature_2m']).mean()
+        precipitation = climate_data.select(['total_precipitation_sum']).sum().multiply(1000)  # Convert to mm
+        
+        # Get temperature value
+        temp_value = temperature.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=study_roi.geometry(),
+            scale=10000,
+            maxPixels=1e9
+        ).getInfo()
+        
+        # Get precipitation value
+        precip_value = precipitation.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=study_roi.geometry(),
+            scale=10000,
+            maxPixels=1e9
+        ).getInfo()
+        
+        # Convert temperature from Kelvin to Celsius
+        temp_c = temp_value.get('temperature_2m', None)
+        if temp_c:
+            temp_c = temp_c - 273.15
+        
+        precip_mm = precip_value.get('total_precipitation_sum', None)
+        
+        return {
+            'mean_temperature': round(temp_c, 2) if temp_c else None,
+            'total_precipitation': round(precip_mm, 2) if precip_mm else None
+        }
+        
+    except Exception as e:
+        st.error(f"Error getting climate data: {str(e)}")
+        return None
+
+# VEGETATION INDICES FUNCTIONS
+def add_vegetation_indices(image):
+    # NDVI - Normalized Difference Vegetation Index
+    ndvi = image.normalizedDifference(['B8', 'B4']).rename('NDVI')
+
+    # ARVI - Atmospherically Resistant Vegetation Index
+    arvi = image.expression(
+        '(NIR - (2 * RED - BLUE)) / (NIR + (2 * RED - BLUE))', {
+            'NIR': image.select('B8'),
+            'RED': image.select('B4'),
+            'BLUE': image.select('B2')
+        }).rename('ARVI')
+
+    # EVI - Enhanced Vegetation Index
+    evi = image.expression(
+        '2.5 * (NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1)', {
+            'NIR': image.select('B8'),
+            'RED': image.select('B4'),
+            'BLUE': image.select('B2')
+        }).rename('EVI')
+
+    # SAVI - Soil Adjusted Vegetation Index
+    savi = image.expression(
+        '1.5 * (NIR - RED) / (NIR + RED + 0.5)', {
+            'NIR': image.select('B8'),
+            'RED': image.select('B4')
+        }).rename('SAVI')
+
+    # NDWI - Normalized Difference Water Index
+    ndwi = image.normalizedDifference(['B3', 'B8']).rename('NDWI')
+
+    return image.addBands([ndvi, arvi, evi, savi, ndwi])
+
 # Try to auto-initialize Earth Engine
 if 'ee_initialized' not in st.session_state:
     with st.spinner("Initializing Earth Engine..."):
@@ -412,6 +760,10 @@ if 'selected_geometry' not in st.session_state:
     st.session_state.selected_geometry = None
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
+if 'climate_results' not in st.session_state:
+    st.session_state.climate_results = None
+if 'daily_climate_results' not in st.session_state:
+    st.session_state.daily_climate_results = None
 if 'selected_coordinates' not in st.session_state:
     st.session_state.selected_coordinates = None
 if 'selected_area_name' not in st.session_state:
@@ -420,10 +772,18 @@ if 'analysis_parameters' not in st.session_state:
     st.session_state.analysis_parameters = None
 if 'auto_show_results' not in st.session_state:
     st.session_state.auto_show_results = False
+if 'include_climate_analysis' not in st.session_state:
+    st.session_state.include_climate_analysis = True
+if 'include_daily_climate' not in st.session_state:
+    st.session_state.include_daily_climate = True
+if 'climate_data_source' not in st.session_state:
+    st.session_state.climate_data_source = 'era5'
+if 'simple_climate_data' not in st.session_state:
+    st.session_state.simple_climate_data = None
 
 # Page configuration
 st.set_page_config(
-    page_title="Khisba GIS - 3D Global Vegetation Analysis",
+    page_title="Khisba GIS - 3D Global Vegetation & Climate Analysis",
     page_icon="🌍",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -442,7 +802,7 @@ STEPS = [
 st.markdown("""
 <div style="margin-bottom: 20px;">
     <h1>🌍 KHISBA GIS</h1>
-    <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics - Guided Workflow</p>
+    <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation & Climate Analytics - Guided Workflow</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -700,7 +1060,7 @@ with col1:
                 <div class="guide-title">Configure Analysis</div>
             </div>
             <div class="guide-content">
-                Set the time range, satellite source, and vegetation indices for your analysis. Default values are optimized for most use cases.
+                Set the time range, satellite source, vegetation indices, and climate analysis options for your analysis.
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -755,6 +1115,32 @@ with col1:
                 help="Choose vegetation indices to analyze"
             )
             
+            # Climate Analysis Options
+            st.markdown("---")
+            st.subheader("🌤️ Climate Analysis Options")
+            
+            col_climate1, col_climate2 = st.columns(2)
+            with col_climate1:
+                include_climate = st.checkbox(
+                    "Include Climate Analysis",
+                    value=True,
+                    help="Analyze temperature and precipitation data"
+                )
+            
+            with col_climate2:
+                include_daily_climate = st.checkbox(
+                    "Include Daily Climate Analysis",
+                    value=True,
+                    help="Generate daily climate charts"
+                )
+            
+            climate_data_source = st.selectbox(
+                "🌡️ Climate Data Source",
+                options=["ERA5-Land (Recommended)", "MODIS (Alternative)"],
+                index=0,
+                help="Choose climate data source"
+            )
+            
             # Navigation buttons
             col_back, col_next = st.columns(2)
             with col_back:
@@ -769,7 +1155,10 @@ with col1:
                         'end_date': end_date,
                         'collection_choice': collection_choice,
                         'cloud_cover': cloud_cover,
-                        'selected_indices': selected_indices
+                        'selected_indices': selected_indices,
+                        'include_climate': include_climate,
+                        'include_daily_climate': include_daily_climate,
+                        'climate_data_source': 'era5' if climate_data_source == "ERA5-Land (Recommended)" else 'modis'
                     }
                     st.session_state.current_step = 3
                     st.rerun()
@@ -800,6 +1189,28 @@ with col1:
         """, unsafe_allow_html=True)
         
         if st.session_state.selected_area_name:
+            # Get simple climate data for preview
+            if st.session_state.selected_geometry and not st.session_state.simple_climate_data:
+                try:
+                    params = st.session_state.analysis_parameters
+                    simple_climate = get_climate_data_simple(
+                        st.session_state.selected_geometry,
+                        params['start_date'].strftime('%Y-%m-%d'),
+                        params['end_date'].strftime('%Y-%m-%d')
+                    )
+                    if simple_climate:
+                        st.session_state.simple_climate_data = simple_climate
+                except:
+                    pass
+            
+            climate_info = ""
+            if st.session_state.simple_climate_data:
+                climate_info = f"""
+                **Climate Data Preview:**
+                - Mean Temperature: {st.session_state.simple_climate_data.get('mean_temperature', 'N/A')}°C
+                - Total Precipitation: {st.session_state.simple_climate_data.get('total_precipitation', 'N/A')} mm
+                """
+            
             st.info(f"""
             **Selected Area:** {st.session_state.selected_area_name}
             
@@ -808,6 +1219,9 @@ with col1:
             - Satellite: {st.session_state.analysis_parameters['collection_choice']}
             - Cloud Cover: ≤{st.session_state.analysis_parameters['cloud_cover']}%
             - Indices: {', '.join(st.session_state.analysis_parameters['selected_indices'])}
+            - Climate Analysis: {'Yes' if st.session_state.analysis_parameters['include_climate'] else 'No'}
+            - Daily Climate: {'Yes' if st.session_state.analysis_parameters['include_daily_climate'] else 'No'}
+            {climate_info}
             """)
             
             # Navigation buttons
@@ -843,7 +1257,7 @@ with col1:
                 <div class="guide-title">Analysis in Progress</div>
             </div>
             <div class="guide-content">
-                Please wait while we process your vegetation analysis. This may take a few moments depending on the area size and time range.
+                Please wait while we process your vegetation and climate analysis. This may take a few moments depending on the area size and time range.
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -863,7 +1277,8 @@ with col1:
                     "Loading satellite data...",
                     "Processing vegetation indices...",
                     "Calculating statistics...",
-                    "Generating visualizations..."
+                    "Generating climate data...",
+                    "Finalizing visualizations..."
                 ]
                 
                 # Simulate analysis progress
@@ -972,6 +1387,39 @@ with col1:
                             results[index] = {'dates': [], 'values': []}
                     
                     st.session_state.analysis_results = results
+                    
+                    # Run climate analysis if selected
+                    if params['include_climate']:
+                        status_text.text("Processing climate data...")
+                        temp_df, precip_df = get_climate_timeseries(
+                            geometry, 
+                            params['start_date'].strftime('%Y-%m-%d')
+                        )
+                        if temp_df is not None and precip_df is not None:
+                            st.session_state.climate_results = {
+                                'temperature': temp_df,
+                                'precipitation': precip_df
+                            }
+                        else:
+                            st.session_state.climate_results = None
+                    
+                    # Run daily climate analysis if selected
+                    if params['include_daily_climate']:
+                        status_text.text("Processing daily climate data...")
+                        daily_df, source_name = analyze_daily_climate_data(
+                            geometry.geometry(),
+                            params['start_date'].strftime('%Y-%m-%d'),
+                            params['end_date'].strftime('%Y-%m-%d'),
+                            params['climate_data_source']
+                        )
+                        if daily_df is not None:
+                            st.session_state.daily_climate_results = {
+                                'data': daily_df,
+                                'source': source_name
+                            }
+                        else:
+                            st.session_state.daily_climate_results = None
+                    
                     progress_bar.progress(1.0)
                     status_text.text("✅ Analysis Complete!")
                     
@@ -1005,8 +1453,9 @@ with col1:
             with col_new:
                 if st.button("🔄 New Analysis", use_container_width=True):
                     # Reset for new analysis
-                    for key in ['selected_geometry', 'analysis_results', 'selected_coordinates', 
-                               'selected_area_name', 'analysis_parameters']:
+                    for key in ['selected_geometry', 'analysis_results', 'climate_results', 
+                               'daily_climate_results', 'selected_coordinates', 
+                               'selected_area_name', 'analysis_parameters', 'simple_climate_data']:
                         if key in st.session_state:
                             del st.session_state[key]
                     st.session_state.current_step = 1
@@ -1451,7 +1900,7 @@ with col2:
         st.markdown(f"""
         <div style="text-align: center; padding: 100px 0;">
             <div style="font-size: 64px; margin-bottom: 20px; animation: spin 2s linear infinite;">🌱</div>
-            <div style="color: #00ff88; font-size: 18px; margin-bottom: 10px;">Processing Vegetation Data</div>
+            <div style="color: #00ff88; font-size: 18px; margin-bottom: 10px;">Processing Vegetation & Climate Data</div>
             <div style="color: #666666; font-size: 14px;">Analyzing {st.session_state.selected_area_name}</div>
         </div>
         
@@ -1468,7 +1917,7 @@ with col2:
     elif st.session_state.current_step == 5:
         # Show analysis results
         st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">📊 Vegetation Analysis Results</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">📊 Vegetation & Climate Analysis Results</h3></div>', unsafe_allow_html=True)
         
         if st.session_state.analysis_results:
             # Show selected area info
@@ -1490,107 +1939,330 @@ with col2:
             </div>
             """, unsafe_allow_html=True)
             
-            # Create charts for each index
-            for index, data in st.session_state.analysis_results.items():
-                if data['dates'] and data['values']:
-                    try:
-                        # Create Plotly chart
-                        fig = go.Figure()
-                        
-                        fig.add_trace(go.Scatter(
-                            x=data['dates'],
-                            y=data['values'],
-                            mode='lines+markers',
-                            name=index,
-                            line=dict(color='#00ff88', width=3),
-                            marker=dict(size=8, color='#ffffff', line=dict(width=1, color='#00ff88'))
-                        ))
-                        
-                        # Add trend line
-                        if len(data['values']) > 1:
-                            import numpy as np
-                            x_numeric = list(range(len(data['dates'])))
-                            z = np.polyfit(x_numeric, data['values'], 1)
-                            p = np.poly1d(z)
+            # Create tabs for different result types
+            tab1, tab2, tab3 = st.tabs(["🌿 Vegetation Indices", "🌡️ Climate Analysis", "📈 Daily Climate"])
+            
+            with tab1:
+                # Create charts for each vegetation index
+                for index, data in st.session_state.analysis_results.items():
+                    if data['dates'] and data['values']:
+                        try:
+                            # Create Plotly chart
+                            fig = go.Figure()
+                            
                             fig.add_trace(go.Scatter(
                                 x=data['dates'],
-                                y=p(x_numeric),
-                                mode='lines',
-                                name='Trend',
-                                line=dict(color='#ffaa00', width=2, dash='dash')
+                                y=data['values'],
+                                mode='lines+markers',
+                                name=index,
+                                line=dict(color='#00ff88', width=3),
+                                marker=dict(size=8, color='#ffffff', line=dict(width=1, color='#00ff88'))
                             ))
-                        
-                        fig.update_layout(
-                            title=f"<b>{index}</b> - Vegetation Index Over Time",
-                            plot_bgcolor='#0a0a0a',
-                            paper_bgcolor='#0a0a0a',
-                            font=dict(color='#ffffff'),
-                            xaxis=dict(
-                                title="Date",
-                                gridcolor='#222222',
-                                tickcolor='#444444',
-                                showgrid=True
-                            ),
-                            yaxis=dict(
-                                title=f"{index} Value",
-                                gridcolor='#222222',
-                                tickcolor='#444444',
-                                range=[min(data['values'])*0.9 if data['values'] else 0, max(data['values'])*1.1 if data['values'] else 1],
-                                showgrid=True
-                            ),
-                            height=300,
-                            margin=dict(l=50, r=50, t=50, b=50),
-                            hovermode='x unified',
-                            showlegend=True,
-                            legend=dict(
-                                orientation="h",
-                                yanchor="bottom",
-                                y=1.02,
-                                xanchor="right",
-                                x=1
+                            
+                            # Add trend line
+                            if len(data['values']) > 1:
+                                x_numeric = list(range(len(data['dates'])))
+                                z = np.polyfit(x_numeric, data['values'], 1)
+                                p = np.poly1d(z)
+                                fig.add_trace(go.Scatter(
+                                    x=data['dates'],
+                                    y=p(x_numeric),
+                                    mode='lines',
+                                    name='Trend',
+                                    line=dict(color='#ffaa00', width=2, dash='dash')
+                                ))
+                            
+                            fig.update_layout(
+                                title=f"<b>{index}</b> - Vegetation Index Over Time",
+                                plot_bgcolor='#0a0a0a',
+                                paper_bgcolor='#0a0a0a',
+                                font=dict(color='#ffffff'),
+                                xaxis=dict(
+                                    title="Date",
+                                    gridcolor='#222222',
+                                    tickcolor='#444444',
+                                    showgrid=True
+                                ),
+                                yaxis=dict(
+                                    title=f"{index} Value",
+                                    gridcolor='#222222',
+                                    tickcolor='#444444',
+                                    range=[min(data['values'])*0.9 if data['values'] else 0, max(data['values'])*1.1 if data['values'] else 1],
+                                    showgrid=True
+                                ),
+                                height=300,
+                                margin=dict(l=50, r=50, t=50, b=50),
+                                hovermode='x unified',
+                                showlegend=True,
+                                legend=dict(
+                                    orientation="h",
+                                    yanchor="bottom",
+                                    y=1.02,
+                                    xanchor="right",
+                                    x=1
+                                )
                             )
-                        )
-                        
-                        st.plotly_chart(fig, use_container_width=True, key=f"chart_{index}")
-                        
-                    except Exception as e:
-                        st.warning(f"Could not display chart for {index}: {str(e)}")
+                            
+                            st.plotly_chart(fig, use_container_width=True, key=f"chart_{index}")
+                            
+                        except Exception as e:
+                            st.warning(f"Could not display chart for {index}: {str(e)}")
+                
+                # Summary statistics for vegetation indices
+                st.markdown('<div style="padding: 0 20px;"><h4>📈 Vegetation Statistics</h4></div>', unsafe_allow_html=True)
+                
+                summary_data = []
+                for index, data in st.session_state.analysis_results.items():
+                    if data['values']:
+                        values = data['values']
+                        if values:
+                            current = values[-1] if values else 0
+                            previous = values[-2] if len(values) > 1 else current
+                            change = ((current - previous) / previous * 100) if previous != 0 else 0
+                            
+                            summary_data.append({
+                                'Index': index,
+                                'Current': round(current, 4),
+                                'Previous': round(previous, 4),
+                                'Change (%)': f"{change:+.2f}%",
+                                'Min': round(min(values), 4),
+                                'Max': round(max(values), 4),
+                                'Avg': round(sum(values) / len(values), 4)
+                            })
+                
+                if summary_data:
+                    df = pd.DataFrame(summary_data)
+                    st.dataframe(
+                        df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Change (%)": st.column_config.TextColumn(
+                                "Change",
+                                help="Percentage change from previous period",
+                            )
+                        }
+                    )
             
-            # Summary statistics
-            st.markdown('<div style="padding: 0 20px;"><h4>📈 Summary Statistics</h4></div>', unsafe_allow_html=True)
-            
-            summary_data = []
-            for index, data in st.session_state.analysis_results.items():
-                if data['values']:
-                    values = data['values']
-                    if values:
-                        current = values[-1] if values else 0
-                        previous = values[-2] if len(values) > 1 else current
-                        change = ((current - previous) / previous * 100) if previous != 0 else 0
+            with tab2:
+                # Climate analysis results
+                if st.session_state.climate_results:
+                    temp_df = st.session_state.climate_results['temperature']
+                    precip_df = st.session_state.climate_results['precipitation']
+                    
+                    # Create temperature chart
+                    fig_temp = go.Figure()
+                    fig_temp.add_trace(go.Scatter(
+                        x=temp_df.index,
+                        y=temp_df.values,
+                        mode='lines',
+                        name='Temperature',
+                        line=dict(color='red', width=2)
+                    ))
+                    
+                    fig_temp.update_layout(
+                        title="<b>Temperature Time Series (°C)</b>",
+                        plot_bgcolor='#0a0a0a',
+                        paper_bgcolor='#0a0a0a',
+                        font=dict(color='#ffffff'),
+                        xaxis=dict(
+                            title="Date",
+                            gridcolor='#222222',
+                            tickcolor='#444444',
+                            showgrid=True
+                        ),
+                        yaxis=dict(
+                            title="Temperature (°C)",
+                            gridcolor='#222222',
+                            tickcolor='#444444',
+                            showgrid=True
+                        ),
+                        height=300,
+                        margin=dict(l=50, r=50, t=50, b=50),
+                        showlegend=True
+                    )
+                    
+                    st.plotly_chart(fig_temp, use_container_width=True)
+                    
+                    # Create precipitation chart
+                    fig_precip = go.Figure()
+                    fig_precip.add_trace(go.Bar(
+                        x=precip_df.index,
+                        y=precip_df.values,
+                        name='Precipitation',
+                        marker_color='blue'
+                    ))
+                    
+                    fig_precip.update_layout(
+                        title="<b>Precipitation Time Series (mm)</b>",
+                        plot_bgcolor='#0a0a0a',
+                        paper_bgcolor='#0a0a0a',
+                        font=dict(color='#ffffff'),
+                        xaxis=dict(
+                            title="Date",
+                            gridcolor='#222222',
+                            tickcolor='#444444',
+                            showgrid=True
+                        ),
+                        yaxis=dict(
+                            title="Precipitation (mm)",
+                            gridcolor='#222222',
+                            tickcolor='#444444',
+                            showgrid=True
+                        ),
+                        height=300,
+                        margin=dict(l=50, r=50, t=50, b=50),
+                        showlegend=True
+                    )
+                    
+                    st.plotly_chart(fig_precip, use_container_width=True)
+                    
+                    # Climate statistics
+                    st.markdown('<div style="padding: 0 20px;"><h4>🌤️ Climate Statistics</h4></div>', unsafe_allow_html=True)
+                    
+                    if len(temp_df) > 0 and len(precip_df) > 0:
+                        monthly_temp = temp_df.resample('M').mean()
+                        monthly_precip = precip_df.resample('M').sum()
                         
-                        summary_data.append({
-                            'Index': index,
-                            'Current': round(current, 4),
-                            'Previous': round(previous, 4),
-                            'Change (%)': f"{change:+.2f}%",
-                            'Min': round(min(values), 4),
-                            'Max': round(max(values), 4),
-                            'Avg': round(sum(values) / len(values), 4)
-                        })
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.markdown("""
+                            <div style="background: rgba(255, 0, 0, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid red;">
+                                <div style="color: red; font-weight: 600; margin-bottom: 10px;">🌡️ Temperature</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            st.metric("Mean Temperature", f"{monthly_temp.mean():.1f}°C")
+                            st.metric("Max Temperature", f"{monthly_temp.max():.1f}°C")
+                            st.metric("Min Temperature", f"{monthly_temp.min():.1f}°C")
+                            st.metric("Annual Range", f"{monthly_temp.max() - monthly_temp.min():.1f}°C")
+                        
+                        with col2:
+                            st.markdown("""
+                            <div style="background: rgba(0, 0, 255, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid blue;">
+                                <div style="color: blue; font-weight: 600; margin-bottom: 10px;">🌧️ Precipitation</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            st.metric("Total Annual", f"{monthly_precip.sum():.0f} mm")
+                            st.metric("Monthly Average", f"{monthly_precip.mean():.0f} mm")
+                            st.metric("Wettest Month", f"{monthly_precip.max():.0f} mm")
+                            st.metric("Driest Month", f"{monthly_precip.min():.0f} mm")
+                else:
+                    st.info("Climate analysis was not selected or no climate data available.")
             
-            if summary_data:
-                df = pd.DataFrame(summary_data)
-                st.dataframe(
-                    df,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Change (%)": st.column_config.TextColumn(
-                            "Change",
-                            help="Percentage change from previous period",
-                        )
-                    }
-                )
+            with tab3:
+                # Daily climate analysis results
+                if st.session_state.daily_climate_results:
+                    daily_df = st.session_state.daily_climate_results['data']
+                    source_name = st.session_state.daily_climate_results['source']
+                    
+                    st.markdown(f"""
+                    <div style="background: rgba(0, 255, 255, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid cyan;">
+                        <div style="color: cyan; font-weight: 600; margin-bottom: 5px;">📊 Daily Climate Analysis</div>
+                        <div style="color: #cccccc; font-size: 12px;">Data Source: {source_name}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Create daily temperature chart
+                    fig_daily_temp = go.Figure()
+                    fig_daily_temp.add_trace(go.Scatter(
+                        x=daily_df['date'],
+                        y=daily_df['temperature'],
+                        mode='lines+markers',
+                        name='Temperature',
+                        line=dict(color='red', width=2),
+                        marker=dict(size=6, color='red')
+                    ))
+                    
+                    fig_daily_temp.update_layout(
+                        title="<b>Daily Temperature (°C)</b>",
+                        plot_bgcolor='#0a0a0a',
+                        paper_bgcolor='#0a0a0a',
+                        font=dict(color='#ffffff'),
+                        xaxis=dict(
+                            title="Date",
+                            gridcolor='#222222',
+                            tickcolor='#444444',
+                            showgrid=True
+                        ),
+                        yaxis=dict(
+                            title="Temperature (°C)",
+                            gridcolor='#222222',
+                            tickcolor='#444444',
+                            showgrid=True
+                        ),
+                        height=300,
+                        margin=dict(l=50, r=50, t=50, b=50),
+                        showlegend=True
+                    )
+                    
+                    st.plotly_chart(fig_daily_temp, use_container_width=True)
+                    
+                    # Create daily precipitation chart
+                    fig_daily_precip = go.Figure()
+                    fig_daily_precip.add_trace(go.Bar(
+                        x=daily_df['date'],
+                        y=daily_df['precipitation'],
+                        name='Precipitation',
+                        marker_color='blue'
+                    ))
+                    
+                    fig_daily_precip.update_layout(
+                        title="<b>Daily Precipitation (mm)</b>",
+                        plot_bgcolor='#0a0a0a',
+                        paper_bgcolor='#0a0a0a',
+                        font=dict(color='#ffffff'),
+                        xaxis=dict(
+                            title="Date",
+                            gridcolor='#222222',
+                            tickcolor='#444444',
+                            showgrid=True
+                        ),
+                        yaxis=dict(
+                            title="Precipitation (mm)",
+                            gridcolor='#222222',
+                            tickcolor='#444444',
+                            showgrid=True
+                        ),
+                        height=300,
+                        margin=dict(l=50, r=50, t=50, b=50),
+                        showlegend=True
+                    )
+                    
+                    st.plotly_chart(fig_daily_precip, use_container_width=True)
+                    
+                    # Daily climate statistics
+                    if not daily_df.empty:
+                        temp_mean = daily_df['temperature'].mean()
+                        temp_max = daily_df['temperature'].max()
+                        temp_min = daily_df['temperature'].min()
+                        precip_total = daily_df['precipitation'].sum()
+                        precip_mean = daily_df['precipitation'].mean()
+                        precip_max = daily_df['precipitation'].max()
+                        
+                        col3, col4 = st.columns(2)
+                        
+                        with col3:
+                            st.markdown("""
+                            <div style="background: rgba(255, 0, 0, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                                <div style="color: red; font-weight: 600; margin-bottom: 10px;">🌡️ Daily Temperature Stats</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            st.metric("Mean", f"{temp_mean:.1f}°C")
+                            st.metric("Maximum", f"{temp_max:.1f}°C")
+                            st.metric("Minimum", f"{temp_min:.1f}°C")
+                        
+                        with col4:
+                            st.markdown("""
+                            <div style="background: rgba(0, 0, 255, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                                <div style="color: blue; font-weight: 600; margin-bottom: 10px;">🌧️ Daily Precipitation Stats</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            st.metric("Total", f"{precip_total:.1f} mm")
+                            st.metric("Daily Average", f"{precip_mean:.2f} mm")
+                            st.metric("Max Daily", f"{precip_max:.1f} mm")
+                else:
+                    st.info("Daily climate analysis was not selected or no data available.")
         else:
             st.markdown("""
             <div style="text-align: center; padding: 100px 0;">
@@ -1605,13 +2277,13 @@ with col2:
 # Footer
 st.markdown("""
 <div style="text-align: center; color: #666666; font-size: 12px; padding: 30px 0 20px 0; border-top: 1px solid #222222; margin-top: 20px;">
-    <p style="margin: 5px 0;">KHISBA GIS • Interactive 3D Global Vegetation Analytics Platform</p>
-    <p style="margin: 5px 0;">Auto Results Display • Cool 3D Map • Guided Workflow</p>
+    <p style="margin: 5px 0;">KHISBA GIS • Interactive 3D Global Vegetation & Climate Analytics Platform</p>
+    <p style="margin: 5px 0;">Vegetation Indices • Temperature • Precipitation • Guided Workflow</p>
     <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
         <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">3D Mapbox</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Auto Results</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Climate Analysis</span>
         <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Step-by-Step</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">v2.2</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">v3.1</span>
     </div>
 </div>
-""", unsafe_allow_html=True)    
+""", unsafe_allow_html=True)
