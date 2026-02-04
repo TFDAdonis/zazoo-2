@@ -670,12 +670,18 @@ with col1:
                 help="Maximum cloud cover percentage"
             )
             
-            # Vegetation indices
-            available_indices = ['NDVI', 'EVI', 'SAVI', 'NDWI', 'GNDVI', 'MSAVI']
+            # Vegetation indices - SAME AS FIRST CODE
+            available_indices = [
+                'NDVI', 'ARVI', 'ATSAVI', 'DVI', 'EVI', 'EVI2', 'GNDVI', 'MSAVI', 'MSI', 'MTVI', 'MTVI2',
+                'NDTI', 'NDWI', 'OSAVI', 'RDVI', 'RI', 'RVI', 'SAVI', 'TVI', 'TSAVI', 'VARI', 'VIN', 'WDRVI',
+                'GCVI', 'AWEI', 'MNDWI', 'WI', 'ANDWI', 'NDSI', 'nDDI', 'NBR', 'DBSI', 'SI', 'S3', 'BRI',
+                'SSI', 'NDSI_Salinity', 'SRPI', 'MCARI', 'NDCI', 'PSSRb1', 'SIPI', 'PSRI', 'Chl_red_edge', 'MARI', 'NDMI'
+            ]
+            
             selected_indices = st.multiselect(
                 "🌿 Vegetation Indices",
                 options=available_indices,
-                default=['NDVI', 'EVI'],
+                default=['NDVI', 'EVI', 'SAVI', 'NDWI'],
                 help="Choose vegetation indices to analyze"
             )
             
