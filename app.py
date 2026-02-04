@@ -3,65 +3,23 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime, timedelta
+import ipywidgets as widgets
+from IPython.display import display, clear_output
 import warnings
-import streamlit as st
 import seaborn as sns
 from matplotlib.patches import FancyBboxPatch
-import traceback
-import sys
 
 warnings.filterwarnings('ignore')
 
-# Set page configuration
-st.set_page_config(
-    page_title="Comprehensive Agricultural Analyzer",
-    page_icon="🌱",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Custom CSS for better styling
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #2E8B57;
-        text-align: center;
-        margin-bottom: 1rem;
-    }
-    .sub-header {
-        font-size: 1.5rem;
-        color: #3CB371;
-        margin-top: 2rem;
-        margin-bottom: 1rem;
-    }
-    .success-box {
-        background-color: #DFF2BF;
-        border-left: 6px solid #4F8A10;
-        padding: 10px;
-        margin: 10px 0;
-    }
-    .warning-box {
-        background-color: #FEEFB3;
-        border-left: 6px solid #9F6000;
-        padding: 10px;
-        margin: 10px 0;
-    }
-    .info-box {
-        background-color: #BDE5F8;
-        border-left: 6px solid #00529B;
-        padding: 10px;
-        margin: 10px 0;
-    }
-    .metric-card {
-        background-color: #f8f9fa;
-        border-radius: 10px;
-        padding: 15px;
-        margin: 10px 0;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    }
-</style>
-""", unsafe_allow_html=True)
+# Initialize Earth Engine
+try:
+    ee.Initialize()
+    print("✅ Earth Engine initialized successfully!")
+except Exception as e:
+    print(f"❌ Earth Engine initialization failed: {e}")
+    print("🔐 Please authenticate Earth Engine first:")
+    print("   Run: ee.Authenticate()")
+    print("   Then: ee.Initialize()")
 
 # ============ COMPREHENSIVE CROP SUITABILITY CONFIGURATION ============
 CROP_REQUIREMENTS = {
@@ -849,7 +807,7 @@ CROP_REQUIREMENTS = {
             'Khamedj - fruit rot in humid conditions',
             'Black scorch - leaf necrosis and trunk lesions',
             'Diplodia disease - bud rot and trunk decay',
-            'Graphiola leaf stop - black spots on leaves'
+            'Graphiola leaf spot - black spots on leaves'
         ],
         'pests': ['Red palm weevil', 'Scale insects', 'Birds', 'Bats'],
         'fertilizer': 'NPK 80-40-60 kg/ha + micronutrients',
@@ -1259,8 +1217,8 @@ class ComprehensiveAgriculturalAnalyzer:
     def create_crop_suitability_dashboard(self, analysis_results, location_name):
         """Create comprehensive crop suitability dashboard"""
 
-        st.markdown(f"### 🌱 CROP SUITABILITY DASHBOARD - {location_name.upper()}")
-        st.markdown("---")
+        print(f"\n🌱 CROP SUITABILITY DASHBOARD - {location_name.upper()}")
+        print("=" * 70)
 
         # Sort crops by suitability score
         sorted_crops = sorted(analysis_results.items(),
@@ -1268,38 +1226,28 @@ class ComprehensiveAgriculturalAnalyzer:
                             reverse=True)
 
         # Display top crops
-        st.markdown("#### 🏆 TOP RECOMMENDED CROPS:")
-        
+        print("\n🏆 TOP RECOMMENDED CROPS:")
+        print("-" * 50)
+
         for crop_name, results in sorted_crops[:5]:
             analysis = results['suitability_analysis']
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric(f"**{crop_name.upper()}**", 
-                         f"{analysis['final_score']:.3f}",
-                         f"Disease Risk: {analysis['risk_level']}")
-            
+            print(f"\n📊 {crop_name.upper()}")
+            print(f"   Overall Suitability: {analysis['final_score']:.3f}")
+            print(f"   Disease Risk: {analysis['risk_level']} ({analysis['disease_risk']:.3f})")
+
             # Component scores
             comp = analysis['component_scores']
-            with col2:
-                st.markdown(f"**Moisture:** {comp['moisture']:.3f}")
-                st.markdown(f"**Texture:** {comp['texture']:.3f}")
-            
-            with col3:
-                st.markdown(f"**Organic Matter:** {comp['organic_matter']:.3f}")
-                st.markdown(f"**Temperature:** {comp['temperature']:.3f}")
-            
-            with col4:
-                st.progress(analysis['final_score'])
-            
-            st.markdown("---")
+            print(f"   Component Scores - Moisture: {comp['moisture']:.3f}, "
+                  f"OM: {comp['organic_matter']:.3f}, "
+                  f"Texture: {comp['texture']:.3f}, "
+                  f"Temp: {comp['temperature']:.3f}")
 
         # Display detailed analysis for each crop
-        st.markdown("#### 📈 DETAILED CROP ANALYSIS:")
-        
+        print(f"\n📈 DETAILED CROP ANALYSIS:")
+        print("-" * 50)
+
         for crop_name, results in sorted_crops:
-            with st.expander(f"🌾 {crop_name.upper()}"):
-                self.display_crop_analysis(crop_name, results, location_name)
+            self.display_crop_analysis(crop_name, results, location_name)
 
     def display_crop_analysis(self, crop_name, results, location_name):
         """Display detailed analysis for a single crop"""
@@ -1307,68 +1255,47 @@ class ComprehensiveAgriculturalAnalyzer:
         analysis = results['suitability_analysis']
         crop_req = CROP_REQUIREMENTS[crop_name]
 
-        # Create columns for metrics
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Final Suitability Score", f"{analysis['final_score']:.3f}")
-        
-        with col2:
-            st.metric("Disease Risk Level", analysis['risk_level'])
-        
-        with col3:
-            # Suitability visualization
-            score = analysis['final_score']
-            if score >= 0.8:
-                rating = "★★★★★ EXCELLENT"
-                color = "green"
-            elif score >= 0.6:
-                rating = "★★★★☆ GOOD"
-                color = "lightgreen"
-            elif score >= 0.4:
-                rating = "★★★☆☆ MODERATE"
-                color = "yellow"
-            elif score >= 0.2:
-                rating = "★★☆☆☆ POOR"
-                color = "orange"
-            else:
-                rating = "★☆☆☆☆ VERY POOR"
-                color = "red"
-            
-            st.markdown(f"<h4 style='color:{color}'>{rating}</h4>", unsafe_allow_html=True)
-        
-        with col4:
-            st.metric("Maturity Days", crop_req['maturity_days'])
-            st.metric("Water Needs", crop_req['water_needs'])
+        print(f"\n🌾 {crop_name.upper()} ANALYSIS")
+        print(f"   Final Suitability Score: {analysis['final_score']:.3f}")
+        print(f"   Disease Risk Level: {analysis['risk_level']}")
+
+        # Suitability visualization
+        score = analysis['final_score']
+        if score >= 0.8:
+            rating = "★★★★★ EXCELLENT"
+        elif score >= 0.6:
+            rating = "★★★★☆ GOOD"
+        elif score >= 0.4:
+            rating = "★★★☆☆ MODERATE"
+        elif score >= 0.2:
+            rating = "★★☆☆☆ POOR"
+        else:
+            rating = "★☆☆☆☆ VERY POOR"
+
+        print(f"   Suitability Rating: {rating}")
 
         # Management recommendations
-        st.markdown("##### 🛠️ MANAGEMENT STRATEGIES:")
+        print(f"\n   🛠️ MANAGEMENT STRATEGIES:")
         strategies = results['management_strategies']
         for i, strategy in enumerate(strategies[:5], 1):
-            st.markdown(f"{i}. {strategy}")
+            print(f"      {i}. {strategy}")
 
         # Disease information
         if analysis['disease_risk'] >= 0.5:
-            st.markdown("##### 🦠 DISEASE ALERTS:")
+            print(f"\n   🦠 DISEASE ALERTS:")
             for disease in crop_req['likely_diseases'][:3]:
-                st.markdown(f"• {disease}")
+                print(f"      • {disease}")
 
         # Additional crop info
-        st.markdown("##### ℹ️ CROP SPECIFICS:")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown(f"**Fertilizer:** {crop_req.get('fertilizer', 'Not specified')}")
-        
-        with col2:
-            st.markdown(f"**Spacing:** {crop_req.get('spacing', 'Not specified')}")
-        
-        with col3:
-            st.markdown(f"**Notes:** {crop_req['notes']}")
+        print(f"\n   ℹ️ CROP SPECIFICS:")
+        print(f"      Maturity: {crop_req['maturity_days']} days")
+        print(f"      Water Needs: {crop_req['water_needs']}")
+        print(f"      Fertilizer: {crop_req.get('fertilizer', 'Not specified')}")
+        print(f"      Spacing: {crop_req.get('spacing', 'Not specified')}")
 
     def create_suitability_comparison_chart(self, analysis_results, location_name):
         """Create visual comparison chart of crop suitability"""
-        
+
         crops = list(analysis_results.keys())
         suitability_scores = [analysis_results[crop]['suitability_analysis']['final_score'] for crop in crops]
         disease_risks = [analysis_results[crop]['suitability_analysis']['disease_risk'] for crop in crops]
@@ -1398,8 +1325,7 @@ class ComprehensiveAgriculturalAnalyzer:
                     f'{risk:.3f}', ha='left', va='center', fontsize=8)
 
         plt.tight_layout()
-        st.pyplot(fig)
-        plt.close()
+        plt.show()
 
     def create_disease_risk_heatmap(self, analysis_results, location_name):
         """Create a heatmap visualization of disease risk vs suitability"""
@@ -1451,22 +1377,17 @@ class ComprehensiveAgriculturalAnalyzer:
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="red", alpha=0.2))
 
         plt.tight_layout()
-        st.pyplot(fig)
-        plt.close()
+        plt.show()
 
     def analyze_all_crops(self, moisture_value, som_value, texture_value, temp_value, location_name):
         """Analyze all crops with enhanced suitability scoring"""
 
-        st.info(f"🌱 ANALYZING CROP SUITABILITY FOR {location_name}")
-        
+        print(f"🌱 ANALYZING CROP SUITABILITY FOR {location_name}")
+        print("=" * 60)
+
         analysis_results = {}
 
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        for idx, (crop_name, crop_req) in enumerate(CROP_REQUIREMENTS.items()):
-            status_text.text(f"Analyzing {crop_name}...")
-            
+        for crop_name, crop_req in CROP_REQUIREMENTS.items():
             # Calculate suitability with disease risk
             suitability_analysis = self.calculate_crop_suitability_score(
                 moisture_value, som_value, texture_value, temp_value, crop_req)
@@ -1480,12 +1401,6 @@ class ComprehensiveAgriculturalAnalyzer:
                 'management_strategies': management_strategies,
                 'crop_requirements': crop_req
             }
-            
-            progress_bar.progress((idx + 1) / len(CROP_REQUIREMENTS))
-        
-        status_text.text("Analysis complete!")
-        progress_bar.empty()
-        status_text.empty()
 
         # Create comprehensive dashboard
         self.create_crop_suitability_dashboard(analysis_results, location_name)
@@ -1559,8 +1474,7 @@ class ComprehensiveAgriculturalAnalyzer:
         ax.legend()
 
         plt.tight_layout()
-        st.pyplot(fig)
-        plt.close()
+        plt.show()
 
     def create_texture_composition_chart(self, texture_value, location_name):
         """Create bar chart showing sand-silt-clay percentages"""
@@ -1620,8 +1534,7 @@ class ComprehensiveAgriculturalAnalyzer:
             ax.set_title('Soil Texture Composition', fontsize=14, fontweight='bold')
 
         plt.tight_layout()
-        st.pyplot(fig)
-        plt.close()
+        plt.show()
 
     def create_soil_texture_chart(self, texture_value, location_name):
         """Create soil texture classification chart"""
@@ -1690,12 +1603,11 @@ class ComprehensiveAgriculturalAnalyzer:
             ax2.set_title('Soil Properties', fontsize=14, fontweight='bold')
 
         plt.tight_layout()
-        st.pyplot(fig)
-        plt.close()
+        plt.show()
 
     def create_som_spatial_chart(self, geometry, location_name):
         """Create soil organic matter spatial distribution chart"""
-        st.info("📊 Generating SOM spatial distribution...")
+        print("📊 Generating SOM spatial distribution...")
 
         try:
             # Get SOM data for the region
@@ -1820,13 +1732,12 @@ class ComprehensiveAgriculturalAnalyzer:
                         f'{imp:.0f}%', ha='center', va='bottom', fontweight='bold')
 
             plt.tight_layout()
-            st.pyplot(fig)
-            plt.close()
+            plt.show()
 
             return som_percent
 
         except Exception as e:
-            st.error(f"❌ Error creating SOM spatial chart: {e}")
+            print(f"❌ Error creating SOM spatial chart: {e}")
 
             # Fallback visualization
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
@@ -1841,14 +1752,13 @@ class ComprehensiveAgriculturalAnalyzer:
             ax2.set_title('Recommendations', fontsize=14, fontweight='bold')
 
             plt.tight_layout()
-            st.pyplot(fig)
-            plt.close()
+            plt.show()
 
             return 0.41
 
     def create_temporal_som_analysis(self, geometry, location_name):
         """Create temporal SOM pattern analysis"""
-        st.info("📈 Generating temporal SOM patterns...")
+        print("📈 Generating temporal SOM patterns...")
 
         try:
             # Simulate temporal SOM data
@@ -1915,42 +1825,40 @@ class ComprehensiveAgriculturalAnalyzer:
                             f'{height:.1f}', ha='center', va='bottom', fontsize=9)
 
             plt.tight_layout()
-            st.pyplot(fig)
-            plt.close()
+            plt.show()
 
         except Exception as e:
-            st.error(f"❌ Error creating temporal SOM analysis: {e}")
+            print(f"❌ Error creating temporal SOM analysis: {e}")
 
             fig, ax = plt.subplots(figsize=(10, 6))
             ax.text(0.5, 0.5, 'Temporal SOM Analysis Not Available',
                     ha='center', va='center', transform=ax.transAxes, fontsize=14)
             ax.set_title('Temporal SOM Analysis', fontsize=16, fontweight='bold')
-            st.pyplot(fig)
-            plt.close()
+            plt.show()
 
     def create_soil_analysis_dashboard(self, geometry, location_name, texture_value, som_value):
         """Create comprehensive soil analysis dashboard"""
-        st.markdown(f"### 🌱 SOIL ANALYSIS DASHBOARD FOR {location_name}")
-        st.markdown("---")
+        print(f"\n🌱 CREATING SOIL ANALYSIS DASHBOARD FOR {location_name}")
+        print("=" * 60)
 
         # 1. Soil Texture Analysis
-        st.markdown("#### 🏗️ 1. SOIL TEXTURE ANALYSIS")
+        print("\n🏗️ 1. SOIL TEXTURE ANALYSIS")
         self.create_soil_texture_chart(texture_value, location_name)
 
         # Soil Texture Triangle
-        st.markdown("#### 📐 1b. SOIL TEXTURE TRIANGLE")
+        print("\n📐 1b. SOIL TEXTURE TRIANGLE")
         self.create_soil_texture_triangle(texture_value, location_name)
 
         # Texture Composition Chart
-        st.markdown("#### 📊 1c. SOIL COMPOSITION BREAKDOWN")
+        print("\n📊 1c. SOIL COMPOSITION BREAKDOWN")
         self.create_texture_composition_chart(texture_value, location_name)
 
         # 2. SOM Spatial Distribution
-        st.markdown("#### 📊 2. SOIL ORGANIC MATTER SPATIAL ANALYSIS")
+        print("\n📊 2. SOIL ORGANIC MATTER SPATIAL ANALYSIS")
         measured_som = self.create_som_spatial_chart(geometry, location_name)
 
         # 3. Temporal SOM Patterns
-        st.markdown("#### 📈 3. TEMPORAL SOM PATTERN ANALYSIS")
+        print("\n📈 3. TEMPORAL SOM PATTERN ANALYSIS")
         self.create_temporal_som_analysis(geometry, location_name)
 
         return measured_som
@@ -2048,7 +1956,7 @@ class ComprehensiveAgriculturalAnalyzer:
 
     def get_accurate_climate_classification(self, geometry, location_name, classification_type='Simplified Temperature-Precipitation'):
         """Get climate classification using JavaScript logic"""
-        st.info(f"🌤️ Getting accurate climate classification for {location_name}...")
+        print(f"🌤️ Getting accurate climate classification for {location_name}...")
 
         try:
             # Use WorldClim like GEE JS
@@ -2073,6 +1981,8 @@ class ComprehensiveAgriculturalAnalyzer:
             mean_precip = stats.get('bio12', 800)  # Default to Annaba-like precipitation
             mean_aridity = stats.get('bio12', 0) / (stats.get('bio01', 0) + 33) if (stats.get('bio01', 0) + 33) != 0 else 1.5
 
+            print(f"   Raw stats - Temp: {mean_temp:.1f}°C, Precip: {mean_precip:.0f}mm, Aridity: {mean_aridity:.3f}")
+
             # Apply EXACT JavaScript classification logic
             if classification_type == 'Simplified Temperature-Precipitation':
                 climate_class = self.classify_climate_simplified(mean_temp, mean_precip, mean_aridity)
@@ -2096,11 +2006,11 @@ class ComprehensiveAgriculturalAnalyzer:
                 'note': 'Using exact JavaScript classification logic'
             }
 
-            st.success(f"✅ Climate classification: {climate_zone} (Class {climate_class})")
+            print(f"✅ Climate classification: {climate_zone} (Class {climate_class})")
             return climate_analysis
 
         except Exception as e:
-            st.error(f"❌ Climate classification failed: {e}")
+            print(f"❌ Climate classification failed: {e}")
             # Return GEE-compatible results for Annaba based on JavaScript output
             return {
                 'climate_zone': "Tropical Dry (Temp > 18°C, Precip 500-1000mm)",
@@ -2174,8 +2084,7 @@ class ComprehensiveAgriculturalAnalyzer:
                 verticalalignment='top')
 
         plt.tight_layout()
-        st.pyplot(fig)
-        plt.close()
+        plt.show()
 
     # ============ GROUNDWATER ANALYSIS METHODS ============
     def get_precipitation(self, geometry, start_date, end_date):
@@ -2197,7 +2106,7 @@ class ComprehensiveAgriculturalAnalyzer:
             annual_precip = (precip_value or 1.0) * 365
             return annual_precip
         except Exception as e:
-            st.error(f"Error getting precipitation: {e}")
+            print(f"Error getting precipitation: {e}")
             return 350
 
     def get_soil_properties(self, geometry):
@@ -2248,7 +2157,7 @@ class ComprehensiveAgriculturalAnalyzer:
                 'soil_type': soil_type
             }
         except Exception as e:
-            st.error(f"Error getting soil properties: {e}")
+            print(f"Error getting soil properties: {e}")
             return {
                 'clay_percent': 25,
                 'sand_percent': 40,
@@ -2309,7 +2218,7 @@ class ComprehensiveAgriculturalAnalyzer:
 
             return slope_val, twi_val
         except Exception as e:
-            st.error(f"Error getting topography: {e}")
+            print(f"Error getting topography: {e}")
             return 5.0, 8.0
 
     def calculate_water_balance(self, precipitation, soil_type, slope):
@@ -2381,7 +2290,7 @@ class ComprehensiveAgriculturalAnalyzer:
 
     def analyze_groundwater_potential(self, geometry, name):
         """Comprehensive groundwater analysis for a location with better error handling"""
-        st.info(f"💧 Analyzing Groundwater Potential for {name}...")
+        print(f"💧 Analyzing Groundwater Potential for {name}...")
 
         try:
             # Get precipitation with fallback
@@ -2433,14 +2342,14 @@ class ComprehensiveAgriculturalAnalyzer:
                 'components': components
             }
 
-            st.success(f"✅ {name}: GW Score = {result['score']:.3f} ({category}) | "
-                      f"Soil = {soil_props['soil_type']} | "
-                      f"Recharge = {result['recharge_mm']:.0f}mm | "
-                      f"Sand = {result['sand_percent']:.1f}%")
+            print(f"✅ {name}: GW Score = {result['score']:.3f} ({category}) | "
+                  f"Soil = {soil_props['soil_type']} | "
+                  f"Recharge = {result['recharge_mm']:.0f}mm | "
+                  f"Sand = {result['sand_percent']:.1f}%")
             return result
 
         except Exception as e:
-            st.error(f"❌ Error analyzing groundwater for {name}: {str(e)}")
+            print(f"❌ Error analyzing groundwater for {name}: {str(e)}")
             # Return a fallback result to prevent complete failure
             return {
                 'name': name,
@@ -2464,7 +2373,7 @@ class ComprehensiveAgriculturalAnalyzer:
     def create_groundwater_charts(self, final_results, location_name):
         """Create comprehensive groundwater visualization dashboard"""
         if not final_results:
-            st.warning("No groundwater results to visualize")
+            print("No groundwater results to visualize")
             return
 
         df = pd.DataFrame(final_results)
@@ -2572,8 +2481,7 @@ class ComprehensiveAgriculturalAnalyzer:
                     soil_type, ha='center', va='bottom', fontsize=10, fontweight='bold', rotation=45)
 
         plt.tight_layout()
-        st.pyplot(fig1)
-        plt.close()
+        plt.show()
 
         # FIGURE 2: Component Analysis and Topography
         fig2, ((ax5, ax6), (ax7, ax8)) = plt.subplots(2, 2, figsize=(20, 15))
@@ -2686,34 +2594,23 @@ class ComprehensiveAgriculturalAnalyzer:
         cbar.set_label('GW Potential Score', fontsize=12, fontweight='bold')
 
         plt.tight_layout()
-        st.pyplot(fig2)
-        plt.close()
+        plt.show()
 
         # Print comprehensive summary
-        st.markdown("---")
-        st.markdown("### 📈 GROUNDWATER ANALYSIS SUMMARY")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Average GW Score", f"{df['score'].mean():.3f}", f"± {df['score'].std():.3f}")
-            st.metric("Score Range", f"{df['score'].min():.3f} - {df['score'].max():.3f}")
-        
-        with col2:
-            st.metric("Average Precipitation", f"{df['precipitation_mm'].mean():.0f} mm/year")
-            st.metric("Average Recharge", f"{df['recharge_mm'].mean():.0f} mm/year")
-        
-        with col3:
-            recharge_efficiency = (df['recharge_mm'].sum() / df['precipitation_mm'].sum() * 100) if df['precipitation_mm'].sum() > 0 else 0
-            st.metric("Recharge Efficiency", f"{recharge_efficiency:.1f}%")
-            st.metric("Average Conductivity", f"{df['conductivity'].mean():.2f} cm/day")
-        
-        with col4:
-            st.metric("Avg Slope", f"{df['slope'].mean():.1f}°")
-            st.metric("Avg TWI", f"{df['twi'].mean():.2f}")
-        
-        st.markdown(f"**Soil Types:** {', '.join(df['soil_type'].unique())}")
-        st.markdown(f"**Categories:** {', '.join(df['category'].unique())}")
+        print("\n" + "="*80)
+        print("📈 GROUNDWATER ANALYSIS SUMMARY")
+        print("="*80)
+
+        print(f"• Location Analyzed: {location_name}")
+        print(f"• Average GW Score: {df['score'].mean():.3f} ± {df['score'].std():.3f}")
+        print(f"• Score Range: {df['score'].min():.3f} - {df['score'].max():.3f}")
+        print(f"• Categories: {', '.join(df['category'].unique())}")
+        print(f"• Average Precipitation: {df['precipitation_mm'].mean():.0f} mm/year")
+        print(f"• Average Recharge: {df['recharge_mm'].mean():.0f} mm/year")
+        print(f"• Recharge Efficiency: {(df['recharge_mm'].sum() / df['precipitation_mm'].sum() * 100):.1f}%")
+        print(f"• Soil Types: {', '.join(df['soil_type'].unique())}")
+        print(f"• Average Conductivity: {df['conductivity'].mean():.2f} cm/day")
+        print(f"• Topography - Avg Slope: {df['slope'].mean():.1f}°, Avg TWI: {df['twi'].mean():.2f}")
 
     # ============ EARTH ENGINE DATA METHODS ============
     def get_administrative_regions(self, country, region='Select Region'):
@@ -2732,7 +2629,7 @@ class ComprehensiveAgriculturalAnalyzer:
                 return sorted(list(set(municipalities))) if municipalities else []
 
         except Exception as e:
-            st.error(f"❌ Error getting administrative regions: {e}")
+            print(f"❌ Error getting administrative regions: {e}")
             return []
 
     def get_geometry_from_selection(self, country, region, municipality):
@@ -2745,7 +2642,7 @@ class ComprehensiveAgriculturalAnalyzer:
                                .first()
                 geometry = feature.geometry()
                 location_name = f"{municipality}, {region}, {country}"
-                st.success(f"📍 Selected: {location_name}")
+                print(f"📍 Selected: {location_name}")
                 return geometry, location_name
 
             elif region != 'Select Region':
@@ -2754,27 +2651,27 @@ class ComprehensiveAgriculturalAnalyzer:
                                .first()
                 geometry = feature.geometry()
                 location_name = f"{region}, {country}"
-                st.success(f"📍 Selected: {location_name}")
+                print(f"📍 Selected: {location_name}")
                 return geometry, location_name
 
             elif country != 'Select Country':
                 feature = FAO_GAUL.filter(ee.Filter.eq('ADM0_NAME', country)).first()
                 geometry = feature.geometry()
                 location_name = f"{country}"
-                st.success(f"📍 Selected: {location_name}")
+                print(f"📍 Selected: {location_name}")
                 return geometry, location_name
 
             else:
-                st.error("❌ Please select a country")
+                print("❌ Please select a country")
                 return None, None
 
         except Exception as e:
-            st.error(f"❌ Geometry error: {e}")
+            print(f"❌ Geometry error: {e}")
             return None, None
 
     def get_area_representative_values(self, geometry, area_name):
         """Get representative soil values for crop suitability analysis"""
-        st.info(f'📊 Calculating representative soil values for {area_name}...')
+        print('📊 Calculating representative soil values for ' + area_name + '...')
 
         # Get climate data for moisture estimation
         climate_data = self.get_daily_climate_data('2024-01-01', '2024-12-31', geometry)
@@ -2809,22 +2706,23 @@ class ComprehensiveAgriculturalAnalyzer:
         # Get temperature (use default or from climate data)
         temp_val = 22.0  # Default temperature
 
-        # Display values
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Moisture", f"{self.format_number(moisture_val, 3)} m³/m³")
-        with col2:
-            st.metric("SOM", f"{self.format_number(som_val, 2)}%")
-        with col3:
-            texture_name = 'Unknown'
-            if texture_val and 1 <= texture_val <= 12:
-                texture_name = SOIL_TEXTURE_CLASSES[int(round(texture_val))]
-            st.metric("Texture", texture_name)
-        with col4:
-            st.metric("Temperature", f"{self.format_number(temp_val, 1)}°C")
+        print('✅ Representative values obtained:')
+        print('   Moisture: ' + self.format_number(moisture_val, 3) + ' m³/m³')
+        print('   SOM: ' + self.format_number(som_val, 2) + '%')
+
+        texture_name = 'Unknown'
+        display_texture_value = 'N/A'
+        if texture_val is not None:
+            rounded_texture = int(round(texture_val))
+            display_texture_value = str(rounded_texture)
+            if 1 <= rounded_texture <= 12:
+                texture_name = SOIL_TEXTURE_CLASSES[rounded_texture]
+        print('   Texture: ' + texture_name + ' (Class ' + display_texture_value + ')')
+        print('   Temperature: ' + self.format_number(temp_val, 1) + '°C')
+        print('')
 
         # Create soil analysis dashboard
-        measured_som = self.create_soil_analysis_dashboard(geometry, area_name, texture_val, som_val)
+        self.create_soil_analysis_dashboard(geometry, area_name, texture_val, som_val)
 
         return moisture_val, som_val, texture_val, temp_val
 
@@ -2891,6 +2789,8 @@ class ComprehensiveAgriculturalAnalyzer:
     def get_daily_climate_data(self, start_date, end_date, geometry):
         """Get daily climate data matching GEE JavaScript implementation"""
         try:
+            print("🛰️ Collecting daily climate data (GEE compatible)...")
+
             modis_lst = ee.ImageCollection('MODIS/061/MOD11A1') \
                 .filterDate(start_date, end_date) \
                 .filterBounds(geometry) \
@@ -2927,10 +2827,13 @@ class ComprehensiveAgriculturalAnalyzer:
             return modis_lst.map(process_daily_data)
 
         except Exception as e:
+            print(f"❌ Daily climate data extraction failed: {e}")
             return self._create_daily_synthetic_data(start_date, end_date, geometry)
 
     def _create_daily_synthetic_data(self, start_date, end_date, geometry):
         """Create synthetic daily data matching GEE patterns"""
+        print("📊 Creating daily synthetic data matching GEE patterns...")
+
         start = ee.Date(start_date)
         end = ee.Date(end_date)
         days = ee.List.sequence(0, end.difference(start, 'day').subtract(1))
@@ -3020,20 +2923,20 @@ class ComprehensiveAgriculturalAnalyzer:
                                  analysis_type='crop_suitability'):
         """Run comprehensive agricultural analysis for selected region"""
 
-        st.markdown(f"### 🎯 COMPREHENSIVE AGRICULTURAL ANALYSIS: {country}")
+        print(f"🎯 COMPREHENSIVE AGRICULTURAL ANALYSIS: {country}")
         if region != 'Select Region':
-            st.markdown(f"**📍 Region/State:** {region}")
+            print(f"📍 Region/State: {region}")
         if municipality != 'Select Municipality':
-            st.markdown(f"**🏙️ Municipality/City:** {municipality}")
-        st.markdown(f"**🌤️ Climate Classification:** {classification_type}")
-        st.markdown(f"**📊 Analysis Type:** {analysis_type}")
-        st.markdown("---")
+            print(f"🏙️ Municipality/City: {municipality}")
+        print(f"🌤️ Climate Classification: {classification_type}")
+        print(f"📊 Analysis Type: {analysis_type}")
+        print()
 
         # Get geometry for selected location
         geometry, location_name = self.get_geometry_from_selection(country, region, municipality)
 
         if not geometry:
-            st.error("❌ Could not get geometry for the selected location")
+            print("❌ Could not get geometry for the selected location")
             return None
 
         results = {
@@ -3045,8 +2948,9 @@ class ComprehensiveAgriculturalAnalyzer:
 
         if analysis_type == 'groundwater':
             # Run groundwater analysis
-            st.markdown("### 💧 GROUNDWATER POTENTIAL ANALYSIS")
-            st.markdown("---")
+            print("\n" + "="*50)
+            print("💧 GROUNDWATER POTENTIAL ANALYSIS")
+            print("="*50)
 
             gw_results = self.analyze_groundwater_potential(geometry, location_name)
             results['groundwater_analysis'] = gw_results
@@ -3057,8 +2961,9 @@ class ComprehensiveAgriculturalAnalyzer:
         else:
             # Run comprehensive crop suitability analysis (original functionality)
             # 1. Climate Classification
-            st.markdown("### 🌤️ 1. CLIMATE CLASSIFICATION ANALYSIS")
-            st.markdown("---")
+            print("\n" + "="*50)
+            print("🌤️ 1. CLIMATE CLASSIFICATION ANALYSIS")
+            print("="*50)
             results['climate_analysis'] = self.get_accurate_climate_classification(
                 geometry, location_name, classification_type)
 
@@ -3066,8 +2971,9 @@ class ComprehensiveAgriculturalAnalyzer:
             self.create_climate_classification_chart(classification_type, location_name, results['climate_analysis'])
 
             # 2. Soil Analysis
-            st.markdown("### 🌱 2. SOIL ANALYSIS")
-            st.markdown("---")
+            print("\n" + "="*50)
+            print("🌱 2. SOIL ANALYSIS")
+            print("="*50)
             moisture_val, som_val, texture_val, temp_val = self.get_area_representative_values(geometry, location_name)
 
             results['soil_parameters'] = {
@@ -3078,36 +2984,32 @@ class ComprehensiveAgriculturalAnalyzer:
             }
 
             # 3. Crop Suitability Analysis with Disease Risk
-            st.markdown("### 🌾 3. CROP SUITABILITY & DISEASE RISK ANALYSIS")
-            st.markdown("---")
+            print("\n" + "="*50)
+            print("🌾 3. CROP SUITABILITY & DISEASE RISK ANALYSIS")
+            print("="*50)
             crop_results = self.analyze_all_crops(moisture_val, som_val, texture_val, temp_val, location_name)
             results['crop_analysis'] = crop_results
 
-        st.success(f"### ✅ COMPREHENSIVE ANALYSIS COMPLETED FOR {location_name}")
-        st.markdown("---")
-        st.markdown("### 📊 Analysis Includes:")
-        
+        print(f"\n✅ COMPREHENSIVE ANALYSIS COMPLETED FOR {location_name}")
+        print("="*70)
+        print("📊 Analysis Includes:")
         if analysis_type == 'groundwater':
-            st.markdown("""
-            - Groundwater potential assessment
-            - Water balance components analysis
-            - Soil infiltration capacity
-            - Topographic influence on groundwater
-            - Comprehensive groundwater potential scoring
-            """)
+            print("   • Groundwater potential assessment")
+            print("   • Water balance components analysis")
+            print("   • Soil infiltration capacity")
+            print("   • Topographic influence on groundwater")
+            print("   • Comprehensive groundwater potential scoring")
         else:
-            st.markdown("""
-            - Climate classification and visualization
-            - Soil texture and organic matter analysis
-            - Crop suitability scoring for 32 crops
-            - Disease risk assessment and management strategies
-            - Customized recommendations for selected region
-            """)
+            print("   • Climate classification and visualization")
+            print("   • Soil texture and organic matter analysis")
+            print("   • Crop suitability scoring for 32 crops")
+            print("   • Disease risk assessment and management strategies")
+            print("   • Customized recommendations for selected region")
 
         return results
 
 # =============================================================================
-# STREAMLIT INTERFACE FUNCTIONS
+# INTERFACE FUNCTIONS
 # =============================================================================
 
 def get_country_list():
@@ -3116,7 +3018,7 @@ def get_country_list():
         countries = FAO_GAUL.aggregate_array('ADM0_NAME').distinct().sort().getInfo()
         return ['Select Country'] + countries
     except Exception as e:
-        st.error(f"Error getting country list: {e}")
+        print(f"Error getting country list: {e}")
         return ['Select Country', 'Algeria', 'Nigeria', 'Kenya', 'South Africa']
 
 def get_region_list(country):
@@ -3128,7 +3030,7 @@ def get_region_list(country):
                                 .aggregate_array('ADM1_NAME').distinct().sort().getInfo()
         return ['Select Region'] + regions
     except Exception as e:
-        st.error(f"Error getting regions for {country}: {e}")
+        print(f"Error getting regions for {country}: {e}")
         return ['Select Region']
 
 def get_municipality_list(country, region):
@@ -3141,171 +3043,162 @@ def get_municipality_list(country, region):
                                        .aggregate_array('ADM2_NAME').distinct().sort().getInfo()
         return ['Select Municipality'] + municipalities
     except Exception as e:
-        st.error(f"Error getting municipalities for {region}: {e}")
+        print(f"Error getting municipalities for {region}: {e}")
         return ['Select Municipality']
 
-def main():
-    """Main Streamlit application"""
-    
-    # Title and header
-    st.markdown('<h1 class="main-header">🌍 COMPREHENSIVE AGRICULTURAL ANALYSIS TOOL</h1>', unsafe_allow_html=True)
-    st.markdown("---")
-    
-    st.markdown("""
-    <div class="info-box">
-    <strong>Integrated Approach:</strong> Climate + Soil + Crop Suitability + Disease Risk + Groundwater<br>
-    <strong>Features:</strong> 32 crops analysis, Disease risk assessment, Management strategies, Groundwater potential<br>
-    <strong>Data Sources:</strong> FAO GAUL, Earth Engine, OpenLandMap, ISDASOIL
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Sidebar for settings
-    with st.sidebar:
-        st.markdown("### ⚙️ Settings")
-        
-        # Earth Engine Initialization
-        st.markdown("#### Earth Engine Authentication")
-        if st.button("Initialize Earth Engine"):
-            try:
-                ee.Initialize()
-                st.success("✅ Earth Engine initialized successfully!")
-            except Exception as e:
-                st.error(f"❌ Earth Engine initialization failed: {e}")
-                st.info("Please authenticate Earth Engine first using: ee.Authenticate()")
-        
-        # Analysis parameters
-        st.markdown("#### Analysis Parameters")
-        classification_type = st.selectbox(
-            "Climate Classification System:",
-            ['Simplified Temperature-Precipitation', 'Aridity-Based', 'Köppen-Geiger'],
-            index=0
-        )
-        
-        analysis_type = st.selectbox(
-            "Analysis Type:",
-            ['crop_suitability', 'groundwater'],
-            index=0,
-            help="Crop Suitability: Climate + Soil + Crop analysis. Groundwater: Water resource assessment."
-        )
-        
-        st.markdown("---")
-        st.markdown("### 📊 About")
-        st.markdown("""
-        This tool provides comprehensive agricultural analysis including:
-        - Climate classification
-        - Soil texture and organic matter analysis
-        - Crop suitability for 32 different crops
-        - Disease risk assessment
-        - Groundwater potential analysis
-        - Management recommendations
-        """)
-    
-    # Main interface
-    st.markdown("### 📍 Select Location")
-    
+def create_comprehensive_interface():
+    """Create interactive selection interface"""
+    print("🌍 COMPREHENSIVE AGRICULTURAL ANALYSIS TOOL")
+    print("=" * 70)
+    print("Integrated Approach: Climate + Soil + Crop Suitability + Disease Risk + Groundwater")
+    print("Features: 32 crops analysis, Disease risk assessment, Management strategies, Groundwater potential")
+    print("Data Sources: FAO GAUL, Earth Engine, OpenLandMap, ISDASOIL")
+
     # Initialize analyzer
     analyzer = ComprehensiveAgriculturalAnalyzer()
-    
-    # Create columns for selection
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        country = st.selectbox(
-            "Country:",
-            get_country_list(),
-            index=get_country_list().index('Algeria') if 'Algeria' in get_country_list() else 0
-        )
-    
-    with col2:
-        region = st.selectbox(
-            "Region/State:",
-            get_region_list(country),
-            index=0
-        )
-    
-    with col3:
-        municipality = st.selectbox(
-            "Municipality:",
-            get_municipality_list(country, region),
-            index=0
-        )
-    
-    # Run analysis button
-    if st.button("🚀 Run Comprehensive Analysis", type="primary", use_container_width=True):
-        with st.spinner("Running comprehensive analysis..."):
+
+    # Create dropdown widgets
+    country_dropdown = widgets.Dropdown(
+        options=get_country_list(),
+        value='Algeria',
+        description='Country:',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='400px')
+    )
+
+    region_dropdown = widgets.Dropdown(
+        options=['Select Region'],
+        value='Select Region',
+        description='Region/State:',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='400px')
+    )
+
+    municipality_dropdown = widgets.Dropdown(
+        options=['Select Municipality'],
+        value='Select Municipality',
+        description='Municipality:',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='400px')
+    )
+
+    # Climate classification type
+    climate_classification = widgets.Dropdown(
+        options=['Simplified Temperature-Precipitation', 'Aridity-Based', 'Köppen-Geiger'],
+        value='Simplified Temperature-Precipitation',
+        description='Climate Classification:',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='400px')
+    )
+
+    # Analysis type selection
+    analysis_type = widgets.Dropdown(
+        options=['crop_suitability', 'groundwater'],
+        value='crop_suitability',
+        description='Analysis Type:',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='400px')
+    )
+
+    analyze_button = widgets.Button(
+        description='Run Comprehensive Analysis',
+        button_style='success',
+        tooltip='Click for comprehensive agricultural analysis',
+        layout=widgets.Layout(width='250px')
+    )
+
+    output = widgets.Output()
+
+    # Update functions
+    def update_regions(change):
+        if change['type'] == 'change' and change['name'] == 'value':
+            with output:
+                clear_output()
+                print(f"Loading regions for {change['new']}...")
+            regions = get_region_list(change['new'])
+            region_dropdown.options = regions
+            region_dropdown.value = 'Select Region'
+            municipality_dropdown.options = ['Select Municipality']
+            municipality_dropdown.value = 'Select Municipality'
+
+    def update_municipalities(change):
+        if change['type'] == 'change' and change['name'] == 'value' and change['new'] != 'Select Region':
+            with output:
+                clear_output()
+                print(f"Loading municipalities for {change['new']}...")
+            municipalities = get_municipality_list(country_dropdown.value, change['new'])
+            municipality_dropdown.options = municipalities
+            municipality_dropdown.value = 'Select Municipality'
+
+    def on_analyze_click(b):
+        with output:
+            clear_output()
+            print("🔍 Starting comprehensive agricultural analysis...")
+            import time
+            start_time = time.time()
+
             try:
                 results = analyzer.run_comprehensive_analysis(
-                    country,
-                    region,
-                    municipality,
-                    classification_type,
-                    analysis_type
+                    country_dropdown.value,
+                    region_dropdown.value,
+                    municipality_dropdown.value,
+                    climate_classification.value,
+                    analysis_type.value
                 )
-                
-                if results:
-                    # Store results in session state for download
-                    st.session_state['analysis_results'] = results
-                    
-            except Exception as e:
-                st.error(f"❌ Error during analysis: {e}")
-                st.error(traceback.format_exc())
-    
-    # Download results if available
-    if 'analysis_results' in st.session_state:
-        st.markdown("---")
-        st.markdown("### 💾 Download Results")
-        
-        # Convert results to JSON for download
-        import json
-        results_json = json.dumps(st.session_state['analysis_results'], default=str)
-        
-        st.download_button(
-            label="📥 Download Analysis Results (JSON)",
-            data=results_json,
-            file_name=f"agricultural_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-            mime="application/json"
-        )
 
-# Initialize Earth Engine
-@st.cache_resource
-def init_earth_engine():
-    """Initialize Earth Engine with error handling"""
-    try:
-        ee.Initialize()
-        return True
-    except:
-        return False
+                if results:
+                    print(f"\n🎉 ANALYSIS SUCCESSFULLY COMPLETED!")
+                    print(f"📍 Location: {results['location_name']}")
+                    if analysis_type.value == 'groundwater':
+                        print(f"💧 Groundwater Score: {results['groundwater_analysis']['score']:.3f} ({results['groundwater_analysis']['category']})")
+                    else:
+                        print(f"🌤️ Climate: {results['climate_analysis']['climate_zone']}")
+                        print(f"🌱 Crops Analyzed: {len(results['crop_analysis'])}")
+
+                else:
+                    print("❌ Analysis failed")
+
+            except Exception as e:
+                print(f"❌ Error during analysis: {e}")
+                import traceback
+                traceback.print_exc()
+
+            end_time = time.time()
+            print(f"\n⏱️ Comprehensive analysis completed in {end_time - start_time:.1f} seconds")
+
+    # Link events
+    country_dropdown.observe(update_regions, names='value')
+    region_dropdown.observe(update_municipalities, names='value')
+    analyze_button.on_click(on_analyze_click)
+
+    # Initialize regions for default country
+    update_regions({'type': 'change', 'name': 'value', 'new': country_dropdown.value})
+
+    # Display interface
+    display(widgets.VBox([
+        widgets.HTML("<h3>Select Location for Comprehensive Agricultural Analysis:</h3>"),
+        widgets.HTML("<p><em>Integrating climate analysis, soil analysis, crop suitability with disease risk assessment for 32 crops + Groundwater potential analysis</em></p>"),
+        country_dropdown,
+        region_dropdown,
+        municipality_dropdown,
+        climate_classification,
+        analysis_type,
+        analyze_button,
+        output
+    ]))
+
+    return analyzer
 
 # Run the application
 if __name__ == "__main__":
-    # Check for required imports
+    # Import required libraries
     try:
         from scipy.stats import linregress
     except ImportError:
-        st.error("⚠️ scipy not available, installing...")
+        print("⚠️ scipy not available, installing...")
         import subprocess
         import sys
         subprocess.check_call([sys.executable, "-m", "pip", "install", "scipy"])
         from scipy.stats import linregress
-    
-    # Initialize Earth Engine
-    if init_earth_engine():
-        main()
-    else:
-        st.error("❌ Earth Engine not initialized. Please authenticate first.")
-        st.info("""
-        To use this application, you need to authenticate Earth Engine:
-        
-        1. Run in a local Python environment with Earth Engine installed
-        2. Run: `ee.Authenticate()` in your terminal/notebook first
-        3. Then run this Streamlit app
-        
-        For more information, visit: https://developers.google.com/earth-engine/guides/auth
-        """)
-        
-        if st.button("Try Initializing Again"):
-            if init_earth_engine():
-                st.success("✅ Earth Engine initialized successfully!")
-                st.rerun()
-            else:
-                st.error("❌ Still unable to initialize. Please check your authentication.")
+
+    analyzer = create_comprehensive_interface()
