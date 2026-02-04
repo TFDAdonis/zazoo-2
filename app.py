@@ -1,39 +1,293 @@
 import streamlit as st
 import json
+import tempfile
+import os
+import pandas as pd
+import folium
+from streamlit_folium import st_folium
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
+from datetime import datetime, timedelta
 import ee
 import traceback
 
-# Minimal CSS for full-screen
+# Custom CSS for Clean Green & Black TypeScript/React Style
 st.markdown("""
 <style>
-    html, body, [data-testid="stAppViewContainer"], .stApp {
-        padding: 0 !important;
-        margin: 0 !important;
-        width: 100vw !important;
-        height: 100vh !important;
-        overflow: hidden !important;
+    /* Base styling */
+    .stApp {
+        background: #000000;
+        color: #ffffff;
     }
     
+    /* Remove Streamlit default padding */
+    .main .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+    }
+    
+    /* Green & Black Theme */
+    :root {
+        --primary-green: #00ff88;
+        --accent-green: #00cc6a;
+        --primary-black: #000000;
+        --card-black: #0a0a0a;
+        --secondary-black: #111111;
+        --border-gray: #222222;
+        --text-white: #ffffff;
+        --text-gray: #999999;
+        --text-light-gray: #cccccc;
+    }
+    
+    /* Typography */
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+        color: var(--text-white) !important;
+    }
+    
+    h1 {
+        font-size: 2rem !important;
+        background: linear-gradient(90deg, var(--primary-green), var(--accent-green));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 0.5rem !important;
+    }
+    
+    h2 {
+        font-size: 1.5rem !important;
+        color: var(--primary-green) !important;
+    }
+    
+    h3 {
+        font-size: 1.25rem !important;
+        margin-bottom: 1rem !important;
+    }
+    
+    /* Layout Container */
+    .main-container {
+        display: flex;
+        gap: 20px;
+        max-width: 1800px;
+        margin: 0 auto;
+    }
+    
+    .sidebar-container {
+        width: 320px;
+        flex-shrink: 0;
+    }
+    
+    .content-container {
+        flex: 1;
+        min-width: 0;
+    }
+    
+    /* Cards */
+    .card {
+        background: var(--card-black);
+        border: 1px solid var(--border-gray);
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 15px;
+        transition: all 0.2s ease;
+    }
+    
+    .card:hover {
+        border-color: var(--primary-green);
+    }
+    
+    .card-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border-gray);
+    }
+    
+    .card-title .icon {
+        width: 32px;
+        height: 32px;
+        background: rgba(0, 255, 136, 0.1);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--primary-green);
+        font-size: 16px;
+    }
+    
+    /* Buttons */
+    .stButton > button {
+        width: 100%;
+        background: linear-gradient(90deg, var(--primary-green), var(--accent-green));
+        color: var(--primary-black) !important;
+        border: none;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 14px;
+        letter-spacing: 0.5px;
+        transition: all 0.3s ease;
+        margin: 5px 0;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
+    }
+    
+    /* Input fields */
+    .stTextInput > div > div > input,
+    .stSelectbox > div > div > select,
+    .stDateInput > div > div > input,
+    .stNumberInput > div > div > input,
+    .stTextArea > div > div > textarea {
+        background: var(--secondary-black) !important;
+        border: 1px solid var(--border-gray) !important;
+        color: var(--text-white) !important;
+        border-radius: 6px !important;
+        padding: 10px 12px !important;
+        font-size: 14px !important;
+    }
+    
+    .stTextInput > div > div > input:focus,
+    .stSelectbox > div > div > select:focus,
+    .stDateInput > div > div > input:focus {
+        border-color: var(--primary-green) !important;
+        box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.2) !important;
+    }
+    
+    /* Map container */
+    .map-container {
+        border: 1px solid var(--border-gray);
+        border-radius: 10px;
+        overflow: hidden;
+        height: 600px;
+    }
+    
+    /* 3D Globe container */
+    .globe-container {
+        border: 1px solid var(--border-gray);
+        border-radius: 10px;
+        overflow: hidden;
+        height: 600px;
+        background: #000;
+        position: relative;
+    }
+    
+    /* Mapbox specific */
+    #map {
+        width: 100%;
+        height: 100%;
+        border-radius: 8px;
+    }
+    
+    .mapboxgl-popup {
+        max-width: 300px;
+    }
+    
+    .mapboxgl-popup-content {
+        background: var(--card-black);
+        color: var(--text-white);
+        border: 1px solid var(--border-gray);
+        border-radius=8px;
+        padding: 15px;
+    }
+    
+    .mapboxgl-popup-content h3 {
+        color: var(--primary-green);
+        margin: 0 0 10px 0;
+        font-size: 16px;
+    }
+    
+    .mapboxgl-popup-content p {
+        margin: 0;
+        color: var(--text-light-gray);
+        font-size: 14px;
+    }
+    
+    /* Status badges */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 12px;
+        background: rgba(0, 255, 136, 0.1);
+        color: var(--primary-green);
+        border: 1px solid rgba(0, 255, 136, 0.3);
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+    
+    /* Info panel */
+    .info-panel {
+        background: var(--card-black);
+        border: 1px solid var(--border-gray);
+        border-radius=8px;
+        padding: 15px;
+        margin-top: 15px;
+    }
+    
+    .info-item {
+        margin-bottom: 10px;
+    }
+    
+    .info-label {
+        color: var(--text-gray);
+        font-size: 12px;
+        font-weight: 500;
+        margin-bottom: 2px;
+    }
+    
+    .info-value {
+        color: var(--text-white);
+        font-size: 14px;
+        font-weight: 500;
+    }
+    
+    /* View toggle */
+    .view-toggle {
+        display: flex;
+        background: var(--card-black);
+        border-radius: 8px;
+        padding: 4px;
+        border: 1px solid var(--border-gray);
+        margin-bottom: 15px;
+    }
+    
+    .view-option {
+        flex: 1;
+        padding: 8px 12px;
+        text-align: center;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        border-radius: 6px;
+        transition: all 0.2s;
+        color: var(--text-gray);
+    }
+    
+    .view-option.active {
+        background: var(--primary-green);
+        color: var(--primary-black);
+    }
+    
+    /* Hide Streamlit default elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
-    .stDeployButton {display: none !important;}
-    
-    /* Make sure the map container is full screen */
-    iframe {
-        width: 100vw !important;
-        height: 100vh !important;
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        border: none !important;
-    }
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize Earth Engine
-@st.cache_resource
-def init_earth_engine():
+# Earth Engine Auto-Authentication with Service Account
+def auto_initialize_earth_engine():
+    """Automatically initialize Earth Engine with service account credentials"""
     try:
         service_account_info = {
             "type": "service_account",
@@ -84,1387 +338,973 @@ e5aU1RW6tlG8nzHHwK2FeyI=
         ee.Initialize(credentials, project='citric-hawk-457513-i6')
         return True
     except Exception as e:
-        st.error(f"Earth Engine initialization failed: {str(e)}")
+        st.error(f"Earth Engine auto-initialization failed: {str(e)}")
         return False
 
+# Try to auto-initialize Earth Engine on app start
+if 'ee_auto_initialized' not in st.session_state:
+    with st.spinner("Initializing Earth Engine..."):
+        if auto_initialize_earth_engine():
+            st.session_state.ee_auto_initialized = True
+            st.session_state.ee_initialized = True
+        else:
+            st.session_state.ee_auto_initialized = False
+            st.session_state.ee_initialized = False
+
 # Initialize session state
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = True  # Set to True since we're removing authentication
 if 'ee_initialized' not in st.session_state:
-    if init_earth_engine():
-        st.session_state.ee_initialized = True
-    else:
-        st.session_state.ee_initialized = False
+    st.session_state.ee_initialized = False
+if 'selected_geometry' not in st.session_state:
+    st.session_state.selected_geometry = None
+if 'analysis_results' not in st.session_state:
+    st.session_state.analysis_results = None
+if 'selected_coordinates' not in st.session_state:
+    st.session_state.selected_coordinates = None
+if 'selected_area_name' not in st.session_state:
+    st.session_state.selected_area_name = None
 
-if 'countries' not in st.session_state:
-    st.session_state.countries = []
-
-# Load countries
-if st.session_state.ee_initialized and not st.session_state.countries:
-    try:
-        countries_fc = ee.FeatureCollection("FAO/GAUL/2015/level0")
-        countries = countries_fc.aggregate_array('ADM0_NAME').distinct().getInfo()
-        st.session_state.countries = sorted(countries) if countries else []
-    except:
-        st.session_state.countries = ["United States", "Canada", "Mexico", "United Kingdom", "France", "Germany", "Australia", "Brazil", "India", "China"]
-
-# Page config
+# Page configuration
 st.set_page_config(
-    page_title="KHISBA GIS",
+    page_title="Khisba GIS - 3D Global Vegetation Analysis",
     page_icon="🌍",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Main Mapbox Interface with FULL SCREEN
-mapbox_html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>KHISBA GIS - Full Screen</title>
-    <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
-    <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
-    <style>
-        * {{ 
-            margin: 0; 
-            padding: 0; 
-            box-sizing: border-box; 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        }}
-        
-        body, html {{
-            width: 100vw;
-            height: 100vh;
-            overflow: hidden;
-            background: #000;
-        }}
-        
-        #map {{
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-        }}
-        
-        /* Loading overlay */
-        #loading-overlay {{
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: #000;
-            z-index: 9999;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: #00ff88;
-        }}
-        
-        .spinner {{
-            width: 60px;
-            height: 60px;
-            border: 4px solid rgba(0, 255, 136, 0.1);
-            border-top: 4px solid #00ff88;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 20px;
-        }}
-        
-        @keyframes spin {{
-            0% {{ transform: rotate(0deg); }}
-            100% {{ transform: rotate(360deg); }}
-        }}
-        
-        /* Main control panel */
-        #main-panel {{
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            z-index: 1000;
-            background: rgba(0, 0, 0, 0.95);
-            border: 1px solid #00ff88;
-            border-radius: 15px;
-            padding: 20px;
-            width: 350px;
-            max-height: 85vh;
-            overflow-y: auto;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
-        }}
-        
-        .panel-header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid rgba(0, 255, 136, 0.3);
-        }}
-        
-        .app-title {{
-            color: #00ff88;
-            font-size: 24px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }}
-        
-        .close-btn {{
-            background: none;
-            border: none;
-            color: #999;
-            font-size: 24px;
-            cursor: pointer;
-            width: 30px;
-            height: 30px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-        }}
-        
-        .close-btn:hover {{
-            background: rgba(255, 255, 255, 0.1);
-        }}
-        
-        /* Tabs */
-        .tabs {{
-            display: flex;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 10px;
-            padding: 4px;
-            margin-bottom: 20px;
-        }}
-        
-        .tab {{
-            flex: 1;
-            padding: 10px;
-            text-align: center;
-            background: none;
-            border: none;
-            color: #999;
-            font-size: 13px;
-            font-weight: 600;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }}
-        
-        .tab.active {{
-            background: linear-gradient(90deg, #00ff88, #00cc6a);
-            color: #000;
-        }}
-        
-        /* Form styles */
-        .form-group {{
-            margin-bottom: 15px;
-        }}
-        
-        .form-label {{
-            display: block;
-            color: #00ff88;
-            font-size: 12px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }}
-        
-        .form-select, .form-input {{
-            width: 100%;
-            padding: 12px 15px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            color: white;
-            font-size: 14px;
-            outline: none;
-            transition: all 0.2s;
-        }}
-        
-        .form-select:focus, .form-input:focus {{
-            border-color: #00ff88;
-            box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.2);
-        }}
-        
-        .form-select option {{
-            background: #000;
-            color: white;
-        }}
-        
-        /* Button styles */
-        .btn {{
-            width: 100%;
-            padding: 14px;
-            border: none;
-            border-radius: 8px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            margin-top: 10px;
-        }}
-        
-        .btn-primary {{
-            background: linear-gradient(90deg, #00ff88, #00cc6a);
-            color: #000;
-        }}
-        
-        .btn-primary:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
-        }}
-        
-        .btn-secondary {{
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-        }}
-        
-        .btn-secondary:hover {{
-            background: rgba(255, 255, 255, 0.2);
-        }}
-        
-        /* Checkbox grid */
-        .checkbox-grid {{
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-            margin: 15px 0;
-            max-height: 200px;
-            overflow-y: auto;
-        }}
-        
-        .checkbox-item {{
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }}
-        
-        .checkbox-item:hover {{
-            background: rgba(255, 255, 255, 0.1);
-        }}
-        
-        .checkbox-item.selected {{
-            background: rgba(0, 255, 136, 0.1);
-            border: 1px solid rgba(0, 255, 136, 0.3);
-        }}
-        
-        .checkbox-label {{
-            color: white;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-        }}
-        
-        /* Results panel */
-        #results-panel {{
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 1000;
-            background: rgba(0, 0, 0, 0.95);
-            border: 1px solid #00ff88;
-            border-radius: 15px;
-            padding: 20px;
-            width: 400px;
-            max-height: 70vh;
-            overflow-y: auto;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
-            display: none;
-        }}
-        
-        /* Notification */
-        #notification {{
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1001;
-            background: rgba(0, 0, 0, 0.9);
-            border: 1px solid #00ff88;
-            border-radius: 10px;
-            padding: 15px 20px;
-            color: white;
-            backdrop-filter: blur(10px);
-            display: none;
-            animation: slideIn 0.3s ease-out;
-        }}
-        
-        @keyframes slideIn {{
-            from {{ transform: translateX(100px); opacity: 0; }}
-            to {{ transform: translateX(0); opacity: 1; }}
-        }}
-        
-        /* Quick actions bar */
-        #quick-actions {{
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 1000;
-            background: rgba(0, 0, 0, 0.8);
-            border: 1px solid rgba(0, 255, 136, 0.3);
-            border-radius: 50px;
-            padding: 10px 20px;
-            display: flex;
-            gap: 10px;
-            backdrop-filter: blur(10px);
-        }}
-        
-        .action-btn {{
-            width: 45px;
-            height: 45px;
-            background: rgba(255, 255, 255, 0.1);
-            border: none;
-            border-radius: 50%;
-            color: white;
-            font-size: 18px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-        }}
-        
-        .action-btn:hover {{
-            background: rgba(0, 255, 136, 0.2);
-            transform: scale(1.1);
-        }}
-        
-        .action-btn.active {{
-            background: linear-gradient(90deg, #00ff88, #00cc6a);
-            color: #000;
-        }}
-        
-        /* Map controls */
-        .mapboxgl-ctrl-top-right {{
-            top: 100px !important;
-            right: 20px !important;
-        }}
-        
-        /* Responsive */
-        @media (max-width: 768px) {{
-            #main-panel, #results-panel {{
-                width: calc(100vw - 40px);
-                left: 20px;
-                right: 20px;
-            }}
-            
-            #main-panel {{
-                top: 10px;
-                max-height: 80vh;
-            }}
-            
-            #results-panel {{
-                bottom: 10px;
-                max-height: 60vh;
-            }}
-            
-            #quick-actions {{
-                bottom: 10px;
-                padding: 8px 15px;
-            }}
-        }}
-        
-        /* Hide scrollbar but keep functionality */
-        #main-panel::-webkit-scrollbar {{
-            width: 5px;
-        }}
-        
-        #main-panel::-webkit-scrollbar-track {{
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 10px;
-        }}
-        
-        #main-panel::-webkit-scrollbar-thumb {{
-            background: rgba(0, 255, 136, 0.5);
-            border-radius: 10px;
-        }}
-    </style>
-</head>
-<body>
-    <!-- Loading Screen -->
-    <div id="loading-overlay">
-        <div class="spinner"></div>
-        <div style="font-size: 18px; font-weight: 600; margin-bottom: 10px;">KHISBA GIS</div>
-        <div style="color: #999; font-size: 14px;">Initializing 3D Earth Engine...</div>
-    </div>
-    
-    <!-- Map Container -->
-    <div id="map"></div>
-    
-    <!-- Main Control Panel -->
-    <div id="main-panel">
-        <div class="panel-header">
-            <div class="app-title">🌍 KHISBA GIS</div>
-            <button class="close-btn" onclick="togglePanel('main')">×</button>
-        </div>
-        
-        <!-- Tabs -->
-        <div class="tabs">
-            <button class="tab active" onclick="switchTab('select')">Select</button>
-            <button class="tab" onclick="switchTab('analyze')">Analyze</button>
-            <button class="tab" onclick="switchTab('export')">Export</button>
-        </div>
-        
-        <!-- Tab Content: Select Area -->
-        <div id="tab-select" class="tab-content">
-            <div class="form-group">
-                <label class="form-label">Country</label>
-                <select class="form-select" id="country-select" onchange="onCountryChange()">
-                    <option value="">Select a country</option>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">State/Province</label>
-                <select class="form-select" id="admin1-select" onchange="onAdmin1Change()" disabled>
-                    <option value="">Select state/province</option>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">Municipality (Optional)</label>
-                <select class="form-select" id="admin2-select" onchange="onAdmin2Change()" disabled>
-                    <option value="">Select municipality</option>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">Or Draw on Map</label>
-                <div style="display: flex; gap: 10px; margin-top: 5px;">
-                    <button class="btn-secondary" onclick="startDrawing('polygon')" style="flex: 1;">📐 Draw</button>
-                    <button class="btn-secondary" onclick="startDrawing('rectangle')" style="flex: 1;">⬜ Rectangle</button>
-                </div>
-            </div>
-            
-            <div id="selected-area-preview" style="display: none; margin-top: 15px; padding: 15px; background: rgba(0, 255, 136, 0.1); border-radius: 8px;">
-                <div style="color: #00ff88; font-weight: 600; margin-bottom: 5px;">Selected Area:</div>
-                <div id="selected-area-name" style="color: white; font-weight: 500;"></div>
-                <div id="selected-area-details" style="color: #999; font-size: 12px; margin-top: 5px;"></div>
-            </div>
-            
-            <button class="btn-primary" onclick="confirmSelection()" style="margin-top: 20px;">✅ Confirm Selection</button>
-        </div>
-        
-        <!-- Tab Content: Analyze -->
-        <div id="tab-analyze" class="tab-content" style="display: none;">
-            <div class="form-group">
-                <label class="form-label">Time Period</label>
-                <div style="display: flex; gap: 10px;">
-                    <input type="date" class="form-input" id="start-date" value="2023-01-01" style="flex: 1;">
-                    <input type="date" class="form-input" id="end-date" value="2023-12-31" style="flex: 1;">
-                </div>
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">Satellite Source</label>
-                <select class="form-select" id="satellite-select">
-                    <option value="sentinel2">Sentinel-2</option>
-                    <option value="landsat8">Landsat-8</option>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">Max Cloud Cover: <span id="cloud-value" style="color: #00ff88;">20%</span></label>
-                <input type="range" class="form-input" id="cloud-slider" min="0" max="100" value="20" 
-                       oninput="document.getElementById('cloud-value').textContent = this.value + '%'" style="width: 100%;">
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">Vegetation Indices</label>
-                <div class="checkbox-grid" id="indices-container">
-                    <!-- Indices will be loaded here -->
-                </div>
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button class="btn-secondary" onclick="selectAllIndices()" style="flex: 1;">Select All</button>
-                    <button class="btn-secondary" onclick="clearAllIndices()" style="flex: 1;">Clear All</button>
-                </div>
-            </div>
-            
-            <button class="btn-primary" onclick="runAnalysis()">🚀 Run Analysis</button>
-        </div>
-        
-        <!-- Tab Content: Export -->
-        <div id="tab-export" class="tab-content" style="display: none;">
-            <div style="color: #999; font-size: 14px; margin-bottom: 20px;">
-                Export your analysis results in various formats
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">Export Format</label>
-                <select class="form-select" id="export-format">
-                    <option value="csv">CSV Data</option>
-                    <option value="json">JSON</option>
-                    <option value="geojson">GeoJSON</option>
-                    <option value="png">Chart Image</option>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">Data Range</label>
-                <select class="form-select" id="export-range">
-                    <option value="full">Full Dataset</option>
-                    <option value="monthly">Monthly Averages</option>
-                    <option value="summary">Summary Statistics</option>
-                </select>
-            </div>
-            
-            <button class="btn-primary" onclick="exportData()">📥 Download Export</button>
-            <button class="btn-secondary" onclick="shareResults()" style="margin-top: 10px;">🔗 Share Results</button>
-        </div>
-    </div>
-    
-    <!-- Results Panel -->
-    <div id="results-panel">
-        <div class="panel-header">
-            <div class="app-title" style="font-size: 20px;">📊 Analysis Results</div>
-            <button class="close-btn" onclick="togglePanel('results')">×</button>
-        </div>
-        <div id="results-content">
-            <!-- Results will be loaded here -->
-        </div>
-    </div>
-    
-    <!-- Quick Actions Bar -->
-    <div id="quick-actions">
-        <button class="action-btn" onclick="togglePanel('main')" title="Control Panel">⚙️</button>
-        <button class="action-btn" onclick="togglePanel('results')" title="Results">📊</button>
-        <button class="action-btn" onclick="resetView()" title="Reset View">🏠</button>
-        <button class="action-btn" onclick="toggleFullscreen()" title="Full Screen">⛶</button>
-        <button class="action-btn" onclick="showHelp()" title="Help">❓</button>
-    </div>
-    
-    <!-- Notification -->
-    <div id="notification">
-        <div id="notification-message"></div>
-    </div>
+# Set authenticated to True since we're removing authentication
+st.session_state.authenticated = True
 
-    <script>
-        // Mapbox Access Token
-        mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
-        
-        // Global variables
-        let map = null;
-        let selectedArea = null;
-        let selectedGeometry = null;
-        let drawingMode = null;
-        let drawnPoints = [];
-        
-        // Initialize the map
-        function initMap() {{
-            map = new mapboxgl.Map({{
-                container: 'map',
-                style: 'mapbox://styles/mapbox/satellite-streets-v12',
-                center: [0, 20],
-                zoom: 2,
-                pitch: 45,
-                bearing: 0,
-                antialias: true,
-                attributionControl: false
-            }});
-            
-            // Add navigation controls
-            map.addControl(new mapboxgl.NavigationControl({{
-                showCompass: true,
-                showZoom: true
-            }}), 'top-right');
-            
-            // Add scale control
-            map.addControl(new mapboxgl.ScaleControl({{
-                unit: 'metric'
-            }}));
-            
-            // When map loads
-            map.on('load', () => {{
-                // Hide loading screen
-                document.getElementById('loading-overlay').style.display = 'none';
-                
-                // Load initial data
-                loadCountries();
-                loadIndices();
-                
-                // Show welcome message
-                showNotification('KHISBA GIS Ready! Select an area to begin analysis.');
-            }});
-            
-            // Handle map clicks for drawing
-            map.on('click', (e) => {{
-                if (drawingMode) {{
-                    handleDrawingClick(e.lngLat);
-                }}
-            }});
-            
-            // Handle double-click to complete drawing
-            map.on('dblclick', () => {{
-                if (drawingMode && drawnPoints.length >= 3) {{
-                    completeDrawing();
-                }}
-            }});
-        }}
-        
-        // Load countries from Streamlit
-        function loadCountries() {{
-            const countries = {json.dumps(st.session_state.countries)};
-            const select = document.getElementById('country-select');
-            
-            countries.forEach(country => {{
-                const option = document.createElement('option');
-                option.value = country;
-                option.textContent = country;
-                select.appendChild(option);
-            }});
-            
-            showNotification(`Loaded ${{countries.length}} countries`);
-        }}
-        
-        // When country changes
-        async function onCountryChange() {{
-            const country = document.getElementById('country-select').value;
-            if (!country) return;
-            
-            const admin1Select = document.getElementById('admin1-select');
-            admin1Select.disabled = true;
-            admin1Select.innerHTML = '<option value="">Loading provinces...</option>';
-            
-            try {{
-                const response = await callStreamlit('get_admin1', {{ country: country }});
-                
-                admin1Select.innerHTML = '<option value="">Select state/province</option>';
-                if (response.admin1 && response.admin1.length > 0) {{
-                    response.admin1.forEach(admin1 => {{
-                        const option = document.createElement('option');
-                        option.value = admin1;
-                        option.textContent = admin1;
-                        admin1Select.appendChild(option);
-                    }});
-                    admin1Select.disabled = false;
-                    showNotification(`Loaded ${{response.admin1.length}} provinces for ${{country}}`);
-                }} else {{
-                    admin1Select.innerHTML = '<option value="">No provinces found</option>';
-                    showNotification('No provinces found for this country', 'warning');
-                }}
-                
-                // Reset admin2
-                const admin2Select = document.getElementById('admin2-select');
-                admin2Select.innerHTML = '<option value="">Select municipality</option>';
-                admin2Select.disabled = true;
-                
-            }} catch (error) {{
-                showNotification('Error loading provinces: ' + error.message, 'error');
-                admin1Select.innerHTML = '<option value="">Error loading</option>';
-            }}
-        }}
-        
-        // When admin1 changes
-        async function onAdmin1Change() {{
-            const admin1 = document.getElementById('admin1-select').value;
-            const country = document.getElementById('country-select').value;
-            if (!admin1 || !country) return;
-            
-            const admin2Select = document.getElementById('admin2-select');
-            admin2Select.disabled = true;
-            admin2Select.innerHTML = '<option value="">Loading municipalities...</option>';
-            
-            try {{
-                const response = await callStreamlit('get_admin2', {{ 
-                    country: country, 
-                    admin1: admin1 
-                }});
-                
-                admin2Select.innerHTML = '<option value="">Select municipality</option>';
-                if (response.admin2 && response.admin2.length > 0) {{
-                    response.admin2.forEach(admin2 => {{
-                        const option = document.createElement('option');
-                        option.value = admin2;
-                        option.textContent = admin2;
-                        admin2Select.appendChild(option);
-                    }});
-                    admin2Select.disabled = false;
-                    showNotification(`Loaded ${{response.admin2.length}} municipalities`);
-                }} else {{
-                    admin2Select.innerHTML = '<option value="">No municipalities found</option>';
-                    showNotification('No municipalities found', 'warning');
-                }}
-            }} catch (error) {{
-                showNotification('Error loading municipalities', 'error');
-                admin2Select.innerHTML = '<option value="">Error loading</option>';
-            }}
-        }}
-        
-        // When admin2 changes
-        function onAdmin2Change() {{
-            updateSelectedAreaPreview();
-        }}
-        
-        // Update selected area preview
-        function updateSelectedAreaPreview() {{
-            const country = document.getElementById('country-select').value;
-            const admin1 = document.getElementById('admin1-select').value;
-            const admin2 = document.getElementById('admin2-select').value;
-            
-            if (!country) return;
-            
-            let areaName = country;
-            let details = 'Country level';
-            
-            if (admin1 && admin2) {{
-                areaName = `${{admin2}}, ${{admin1}}, ${{country}}`;
-                details = 'Municipality level';
-            }} else if (admin1) {{
-                areaName = `${{admin1}}, ${{country}}`;
-                details = 'Province level';
-            }}
-            
-            document.getElementById('selected-area-name').textContent = areaName;
-            document.getElementById('selected-area-details').textContent = details;
-            document.getElementById('selected-area-preview').style.display = 'block';
-            
-            selectedArea = areaName;
-        }}
-        
-        // Confirm selection
-        async function confirmSelection() {{
-            if (!selectedArea) {{
-                showNotification('Please select an area first', 'warning');
-                return;
-            }}
-            
-            const country = document.getElementById('country-select').value;
-            const admin1 = document.getElementById('admin1-select').value;
-            const admin2 = document.getElementById('admin2-select').value;
-            
-            try {{
-                showNotification('Loading area geometry...', 'info');
-                
-                const response = await callStreamlit('get_geometry', {{
-                    country: country,
-                    admin1: admin1,
-                    admin2: admin2
-                }});
-                
-                if (response.geometry) {{
-                    showAreaOnMap(response.geometry);
-                    showNotification('Area selected successfully!', 'success');
-                    // Switch to analyze tab
-                    switchTab('analyze');
-                }} else {{
-                    showNotification('Could not load area geometry', 'error');
-                }}
-            }} catch (error) {{
-                showNotification('Error: ' + error.message, 'error');
-            }}
-        }}
-        
-        // Start drawing on map
-        function startDrawing(mode) {{
-            drawingMode = mode;
-            drawnPoints = [];
-            
-            if (mode === 'rectangle') {{
-                showNotification('Click two points to draw a rectangle', 'info');
-            }} else {{
-                showNotification('Click points to draw a polygon (double-click to finish)', 'info');
-            }}
-        }}
-        
-        // Handle drawing clicks
-        function handleDrawingClick(lngLat) {{
-            if (!drawingMode) return;
-            
-            drawnPoints.push([lngLat.lng, lngLat.lat]);
-            
-            // For rectangle, complete after 2 points
-            if (drawingMode === 'rectangle' && drawnPoints.length === 2) {{
-                completeRectangleDrawing();
-            }}
-        }}
-        
-        // Complete rectangle drawing
-        function completeRectangleDrawing() {{
-            if (drawnPoints.length !== 2) return;
-            
-            const [p1, p2] = drawnPoints;
-            const rectangleCoords = [
-                p1,
-                [p2[0], p1[1]],
-                p2,
-                [p1[0], p2[1]],
-                p1  // Close the polygon
-            ];
-            
-            createCustomArea(rectangleCoords, 'Rectangle');
-            resetDrawing();
-        }}
-        
-        // Complete polygon drawing
-        function completeDrawing() {{
-            if (drawnPoints.length < 3) return;
-            
-            // Close the polygon
-            drawnPoints.push(drawnPoints[0]);
-            createCustomArea(drawnPoints, 'Custom Polygon');
-            resetDrawing();
-        }}
-        
-        // Reset drawing state
-        function resetDrawing() {{
-            drawingMode = null;
-            drawnPoints = [];
-        }}
-        
-        // Create custom area
-        async function createCustomArea(coordinates, type) {{
-            try {{
-                const response = await callStreamlit('create_custom_area', {{
-                    coordinates: coordinates,
-                    type: type
-                }});
-                
-                if (response.geometry) {{
-                    showAreaOnMap(response.geometry);
-                    selectedArea = `${{type}} Area`;
-                    
-                    document.getElementById('selected-area-name').textContent = selectedArea;
-                    document.getElementById('selected-area-details').textContent = `${{coordinates.length}} points drawn`;
-                    document.getElementById('selected-area-preview').style.display = 'block';
-                    
-                    showNotification('${{type}} created successfully!', 'success');
-                }}
-            }} catch (error) {{
-                showNotification('Error creating area: ' + error.message, 'error');
-            }}
-        }}
-        
-        // Show area on map
-        function showAreaOnMap(geometry) {{
-            // Remove existing area if any
-            if (map.getSource('selected-area')) {{
-                map.removeLayer('selected-area-fill');
-                map.removeLayer('selected-area-border');
-                map.removeSource('selected-area');
-            }}
-            
-            // Add new area
-            map.addSource('selected-area', {{
-                type: 'geojson',
-                data: {{
-                    type: 'Feature',
-                    geometry: geometry,
-                    properties: {{ name: selectedArea }}
-                }}
-            }});
-            
-            map.addLayer({{
-                id: 'selected-area-fill',
-                type: 'fill',
-                source: 'selected-area',
-                paint: {{
-                    'fill-color': '#00ff88',
-                    'fill-opacity': 0.2
-                }}
-            }});
-            
-            map.addLayer({{
-                id: 'selected-area-border',
-                type: 'line',
-                source: 'selected-area',
-                paint: {{
-                    'line-color': '#00ff88',
-                    'line-width': 3
-                }}
-            }});
-            
-            // Zoom to area
-            const bounds = new mapboxgl.LngLatBounds();
-            geometry.coordinates[0].forEach(coord => {{
-                bounds.extend(coord);
-            }});
-            
-            map.fitBounds(bounds, {{
-                padding: 50,
-                duration: 1500
-            }});
-        }}
-        
-        // Load vegetation indices
-        function loadIndices() {{
-            const indices = [
-                'NDVI', 'EVI', 'SAVI', 'NDWI', 'GNDVI', 
-                'MSAVI', 'ARVI', 'VARI', 'OSAVI', 'DVI', 
-                'RVI', 'MSI', 'NDMI', 'NBR', 'NDSI'
-            ];
-            
-            const container = document.getElementById('indices-container');
-            indices.forEach(index => {{
-                const div = document.createElement('div');
-                div.className = 'checkbox-item';
-                div.innerHTML = `
-                    <input type="checkbox" id="index-${{index}}" value="${{index}}" 
-                           ${{index === 'NDVI' || index === 'EVI' ? 'checked' : ''}}>
-                    <label class="checkbox-label" for="index-${{index}}">${{index}}</label>
-                `;
-                container.appendChild(div);
-                
-                // Add click handler
-                div.addEventListener('click', function(e) {{
-                    const checkbox = this.querySelector('input');
-                    checkbox.checked = !checkbox.checked;
-                    this.classList.toggle('selected', checkbox.checked);
-                }});
-                
-                // Set initial selected state
-                if (index === 'NDVI' || index === 'EVI') {{
-                    div.classList.add('selected');
-                }}
-            }});
-        }}
-        
-        // Select all indices
-        function selectAllIndices() {{
-            document.querySelectorAll('#indices-container .checkbox-item').forEach(item => {{
-                item.classList.add('selected');
-                item.querySelector('input').checked = true;
-            }});
-        }}
-        
-        // Clear all indices
-        function clearAllIndices() {{
-            document.querySelectorAll('#indices-container .checkbox-item').forEach(item => {{
-                item.classList.remove('selected');
-                item.querySelector('input').checked = false;
-            }});
-        }}
-        
-        // Run analysis
-        async function runAnalysis() {{
-            if (!selectedArea) {{
-                showNotification('Please select an area first', 'warning');
-                return;
-            }}
-            
-            // Get selected indices
-            const selectedIndices = [];
-            document.querySelectorAll('#indices-container input:checked').forEach(checkbox => {{
-                selectedIndices.push(checkbox.value);
-            }});
-            
-            if (selectedIndices.length === 0) {{
-                showNotification('Please select at least one vegetation index', 'warning');
-                return;
-            }}
-            
-            // Get parameters
-            const params = {{
-                startDate: document.getElementById('start-date').value,
-                endDate: document.getElementById('end-date').value,
-                satellite: document.getElementById('satellite-select').value,
-                cloudCover: document.getElementById('cloud-slider').value,
-                indices: selectedIndices
-            }};
-            
-            showNotification('Running analysis... This may take a moment.', 'info');
-            
-            try {{
-                const response = await callStreamlit('run_analysis', params);
-                
-                if (response.results) {{
-                    displayResults(response.results);
-                    showNotification('Analysis complete!', 'success');
-                }} else {{
-                    showNotification(response.error || 'Analysis failed', 'error');
-                }}
-            }} catch (error) {{
-                showNotification('Analysis error: ' + error.message, 'error');
-            }}
-        }}
-        
-        // Display results
-        function displayResults(results) {{
-            const content = document.getElementById('results-content');
-            const panel = document.getElementById('results-panel');
-            
-            let html = `
-                <div style="color: #00ff88; font-weight: 600; margin-bottom: 15px; font-size: 18px;">
-                    ${{selectedArea}}
-                </div>
-                <div style="color: #999; margin-bottom: 20px;">
-                    Analysis completed with ${{Object.keys(results).length}} indices
-                </div>
-            `;
-            
-            // Create result cards for each index
-            Object.keys(results).forEach(index => {{
-                const data = results[index];
-                
-                if (data.values && data.values.length > 0) {{
-                    const values = data.values.filter(v => v !== null);
-                    const avg = values.reduce((a, b) => a + b, 0) / values.length;
-                    const max = Math.max(...values);
-                    const min = Math.min(...values);
-                    
-                    html += `
-                        <div style="background: rgba(255, 255, 255, 0.05); border-radius: 10px; padding: 15px; margin-bottom: 15px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                <div style="color: #00ff88; font-weight: 600;">${{index}}</div>
-                                <div style="color: white; font-weight: 600; font-size: 16px;">${{avg.toFixed(4)}}</div>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; color: #999; font-size: 12px;">
-                                <div>Min: ${{min.toFixed(4)}}</div>
-                                <div>Max: ${{max.toFixed(4)}}</div>
-                                <div>Points: ${{values.length}}</div>
-                            </div>
-                            <div style="margin-top: 10px; height: 4px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; overflow: hidden;">
-                                <div style="height: 100%; width: ${{((avg - min) / (max - min || 1)) * 100}}%; background: #00ff88; border-radius: 2px;"></div>
-                            </div>
-                        </div>
-                    `;
-                }}
-            }});
-            
-            content.innerHTML = html;
-            panel.style.display = 'block';
-        }}
-        
-        // Export data
-        async function exportData() {{
-            showNotification('Preparing export...', 'info');
-            
-            const format = document.getElementById('export-format').value;
-            const range = document.getElementById('export-range').value;
-            
-            try {{
-                const response = await callStreamlit('export_data', {{
-                    format: format,
-                    range: range
-                }});
-                
-                if (response.download_url) {{
-                    // Create download link
-                    const a = document.createElement('a');
-                    a.href = response.download_url;
-                    a.download = `khisba_export.${{format}}`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    
-                    showNotification('Export downloaded!', 'success');
-                }}
-            }} catch (error) {{
-                showNotification('Export failed: ' + error.message, 'error');
-            }}
-        }}
-        
-        // Share results
-        function shareResults() {{
-            showNotification('Share feature coming soon!', 'info');
-        }}
-        
-        // Toggle panels
-        function togglePanel(panel) {{
-            const mainPanel = document.getElementById('main-panel');
-            const resultsPanel = document.getElementById('results-panel');
-            
-            if (panel === 'main') {{
-                mainPanel.style.display = mainPanel.style.display === 'none' ? 'block' : 'none';
-            }} else if (panel === 'results') {{
-                resultsPanel.style.display = resultsPanel.style.display === 'none' ? 'block' : 'none';
-            }}
-        }}
-        
-        // Switch tabs
-        function switchTab(tabName) {{
-            // Update tab buttons
-            document.querySelectorAll('.tab').forEach(tab => {{
-                tab.classList.remove('active');
-                if (tab.textContent.toLowerCase() === tabName.toLowerCase()) {{
-                    tab.classList.add('active');
-                }}
-            }});
-            
-            // Show corresponding content
-            document.querySelectorAll('.tab-content').forEach(content => {{
-                content.style.display = 'none';
-            }});
-            document.getElementById(`tab-${{tabName}}`).style.display = 'block';
-        }}
-        
-        // Reset view
-        function resetView() {{
-            map.flyTo({{
-                center: [0, 20],
-                zoom: 2,
-                pitch: 45,
-                bearing: 0,
-                duration: 1500
-            }});
-        }}
-        
-        // Toggle fullscreen
-        function toggleFullscreen() {{
-            if (!document.fullscreenElement) {{
-                document.documentElement.requestFullscreen();
-            }} else {{
-                if (document.exitFullscreen) {{
-                    document.exitFullscreen();
-                }}
-            }}
-        }}
-        
-        // Show help
-        function showHelp() {{
-            showNotification('KHISBA GIS: 1) Select area 2) Configure analysis 3) Run analysis 4) View results', 'info');
-        }}
-        
-        // Show notification
-        function showNotification(message, type = 'info') {{
-            const notification = document.getElementById('notification');
-            const messageEl = document.getElementById('notification-message');
-            
-            messageEl.textContent = message;
-            notification.style.display = 'block';
-            
-            // Set color based on type
-            notification.style.borderColor = 
-                type === 'error' ? '#ff4444' : 
-                type === 'warning' ? '#ffaa00' : 
-                type === 'success' ? '#00ff88' : '#00ff88';
-            
-            // Auto hide
-            setTimeout(() => {{
-                notification.style.display = 'none';
-            }}, 5000);
-        }}
-        
-        // Call Streamlit backend
-        async function callStreamlit(action, data) {{
-            const requestId = 'req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            
-            return new Promise((resolve, reject) => {{
-                // Send request to Streamlit
-                window.parent.postMessage({{
-                    type: 'streamlit_request',
-                    action: action,
-                    data: data,
-                    requestId: requestId
-                }}, '*');
-                
-                // Listen for response
-                const responseHandler = (event) => {{
-                    if (event.data.type === 'streamlit_response' && event.data.requestId === requestId) {{
-                        window.removeEventListener('message', responseHandler);
-                        
-                        if (event.data.success) {{
-                            resolve(event.data.response);
-                        }} else {{
-                            reject(new Error(event.data.error));
-                        }}
-                    }}
-                }};
-                
-                window.addEventListener('message', responseHandler);
-                
-                // Timeout after 30 seconds
-                setTimeout(() => {{
-                    window.removeEventListener('message', responseHandler);
-                    reject(new Error('Request timeout'));
-                }}, 30000);
-            }});
-        }}
-        
-        // Initialize when page loads
-        window.addEventListener('DOMContentLoaded', initMap);
-        
-        // Handle keyboard shortcuts
-        document.addEventListener('keydown', (e) => {{
-            if (e.key === 'Escape') {{
-                resetDrawing();
-            }} else if (e.key === 'h' || e.key === 'H') {{
-                togglePanel('main');
-            }} else if (e.key === 'r' || e.key === 'R') {{
-                togglePanel('results');
-            }}
-        }});
-    </script>
-</body>
-</html>
-"""
+# Main Dashboard Layout
+st.markdown("""
+<div class="compact-header">
+    <div>
+        <h1>🌍 KHISBA GIS</h1>
+        <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+        <span class="status-badge">Connected</span>
+        <span class="status-badge">3D Mapbox Globe</span>
+        <span class="status-badge">v2.0</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-# Display the full-screen map
-st.components.v1.html(mapbox_html, height=800, scrolling=False)
-
-# Hidden Streamlit widgets for data processing
-st.markdown('<div style="display: none;">', unsafe_allow_html=True)
-
-# Create hidden input for JavaScript communication
-js_request = st.text_input("JS Request", key="js_request", label_visibility="collapsed")
-
-# Process JavaScript requests
-if js_request:
+# Helper Functions for Earth Engine
+def get_admin_boundaries(level, country_code=None, admin1_code=None):
+    """Get administrative boundaries from Earth Engine"""
     try:
-        data = json.loads(js_request)
-        action = data.get('action')
-        request_id = data.get('requestId')
-        
-        response = {}
-        
-        if st.session_state.ee_initialized:
-            if action == 'get_admin1':
-                country = data.get('data', {}).get('country')
-                if country:
-                    try:
-                        # Get country code
-                        countries_fc = ee.FeatureCollection("FAO/GAUL/2015/level0")
-                        country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', country)).first()
-                        country_code = country_feature.get('ADM0_CODE').getInfo()
-                        
-                        # Get admin1 for this country
-                        admin1_fc = ee.FeatureCollection("FAO/GAUL/2015/level1")
-                        admin1_fc = admin1_fc.filter(ee.Filter.eq('ADM0_CODE', country_code))
-                        admin1_names = admin1_fc.aggregate_array('ADM1_NAME').distinct().getInfo()
-                        
-                        response = {'admin1': sorted(admin1_names) if admin1_names else []}
-                    except Exception as e:
-                        response = {'error': f"Error loading provinces: {str(e)}"}
-                        
-            elif action == 'get_admin2':
-                country = data.get('data', {}).get('country')
-                admin1 = data.get('data', {}).get('admin1')
-                
-                if country and admin1:
-                    try:
-                        # First get the admin1 feature
-                        admin1_fc = ee.FeatureCollection("FAO/GAUL/2015/level1")
-                        admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', admin1)).first()
-                        admin1_code = admin1_feature.get('ADM1_CODE').getInfo()
-                        
-                        # Get admin2 for this admin1
-                        admin2_fc = ee.FeatureCollection("FAO/GAUL/2015/level2")
-                        admin2_fc = admin2_fc.filter(ee.Filter.eq('ADM1_CODE', admin1_code))
-                        admin2_names = admin2_fc.aggregate_array('ADM2_NAME').distinct().getInfo()
-                        
-                        response = {'admin2': sorted(admin2_names) if admin2_names else []}
-                    except Exception as e:
-                        response = {'error': f"Error loading municipalities: {str(e)}"}
-                        
-            elif action == 'get_geometry':
-                country = data.get('data', {}).get('country')
-                admin1 = data.get('data', {}).get('admin1')
-                admin2 = data.get('data', {}).get('admin2')
-                
-                try:
-                    if admin2:
-                        # Get municipality geometry
-                        admin2_fc = ee.FeatureCollection("FAO/GAUL/2015/level2")
-                        admin2_feature = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', admin2)).first()
-                        geometry = admin2_feature.geometry()
-                    elif admin1:
-                        # Get province geometry
-                        admin1_fc = ee.FeatureCollection("FAO/GAUL/2015/level1")
-                        admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', admin1)).first()
-                        geometry = admin1_feature.geometry()
-                    else:
-                        # Get country geometry
-                        countries_fc = ee.FeatureCollection("FAO/GAUL/2015/level0")
-                        country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', country)).first()
-                        geometry = country_feature.geometry()
-                    
-                    # Convert to GeoJSON
-                    bounds = geometry.bounds().getInfo()
-                    coords = bounds['coordinates'][0]
-                    
-                    geojson = {
-                        'type': 'Polygon',
-                        'coordinates': [coords]
-                    }
-                    
-                    response = {'geometry': geojson}
-                    
-                except Exception as e:
-                    response = {'error': f"Error getting geometry: {str(e)}"}
-                    
-            elif action == 'create_custom_area':
-                coordinates = data.get('data', {}).get('coordinates')
-                
-                if coordinates and len(coordinates) >= 3:
-                    geojson = {
-                        'type': 'Polygon',
-                        'coordinates': [coordinates]
-                    }
-                    response = {'geometry': geojson}
-                else:
-                    response = {'error': 'Invalid coordinates'}
-                    
-            elif action == 'run_analysis':
-                # Simplified analysis for demo
-                response = {
-                    'results': {
-                        'NDVI': {'values': [0.4, 0.5, 0.6, 0.55, 0.52]},
-                        'EVI': {'values': [0.3, 0.4, 0.5, 0.45, 0.42]},
-                        'NDWI': {'values': [0.2, 0.3, 0.35, 0.32, 0.3]},
-                        'SAVI': {'values': [0.35, 0.45, 0.55, 0.5, 0.48]}
-                    }
-                }
-                
-            elif action == 'export_data':
-                response = {
-                    'download_url': 'data:text/csv;base64,' + b64encode(b"test,data\n1,2\n3,4").decode()
-                }
-                
+        if level == 0:
+            return ee.FeatureCollection("FAO/GAUL/2015/level0")
+        elif level == 1:
+            admin1 = ee.FeatureCollection("FAO/GAUL/2015/level1")
+            if country_code:
+                return admin1.filter(ee.Filter.eq('ADM0_CODE', country_code))
+            return admin1
+        elif level == 2:
+            admin2 = ee.FeatureCollection("FAO/GAUL/2015/level2")
+            if admin1_code:
+                return admin2.filter(ee.Filter.eq('ADM1_CODE', admin1_code))
+            elif country_code:
+                return admin2.filter(ee.Filter.eq('ADM0_CODE', country_code))
+            return admin2
+    except Exception as e:
+        st.error(f"Error loading boundaries: {str(e)}")
+        return None
+
+def get_boundary_names(feature_collection, level):
+    """Extract boundary names from Earth Engine FeatureCollection"""
+    try:
+        if level == 0:
+            names = feature_collection.aggregate_array('ADM0_NAME').distinct()
+        elif level == 1:
+            names = feature_collection.aggregate_array('ADM1_NAME').distinct()
+        elif level == 2:
+            names = feature_collection.aggregate_array('ADM2_NAME').distinct()
         else:
-            response = {'error': 'Earth Engine not initialized'}
+            return []
         
-        # Send response back to JavaScript
-        response_js = f"""
-        <script>
-        window.parent.postMessage({{
-            type: 'streamlit_response',
-            requestId: '{request_id}',
-            success: {json.dumps('error' not in response)},
-            response: {json.dumps(response)}
-        }}, '*');
-        </script>
-        """
-        
-        st.components.v1.html(response_js, height=0)
+        names_list = names.getInfo()
+        if names_list:
+            return sorted(names_list)
+        return []
         
     except Exception as e:
-        st.error(f"Error processing request: {str(e)}")
+        st.error(f"Error extracting names: {str(e)}")
+        return []
 
-# Initialize communication script
-init_script = """
-<script>
-// Listen for Streamlit requests
-window.addEventListener('message', function(event) {
-    if (event.data.type === 'streamlit_request') {
-        // Forward to Streamlit
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.id = 'js-request-input';
-        input.value = JSON.stringify(event.data);
-        document.body.appendChild(input);
+def get_geometry_coordinates(geometry):
+    """Get center coordinates and bounds from geometry"""
+    try:
+        bounds = geometry.geometry().bounds().getInfo()
+        coords = bounds['coordinates'][0]
+        lats = [coord[1] for coord in coords]
+        lons = [coord[0] for coord in coords]
+        center_lat = sum(lats) / len(lats)
+        center_lon = sum(lons) / len(lons)
         
-        // Trigger Streamlit
-        const inputEvent = new Event('input', { bubbles: true });
-        input.dispatchEvent(inputEvent);
-    }
-});
-</script>
-"""
+        # Get bounds for drawing rectangle
+        min_lat = min(lats)
+        max_lat = max(lats)
+        min_lon = min(lons)
+        max_lon = max(lons)
+        
+        return {
+            'center': [center_lon, center_lat],
+            'bounds': [[min_lat, min_lon], [max_lat, max_lon]],
+            'zoom': 6
+        }
+    except Exception as e:
+        st.error(f"Error getting coordinates: {str(e)}")
+        return {'center': [0, 20], 'bounds': None, 'zoom': 2}
 
-st.components.v1.html(init_script, height=0)
+# Create main layout containers
+col1, col2 = st.columns([0.25, 0.75], gap="large")
 
-# Create the hidden input for JavaScript
-st.markdown('<input type="hidden" id="js-request-input">', unsafe_allow_html=True)
+# LEFT SIDEBAR - All controls
+with col1:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-title"><div class="icon">🌍</div><h3 style="margin: 0;">Area Selection</h3></div>', unsafe_allow_html=True)
+    
+    if st.session_state.ee_initialized:
+        try:
+            # Get countries
+            countries_fc = get_admin_boundaries(0)
+            if countries_fc:
+                country_names = get_boundary_names(countries_fc, 0)
+                selected_country = st.selectbox(
+                    "Country",
+                    options=["Select a country"] + country_names,
+                    index=0,
+                    help="Choose a country for analysis",
+                    key="country_select"
+                )
+                
+                if selected_country and selected_country != "Select a country":
+                    # Get country code
+                    country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
+                    
+                    # Get admin1 regions for selected country
+                    admin1_fc = get_admin_boundaries(1, country_feature.get('ADM0_CODE').getInfo())
+                    if admin1_fc:
+                        admin1_names = get_boundary_names(admin1_fc, 1)
+                        selected_admin1 = st.selectbox(
+                            "State/Province",
+                            options=["Select state/province"] + admin1_names,
+                            index=0,
+                            help="Choose a state or province",
+                            key="admin1_select"
+                        )
+                        
+                        if selected_admin1 and selected_admin1 != "Select state/province":
+                            # Get admin1 code
+                            admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
+                            
+                            # Get admin2 regions for selected admin1
+                            admin2_fc = get_admin_boundaries(2, None, admin1_feature.get('ADM1_CODE').getInfo())
+                            if admin2_fc:
+                                admin2_names = get_boundary_names(admin2_fc, 2)
+                                selected_admin2 = st.selectbox(
+                                    "Municipality",
+                                    options=["Select municipality"] + admin2_names,
+                                    index=0,
+                                    help="Choose a municipality",
+                                    key="admin2_select"
+                                )
+                            else:
+                                selected_admin2 = None
+                        else:
+                            selected_admin2 = None
+                    else:
+                        selected_admin1 = None
+                        selected_admin2 = None
+                else:
+                    selected_admin1 = None
+                    selected_admin2 = None
+            else:
+                st.error("Failed to load countries. Please check Earth Engine connection.")
+                selected_country = None
+                selected_admin1 = None
+                selected_admin2 = None
+                
+        except Exception as e:
+            st.error(f"Error loading boundaries: {str(e)}")
+            selected_country = None
+            selected_admin1 = None
+            selected_admin2 = None
+    else:
+        st.warning("Earth Engine not initialized")
+        selected_country = None
+        selected_admin1 = None
+        selected_admin2 = None
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Update selected geometry when area is selected
+    if selected_country and selected_country != "Select a country":
+        try:
+            # Determine geometry
+            if selected_admin2 and selected_admin2 != "Select municipality":
+                geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
+                area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
+                area_level = "Municipality"
+            elif selected_admin1 and selected_admin1 != "Select state/province":
+                geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
+                area_name = f"{selected_admin1}, {selected_country}"
+                area_level = "State/Province"
+            else:
+                geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
+                area_name = selected_country
+                area_level = "Country"
+            
+            # Get coordinates for the map
+            coords_info = get_geometry_coordinates(geometry)
+            
+            # Store in session state
+            st.session_state.selected_geometry = geometry
+            st.session_state.selected_coordinates = coords_info
+            st.session_state.selected_area_name = area_name
+            st.session_state.selected_area_level = area_level
+            
+        except Exception as e:
+            st.error(f"Error processing geometry: {str(e)}")
+    
+    # Analysis Parameters Card
+    if selected_country and selected_country != "Select a country":
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">⚙️</div><h3 style="margin: 0;">Analysis Settings</h3></div>', unsafe_allow_html=True)
+        
+        col_a, col_b = st.columns(2)
+        with col_a:
+            start_date = st.date_input(
+                "Start Date",
+                value=datetime(2023, 1, 1),
+                help="Start date for analysis",
+                key="start_date"
+            )
+        with col_b:
+            end_date = st.date_input(
+                "End Date",
+                value=datetime(2023, 12, 31),
+                help="End date for analysis",
+                key="end_date"
+            )
+        
+        collection_choice = st.selectbox(
+            "Satellite Source",
+            options=["Sentinel-2", "Landsat-8"],
+            help="Choose satellite collection",
+            key="satellite_select"
+        )
+        
+        cloud_cover = st.slider(
+            "Max Cloud Cover (%)",
+            min_value=0,
+            max_value=100,
+            value=20,
+            help="Maximum cloud cover percentage",
+            key="cloud_slider"
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Vegetation Indices Card
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">🌿</div><h3 style="margin: 0;">Vegetation Indices</h3></div>', unsafe_allow_html=True)
+        
+        available_indices = [
+            'NDVI', 'ARVI', 'ATSAVI', 'DVI', 'EVI', 'EVI2', 'GNDVI', 'MSAVI', 'MSI', 'MTVI', 'MTVI2',
+            'NDTI', 'NDWI', 'OSAVI', 'RDVI', 'RI', 'RVI', 'SAVI', 'TVI', 'TSAVI', 'VARI', 'VIN', 'WDRVI',
+            'GCVI', 'AWEI', 'MNDWI', 'WI', 'ANDWI', 'NDSI', 'nDDI', 'NBR', 'DBSI', 'SI', 'S3', 'BRI',
+            'SSI', 'NDSI_Salinity', 'SRPI', 'MCARI', 'NDCI', 'PSSRb1', 'SIPI', 'PSRI', 'Chl_red_edge', 'MARI', 'NDMI'
+        ]
+        
+        selected_indices = st.multiselect(
+            "Select Indices",
+            options=available_indices,
+            default=['NDVI', 'EVI', 'SAVI', 'NDWI'],
+            help="Choose vegetation indices to analyze",
+            key="indices_select"
+        )
+        
+        col_c, col_d = st.columns(2)
+        with col_c:
+            if st.button("Select All", use_container_width=True, key="select_all"):
+                selected_indices = available_indices
+                st.rerun()
+        with col_d:
+            if st.button("Clear All", use_container_width=True, key="clear_all"):
+                selected_indices = []
+                st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Run Analysis Button - USING EXACT SAME LOGIC AS SECOND CODE
+        if st.button("🚀 Run Analysis", type="primary", use_container_width=True, key="run_analysis"):
+            if not selected_indices:
+                st.error("Please select at least one vegetation index")
+            else:
+                with st.spinner("Running analysis..."):
+                    try:
+                        # Define collection based on choice - EXACTLY LIKE SECOND CODE
+                        if collection_choice == "Sentinel-2":
+                            collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+                        else:
+                            collection = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+                        
+                        # Filter collection - EXACTLY LIKE SECOND CODE
+                        filtered_collection = (collection
+                            .filterDate(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+                            .filterBounds(st.session_state.selected_geometry.geometry())
+                            .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
+                        )
+                        
+                        # Import the vegetation indices functions - EXACTLY LIKE SECOND CODE
+                        try:
+                            from vegetation_indices import mask_clouds, add_vegetation_indices
+                            
+                            # Apply cloud masking and add vegetation indices - EXACTLY LIKE SECOND CODE
+                            if collection_choice == "Sentinel-2":
+                                processed_collection = (filtered_collection
+                                    .map(mask_clouds)
+                                    .map(add_vegetation_indices)
+                                )
+                            else:
+                                processed_collection = filtered_collection.map(add_vegetation_indices)
+                            
+                        except ImportError:
+                            # If module not found, use simplified version
+                            def simple_add_indices(image):
+                                nir = image.select('B8')
+                                red = image.select('B4')
+                                green = image.select('B3')
+                                blue = image.select('B2')
+                                
+                                ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI')
+                                evi = nir.subtract(red).multiply(2.5).divide(
+                                    nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1)
+                                ).rename('EVI')
+                                savi = nir.subtract(red).multiply(1.5).divide(
+                                    nir.add(red).add(0.5)
+                                ).rename('SAVI')
+                                ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI')
+                                
+                                return image.addBands([ndvi, evi, savi, ndwi])
+                            
+                            processed_collection = filtered_collection.map(simple_add_indices)
+                        
+                        # Calculate time series for selected indices - EXACTLY LIKE SECOND CODE
+                        results = {}
+                        for index in selected_indices:
+                            try:
+                                # EXACTLY THE SAME AS SECOND CODE - no client-side operations in mapped function
+                                def add_date_and_reduce(image):
+                                    reduced = image.select(index).reduceRegion(
+                                        reducer=ee.Reducer.mean(),
+                                        geometry=st.session_state.selected_geometry.geometry(),
+                                        scale=30,  # Same as second code
+                                        maxPixels=1e9
+                                    )
+                                    # This returns a server-side feature - NO CLIENT-SIDE OPERATIONS
+                                    return ee.Feature(None, reduced.set('date', image.date().format()))
+                                
+                                # Map over collection
+                                time_series = processed_collection.map(add_date_and_reduce)
+                                
+                                # Get results
+                                time_series_list = time_series.getInfo()
+                                
+                                dates = []
+                                values = []
+                                
+                                if 'features' in time_series_list:
+                                    for feature in time_series_list['features']:
+                                        props = feature['properties']
+                                        if index in props and props[index] is not None and 'date' in props:
+                                            dates.append(props['date'])
+                                            values.append(props[index])
+                                
+                                results[index] = {'dates': dates, 'values': values}
+                                
+                            except Exception as e:
+                                st.warning(f"Could not calculate {index}: {str(e)}")
+                                results[index] = {'dates': [], 'values': []}
+                        
+                        st.session_state.analysis_results = results
+                        st.success("✅ Analysis completed!")
+                        
+                    except Exception as e:
+                        st.error(f"❌ Analysis failed: {str(e)}")
+                        st.error(f"Full error: {traceback.format_exc()}")
 
-# Keep Streamlit running
-st.markdown('<div style="height: 1px;"></div>', unsafe_allow_html=True)
+# MAIN CONTENT AREA - 3D Mapbox Globe with Selected Area Highlight
+with col2:
+    # 3D Mapbox Globe
+    st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
+    st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Interactive 3D Global Map</h3></div>', unsafe_allow_html=True)
+    
+    # Prepare coordinates for the map
+    map_center = [0, 20]
+    map_zoom = 2
+    bounds_data = None
+    
+    if st.session_state.selected_coordinates:
+        map_center = st.session_state.selected_coordinates['center']
+        map_zoom = st.session_state.selected_coordinates['zoom']
+        bounds_data = st.session_state.selected_coordinates['bounds']
+    
+    # Generate HTML for Mapbox interactive globe with OUTDOORS as default
+    mapbox_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+      <title>KHISBA GIS - 3D Global Map</title>
+      <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+      <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+      <style>
+        body {{ 
+          margin: 0; 
+          padding: 0; 
+          background: #000000;
+        }}
+        #map {{ 
+          position: absolute; 
+          top: 0; 
+          bottom: 0; 
+          width: 100%; 
+          border-radius: 8px;
+        }}
+        .map-overlay {{
+          position: absolute;
+          top: 20px;
+          right: 20px;
+          background: rgba(10, 10, 10, 0.9);
+          color: white;
+          padding: 15px;
+          border-radius: 8px;
+          border: 1px solid #222222;
+          max-width: 250px;
+          z-index: 1000;
+          font-family: 'Inter', sans-serif;
+        }}
+        .overlay-title {{
+          color: #00ff88;
+          font-weight: 600;
+          margin-bottom: 10px;
+          font-size: 14px;
+        }}
+        .overlay-text {{
+          color: #cccccc;
+          font-size: 12px;
+          line-height: 1.4;
+        }}
+        .coordinates-display {{
+          position: absolute;
+          bottom: 20px;
+          left: 20px;
+          background: rgba(10, 10, 10, 0.9);
+          color: white;
+          padding: 10px 15px;
+          border-radius: 6px;
+          border: 1px solid #222222;
+          font-family: monospace;
+          font-size: 12px;
+          z-index: 1000;
+        }}
+        .selected-area {{
+          position: absolute;
+          top: 20px;
+          left: 20px;
+          background: rgba(10, 10, 10, 0.9);
+          color: white;
+          padding: 15px;
+          border-radius: 8px;
+          border: 1px solid #222222;
+          max-width: 300px;
+          z-index: 1000;
+          font-family: 'Inter', sans-serif;
+        }}
+        .area-title {{
+          color: #00ff88;
+          font-weight: 600;
+          margin-bottom: 10px;
+          font-size: 14px;
+        }}
+        .area-details {{
+          color: #cccccc;
+          font-size: 12px;
+          line-height: 1.4;
+        }}
+        .layer-switcher {{
+          position: absolute;
+          top: 20px;
+          right: 20px;
+          background: rgba(10, 10, 10, 0.9);
+          border: 1px solid #222222;
+          border-radius: 8px;
+          overflow: hidden;
+          z-index: 1000;
+        }}
+        .layer-button {{
+          display: block;
+          width: 120px;
+          padding: 10px;
+          background: #0a0a0a;
+          color: #ffffff;
+          border: none;
+          border-bottom: 1px solid #222222;
+          cursor: pointer;
+          font-size: 12px;
+          text-align: left;
+          transition: all 0.2s;
+        }}
+        .layer-button:hover {{
+          background: #111111;
+        }}
+        .layer-button.active {{
+          background: #00ff88;
+          color: #000000;
+          font-weight: bold;
+        }}
+        .layer-button:last-child {{
+          border-bottom: none;
+        }}
+        .mapboxgl-ctrl-group {{
+          background: #0a0a0a !important;
+          border: 1px solid #222222 !important;
+        }}
+        .mapboxgl-ctrl button {{
+          background-color: #0a0a0a !important;
+          color: #ffffff !important;
+        }}
+        .mapboxgl-ctrl button:hover {{
+          background-color: #111111 !important;
+        }}
+      </style>
+    </head>
+    <body>
+      <div id="map"></div>
+      
+      <div class="map-overlay">
+        <div class="overlay-title">🌍 KHISBA GIS</div>
+        <div class="overlay-text">
+          • Drag to rotate the globe<br>
+          • Scroll to zoom in/out<br>
+          • Right-click to pan<br>
+          • Selected area highlighted in green
+        </div>
+      </div>
+      
+      <div class="layer-switcher">
+        <button class="layer-button" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite Streets</button>
+        <button class="layer-button" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
+        <button class="layer-button active" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
+        <button class="layer-button" data-style="mapbox://styles/mapbox/light-v11">Light</button>
+        <button class="layer-button" data-style="mapbox://styles/mapbox/dark-v11">Dark</button>
+      </div>
+      
+      <div class="coordinates-display">
+        <div>Lat: <span id="lat-display">0.00°</span></div>
+        <div>Lon: <span id="lon-display">0.00°</span></div>
+      </div>
+      
+      {f'''
+      <div class="selected-area">
+        <div class="area-title">📍 Selected Area</div>
+        <div class="area-details">
+          <strong>{st.session_state.selected_area_name if hasattr(st.session_state, 'selected_area_name') else 'None'}</strong><br>
+          Level: {st.session_state.selected_area_level if hasattr(st.session_state, 'selected_area_level') else 'None'}<br>
+          Coordinates: {map_center[1]:.4f}°, {map_center[0]:.4f}°<br>
+          Status: <span style="color: #00ff88;">Ready for Analysis</span>
+        </div>
+      </div>
+      ''' if st.session_state.selected_area_name else ''}
+      
+      <script>
+        mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
+
+        // Create a new map instance with OUTDOORS as default
+        const map = new mapboxgl.Map({{
+          container: 'map',
+          style: 'mapbox://styles/mapbox/outdoors-v12',  // OUTDOORS is now default
+          center: {map_center},
+          zoom: {map_zoom},
+          pitch: 45,
+          bearing: 0
+        }});
+
+        // Add navigation controls
+        map.addControl(new mapboxgl.NavigationControl());
+
+        // Add scale control
+        map.addControl(new mapboxgl.ScaleControl({{
+          unit: 'metric'
+        }}));
+
+        // Add fullscreen control
+        map.addControl(new mapboxgl.FullscreenControl());
+
+        // Layer switcher functionality
+        const layerButtons = document.querySelectorAll('.layer-button');
+        layerButtons.forEach(button => {{
+          button.addEventListener('click', () => {{
+            // Update active button
+            layerButtons.forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+            
+            // Change map style
+            map.setStyle(button.dataset.style);
+            
+            // Re-add selected area after style change
+            setTimeout(() => {{
+              {f'''
+              if ({bounds_data}) {{
+                const bounds = {bounds_data};
+                
+                // Remove existing layers if they exist
+                if (map.getSource('selected-area')) {{
+                  map.removeLayer('selected-area-fill');
+                  map.removeLayer('selected-area-border');
+                  map.removeSource('selected-area');
+                }}
+                
+                // Create a polygon for the selected area
+                map.addSource('selected-area', {{
+                  'type': 'geojson',
+                  'data': {{
+                    'type': 'Feature',
+                    'geometry': {{
+                      'type': 'Polygon',
+                      'coordinates': [[
+                        [bounds[0][1], bounds[0][0]],
+                        [bounds[1][1], bounds[0][0]],
+                        [bounds[1][1], bounds[1][0]],
+                        [bounds[0][1], bounds[1][0]],
+                        [bounds[0][1], bounds[0][0]]
+                      ]]
+                    }}
+                  }}
+                }});
+
+                // Add the polygon layer
+                map.addLayer({{
+                  'id': 'selected-area-fill',
+                  'type': 'fill',
+                  'source': 'selected-area',
+                  'layout': {{}},
+                  'paint': {{
+                    'fill-color': '#00ff88',
+                    'fill-opacity': 0.2
+                  }}
+                }});
+
+                // Add border for the polygon
+                map.addLayer({{
+                  'id': 'selected-area-border',
+                  'type': 'line',
+                  'source': 'selected-area',
+                  'layout': {{}},
+                  'paint': {{
+                    'line-color': '#00ff88',
+                    'line-width': 3,
+                    'line-opacity': 0.8
+                  }}
+                }});
+              }}
+              ''' if bounds_data else ''}
+            }}, 500);
+          }});
+        }});
+
+        // Wait for map to load
+        map.on('load', () => {{
+          // Add event listener for mouse move to show coordinates
+          map.on('mousemove', (e) => {{
+            document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(2) + '°';
+            document.getElementById('lon-display').textContent = e.lngLat.lng.toFixed(2) + '°';
+          }});
+
+          // Add selected area polygon if bounds are available
+          {f'''
+          if ({bounds_data}) {{
+            const bounds = {bounds_data};
+            
+            // Create a polygon for the selected area
+            map.addSource('selected-area', {{
+              'type': 'geojson',
+              'data': {{
+                'type': 'Feature',
+                'geometry': {{
+                  'type': 'Polygon',
+                  'coordinates': [[
+                    [bounds[0][1], bounds[0][0]],
+                    [bounds[1][1], bounds[0][0]],
+                    [bounds[1][1], bounds[1][0]],
+                    [bounds[0][1], bounds[1][0]],
+                    [bounds[0][1], bounds[0][0]]
+                  ]]
+                }}
+              }}
+            }});
+
+            // Add the polygon layer
+            map.addLayer({{
+              'id': 'selected-area-fill',
+              'type': 'fill',
+              'source': 'selected-area',
+              'layout': {{}},
+              'paint': {{
+                'fill-color': '#00ff88',
+                'fill-opacity': 0.2
+              }}
+            }});
+
+            // Add border for the polygon
+            map.addLayer({{
+              'id': 'selected-area-border',
+              'type': 'line',
+              'source': 'selected-area',
+              'layout': {{}},
+              'paint': {{
+                'line-color': '#00ff88',
+                'line-width': 3,
+                'line-opacity': 0.8
+              }}
+            }});
+
+            // Fly to the selected area with animation
+            map.flyTo({{
+              center: {map_center},
+              zoom: {map_zoom},
+              duration: 2000,
+              essential: true
+            }});
+          }}
+          ''' if bounds_data else ''}
+
+          // Add some sample cities for interaction
+          const cities = [
+            {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital' }},
+            {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical capital' }},
+            {{ name: 'Tokyo', coordinates: [139.6917, 35.6895], country: 'Japan', info: 'Mega metropolis' }},
+            {{ name: 'Sydney', coordinates: [151.2093, -33.8688], country: 'Australia', info: 'Harbor city' }},
+            {{ name: 'Cairo', coordinates: [31.2357, 30.0444], country: 'Egypt', info: 'Nile Delta' }}
+          ];
+
+          // Add city markers
+          cities.forEach(city => {{
+            // Create a custom marker element
+            const el = document.createElement('div');
+            el.className = 'marker';
+            el.style.backgroundColor = '#ffaa00';
+            el.style.width = '15px';
+            el.style.height = '15px';
+            el.style.borderRadius = '50%';
+            el.style.border = '2px solid #ffffff';
+            el.style.boxShadow = '0 0 10px rgba(255, 170, 0, 0.5)';
+            el.style.cursor = 'pointer';
+
+            // Create a popup
+            const popup = new mapboxgl.Popup({{
+              offset: 25,
+              closeButton: true,
+              closeOnClick: false
+            }}).setHTML(
+              `<h3>${{city.name}}</h3>
+               <p><strong>Country:</strong> ${{city.country}}</p>
+               <p>${{city.info}}</p>`
+            );
+
+            // Create marker
+            new mapboxgl.Marker(el)
+              .setLngLat(city.coordinates)
+              .setPopup(popup)
+              .addTo(map);
+          }});
+        }});
+      </script>
+    </body>
+    </html>
+    """
+    
+    # Display the Mapbox HTML
+    st.components.v1.html(mapbox_html, height=550)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Analysis Results Section
+    if st.session_state.analysis_results:
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+        
+        # Results Header
+        st.markdown('<div class="compact-header"><h3>Analysis Results</h3><span class="status-badge">Complete</span></div>', unsafe_allow_html=True)
+        
+        results = st.session_state.analysis_results
+        
+        # Summary Statistics
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Summary Statistics</h3></div>', unsafe_allow_html=True)
+        
+        summary_data = []
+        for index, data in results.items():
+            if data['values']:
+                values = [v for v in data['values'] if v is not None]
+                if values:
+                    summary_data.append({
+                        'Index': index,
+                        'Mean': round(sum(values) / len(values), 4),
+                        'Min': round(min(values), 4),
+                        'Max': round(max(values), 4),
+                        'Count': len(values)
+                    })
+        
+        if summary_data:
+            summary_df = pd.DataFrame(summary_data)
+            st.dataframe(summary_df, use_container_width=True, hide_index=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Charts Section
+        if results:
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Vegetation Analytics</h3></div>', unsafe_allow_html=True)
+            
+            for index, data in results.items():
+                if data['dates'] and data['values']:
+                    try:
+                        # Parse dates
+                        dates = []
+                        for date_str in data['dates']:
+                            try:
+                                if 'T' in date_str:
+                                    date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                else:
+                                    date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                                dates.append(date_obj)
+                            except:
+                                continue
+                        
+                        values = [v for v in data['values'] if v is not None]
+                        
+                        if dates and values and len(dates) == len(values):
+                            df = pd.DataFrame({'Date': dates, 'Value': values})
+                            df = df.sort_values('Date')
+                            
+                            # Create chart with professional styling
+                            fig = go.Figure()
+                            
+                            # Calculate if value is increasing or decreasing
+                            current_value = df['Value'].iloc[-1] if len(df) > 0 else 0
+                            prev_value = df['Value'].iloc[-2] if len(df) > 1 else current_value
+                            is_increasing = current_value >= prev_value
+                            
+                            fig.add_trace(go.Scatter(
+                                x=df['Date'], 
+                                y=df['Value'],
+                                mode='lines+markers',
+                                name=f'{index} Index',
+                                line=dict(color='#00ff88' if is_increasing else '#ff4444', width=3),
+                                marker=dict(
+                                    size=6,
+                                    color='#00ff88' if is_increasing else '#ff4444',
+                                    line=dict(width=1, color='#ffffff')
+                                ),
+                                hovertemplate='<b>%{fullData.name}</b><br>Date: %{x|%Y-%m-%d}<br>Value: %{y:.4f}<extra></extra>'
+                            ))
+                            
+                            # Add 5-day moving average
+                            if len(df) >= 5:
+                                df['MA_5'] = df['Value'].rolling(window=min(5, len(df))).mean()
+                                fig.add_trace(go.Scatter(
+                                    x=df['Date'], 
+                                    y=df['MA_5'],
+                                    mode='lines',
+                                    name='MA 5-day',
+                                    line=dict(color='#ffaa00', width=2, dash='dot'),
+                                    opacity=0.7
+                                ))
+                            
+                            # Update layout
+                            fig.update_layout(
+                                title=f'{index} - Vegetation Analysis',
+                                plot_bgcolor='#0a0a0a',
+                                paper_bgcolor='#0a0a0a',
+                                font=dict(color='#ffffff'),
+                                xaxis=dict(
+                                    gridcolor='#222222',
+                                    zerolinecolor='#222222',
+                                    tickcolor='#444444',
+                                    title_font_color='#ffffff',
+                                    tickformat='%Y-%m-%d'
+                                ),
+                                yaxis=dict(
+                                    gridcolor='#222222',
+                                    zerolinecolor='#222222',
+                                    tickcolor='#444444',
+                                    title_font_color='#ffffff',
+                                    title=f'{index} Value'
+                                ),
+                                legend=dict(
+                                    bgcolor='rgba(0,0,0,0.5)',
+                                    bordercolor='#222222',
+                                    borderwidth=1,
+                                    x=0.01,
+                                    y=0.99
+                                ),
+                                hovermode='x unified',
+                                height=300,
+                                margin=dict(t=50, b=50, l=50, r=50)
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                    except Exception as e:
+                        st.error(f"Error creating chart for {index}: {str(e)}")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+        # Export Section
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">💾</div><h3 style="margin: 0;">Data Export</h3></div>', unsafe_allow_html=True)
+        
+        if st.button("📥 Download Results as CSV", type="primary", use_container_width=True, key="export_csv"):
+            export_data = []
+            for index, data in results.items():
+                for date, value in zip(data['dates'], data['values']):
+                    if value is not None:
+                        export_data.append({
+                            'Date': date,
+                            'Index': index,
+                            'Value': value
+                        })
+            
+            if export_data:
+                export_df = pd.DataFrame(export_data)
+                csv = export_df.to_csv(index=False)
+                
+                st.download_button(
+                    label="Download CSV File",
+                    data=csv,
+                    file_name=f"vegetation_indices_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.warning("No data available for export")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# Footer
+st.markdown("""
+<div class="section-divider"></div>
+<div style="text-align: center; color: #666666; font-size: 12px; padding: 20px 0;">
+    <p style="margin: 5px 0;">KHISBA GIS • Interactive 3D Global Vegetation Analytics Platform</p>
+    <p style="margin: 5px 0;">Created by Taibi Farouk Djilali • Clean Green & Black Design</p>
+    <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
+        <span class="status-badge">3D Mapbox</span>
+        <span class="status-badge">Earth Engine</span>
+        <span class="status-badge">Streamlit</span>
+        <span class="status-badge">Plotly</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+ xx
