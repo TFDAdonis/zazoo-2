@@ -1,12 +1,15 @@
 import streamlit as st
 import json
 import pandas as pd
+import folium
+from streamlit_folium import st_folium
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from datetime import datetime, timedelta
 import ee
 import traceback
-from datetime import datetime
-import plotly.graph_objects as go
 
-# Custom CSS for Clean Green & Black TypeScript/React Style
+# Custom CSS for Clean Green & Black TypeScript/React Style with Guided UI
 st.markdown("""
 <style>
     /* Base styling */
@@ -51,14 +54,168 @@ st.markdown("""
         margin-bottom: 0.5rem !important;
     }
     
-    h2 {
-        font-size: 1.5rem !important;
-        color: var(--primary-green) !important;
+    /* Progress Steps */
+    .progress-steps {
+        display: flex;
+        justify-content: space-between;
+        margin: 20px 0;
+        position: relative;
     }
     
-    h3 {
-        font-size: 1.25rem !important;
-        margin-bottom: 1rem !important;
+    .progress-step {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        z-index: 2;
+    }
+    
+    .step-circle {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: var(--secondary-black);
+        border: 2px solid var(--border-gray);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-gray);
+        font-weight: 600;
+        margin-bottom: 8px;
+        transition: all 0.3s ease;
+    }
+    
+    .step-circle.active {
+        background: var(--primary-green);
+        border-color: var(--primary-green);
+        color: var(--primary-black);
+        box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+    }
+    
+    .step-circle.completed {
+        background: var(--accent-green);
+        border-color: var(--accent-green);
+        color: var(--primary-black);
+    }
+    
+    .step-label {
+        font-size: 12px;
+        color: var(--text-gray);
+        text-align: center;
+        max-width: 100px;
+    }
+    
+    .step-label.active {
+        color: var(--primary-green);
+        font-weight: 600;
+    }
+    
+    .progress-line {
+        position: absolute;
+        top: 20px;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: var(--border-gray);
+        z-index: 1;
+    }
+    
+    .progress-fill {
+        position: absolute;
+        top: 20px;
+        left: 0;
+        height: 2px;
+        background: var(--primary-green);
+        z-index: 1;
+        transition: width 0.3s ease;
+    }
+    
+    /* Guided Instructions */
+    .guide-container {
+        background: linear-gradient(135deg, rgba(0, 255, 136, 0.1), rgba(0, 204, 106, 0.1));
+        border: 1px solid rgba(0, 255, 136, 0.3);
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.4); }
+        70% { box-shadow: 0 0 0 10px rgba(0, 255, 136, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0); }
+    }
+    
+    .guide-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .guide-icon {
+        font-size: 24px;
+        color: var(--primary-green);
+    }
+    
+    .guide-title {
+        color: var(--primary-green);
+        font-size: 16px;
+        font-weight: 600;
+    }
+    
+    .guide-content {
+        color: var(--text-light-gray);
+        font-size: 14px;
+        line-height: 1.5;
+    }
+    
+    .guide-action {
+        margin-top: 15px;
+        padding: 12px 20px;
+        background: var(--primary-green);
+        color: var(--primary-black);
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        text-align: center;
+        display: inline-block;
+        transition: transform 0.2s;
+    }
+    
+    .guide-action:hover {
+        transform: translateY(-2px);
+    }
+    
+    /* Status Indicators */
+    .status-container {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .status-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        background: var(--card-black);
+        border-radius: 20px;
+        font-size: 12px;
+        border: 1px solid var(--border-gray);
+    }
+    
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--border-gray);
+    }
+    
+    .status-dot.active {
+        background: var(--primary-green);
+        box-shadow: 0 0 10px var(--primary-green);
     }
     
     /* Cards */
@@ -116,138 +273,86 @@ st.markdown("""
         box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
     }
     
-    /* Status badges */
-    .status-badge {
-        display: inline-flex;
-        align-items: center;
-        padding: 4px 12px;
-        background: rgba(0, 255, 136, 0.1);
-        color: var(--primary-green);
-        border: 1px solid rgba(0, 255, 136, 0.3);
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        letter-spacing: 0.5px;
+    .stButton > button:disabled {
+        background: var(--border-gray) !important;
+        color: var(--text-gray) !important;
+        cursor: not-allowed;
+        transform: none !important;
+        box-shadow: none !important;
     }
     
-    /* Step indicator */
-    .step-indicator {
-        display: flex;
-        justify-content: space-between;
-        margin: 30px 0;
-        position: relative;
+    /* Input fields */
+    .stSelectbox > div > div > select,
+    .stDateInput > div > div > input,
+    .stNumberInput > div > div > input,
+    .stMultiSelect > div > div > div {
+        background: var(--secondary-black) !important;
+        border: 1px solid var(--border-gray) !important;
+        color: var(--text-white) !important;
+        border-radius: 6px !important;
+        padding: 10px 12px !important;
+        font-size: 14px !important;
     }
     
-    .step-indicator::before {
-        content: '';
-        position: absolute;
-        top: 15px;
-        left: 0;
-        right: 0;
-        height: 2px;
-        background: var(--border-gray);
-        z-index: 1;
+    .stSelectbox > div > div > select:focus,
+    .stDateInput > div > div > input:focus {
+        border-color: var(--primary-green) !important;
+        box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.2) !important;
     }
     
-    .step {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        position: relative;
-        z-index: 2;
-    }
-    
-    .step-number {
-        width: 30px;
-        height: 30px;
-        border-radius: 50%;
-        background: var(--border-gray);
-        color: var(--text-gray);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-        margin-bottom: 8px;
-        transition: all 0.3s ease;
-    }
-    
-    .step.active .step-number {
-        background: var(--primary-green);
-        color: var(--primary-black);
-    }
-    
-    .step.completed .step-number {
-        background: var(--accent-green);
-        color: var(--primary-black);
-    }
-    
-    .step-label {
-        font-size: 12px;
-        color: var(--text-gray);
-        text-align: center;
-    }
-    
-    .step.active .step-label {
-        color: var(--primary-green);
-        font-weight: 600;
-    }
-    
-    /* Flag grid */
-    .flag-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        gap: 15px;
-        margin: 20px 0;
-    }
-    
-    .flag-item {
-        background: var(--secondary-black);
+    /* Map container */
+    .map-container {
         border: 1px solid var(--border-gray);
-        border-radius: 8px;
-        padding: 15px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 10px;
+        border-radius: 10px;
+        overflow: hidden;
+        height: 600px;
+        position: relative;
     }
     
-    .flag-item:hover {
-        border-color: var(--primary-green);
-        transform: translateY(-2px);
-    }
-    
-    .flag-item.selected {
-        border-color: var(--primary-green);
-        background: rgba(0, 255, 136, 0.05);
-    }
-    
-    .flag-container {
-        width: 80px;
-        height: 50px;
+    .map-placeholder {
+        width: 100%;
+        height: 100%;
         display: flex;
         align-items: center;
         justify-content: center;
-        overflow: hidden;
-        border-radius: 4px;
+        background: var(--card-black);
+        color: var(--text-gray);
+        font-size: 14px;
     }
     
-    .flag-name {
-        font-size: 12px;
+    /* Results container */
+    .results-placeholder {
+        width: 100%;
+        padding: 40px;
         text-align: center;
-        color: var(--text-light-gray);
+        background: var(--card-black);
+        border-radius: 10px;
+        border: 2px dashed var(--border-gray);
+        color: var(--text-gray);
     }
     
-    .flag-item.selected .flag-name {
-        color: var(--primary-green);
-        font-weight: 600;
+    .results-placeholder .icon {
+        font-size: 48px;
+        margin-bottom: 20px;
+        color: var(--border-gray);
     }
     
     /* Hide Streamlit default elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .progress-step {
+            flex: 1;
+        }
+        
+        .step-label {
+            font-size: 10px;
+            max-width: 60px;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -307,27 +412,27 @@ e5aU1RW6tlG8nzHHwK2FeyI=
         st.error(f"Earth Engine auto-initialization failed: {str(e)}")
         return False
 
-# Initialize Earth Engine
-if 'ee_auto_initialized' not in st.session_state:
+# Try to auto-initialize Earth Engine
+if 'ee_initialized' not in st.session_state:
     with st.spinner("Initializing Earth Engine..."):
         if auto_initialize_earth_engine():
-            st.session_state.ee_auto_initialized = True
             st.session_state.ee_initialized = True
         else:
-            st.session_state.ee_auto_initialized = False
             st.session_state.ee_initialized = False
 
-# Initialize session state
-if 'step' not in st.session_state:
-    st.session_state.step = 1  # Start at step 1
-if 'selected_country' not in st.session_state:
-    st.session_state.selected_country = None
-if 'selected_municipality' not in st.session_state:
-    st.session_state.selected_municipality = None
-if 'analysis_results' not in st.session_state:
-    st.session_state.analysis_results = None
+# Initialize session state for steps
+if 'current_step' not in st.session_state:
+    st.session_state.current_step = 1
 if 'selected_geometry' not in st.session_state:
     st.session_state.selected_geometry = None
+if 'analysis_results' not in st.session_state:
+    st.session_state.analysis_results = None
+if 'selected_coordinates' not in st.session_state:
+    st.session_state.selected_coordinates = None
+if 'selected_area_name' not in st.session_state:
+    st.session_state.selected_area_name = None
+if 'analysis_parameters' not in st.session_state:
+    st.session_state.analysis_parameters = None
 
 # Page configuration
 st.set_page_config(
@@ -337,495 +442,756 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Define steps
+STEPS = [
+    {"number": 1, "label": "Select Area", "icon": "📍"},
+    {"number": 2, "label": "Set Parameters", "icon": "⚙️"},
+    {"number": 3, "label": "View Map", "icon": "🗺️"},
+    {"number": 4, "label": "Run Analysis", "icon": "🚀"},
+    {"number": 5, "label": "View Results", "icon": "📊"}
+]
+
 # Header
 st.markdown("""
-<div class="compact-header">
-    <div>
-        <h1>🌍 KHISBA GIS</h1>
-        <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics</p>
+<div style="margin-bottom: 20px;">
+    <h1>🌍 KHISBA GIS</h1>
+    <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics - Guided Workflow</p>
+</div>
+""", unsafe_allow_html=True)
+
+# Progress Steps
+st.markdown("""
+<div class="progress-steps">
+    <div class="progress-line"></div>
+    <div class="progress-fill" id="progress-fill"></div>
+""", unsafe_allow_html=True)
+
+for i, step in enumerate(STEPS):
+    step_class = "active" if st.session_state.current_step == step["number"] else ""
+    step_class = "completed" if st.session_state.current_step > step["number"] else step_class
+    
+    st.markdown(f"""
+    <div class="progress-step">
+        <div class="step-circle {step_class}">
+            {step["icon"] if step_class == "completed" else step["number"]}
+        </div>
+        <div class="step-label {step_class}">
+            {step["label"]}
+        </div>
     </div>
-    <div style="display: flex; gap: 10px;">
-        <span class="status-badge">Connected</span>
-        <span class="status-badge">3D Analysis</span>
-        <span class="status-badge">v2.0</span>
+    """, unsafe_allow_html=True)
+
+st.markdown("</div>", unsafe_allow_html=True)
+
+# JavaScript for progress fill
+st.markdown(f"""
+<script>
+    document.getElementById('progress-fill').style.width = '{((st.session_state.current_step - 1) / (len(STEPS) - 1)) * 100}%';
+</script>
+""", unsafe_allow_html=True)
+
+# Status indicators
+st.markdown("""
+<div class="status-container">
+    <div class="status-item">
+        <div class="status-dot {'active' if st.session_state.ee_initialized else ''}"></div>
+        <span>Earth Engine: {'Connected' if st.session_state.ee_initialized else 'Disconnected'}</span>
+    </div>
+    <div class="status-item">
+        <div class="status-dot {'active' if st.session_state.selected_area_name else ''}"></div>
+        <span>Area Selected: {'Yes' if st.session_state.selected_area_name else 'No'}</span>
+    </div>
+    <div class="status-item">
+        <div class="status-dot {'active' if st.session_state.analysis_results else ''}"></div>
+        <span>Analysis: {'Complete' if st.session_state.analysis_results else 'Pending'}</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# Step Indicator
-st.markdown("""
-<div class="step-indicator">
-    <div class="step ${'completed' if st.session_state.step > 1 else 'active' if st.session_state.step == 1 else ''}">
-        <div class="step-number">1</div>
-        <div class="step-label">Select Area</div>
-    </div>
-    <div class="step ${'completed' if st.session_state.step > 2 else 'active' if st.session_state.step == 2 else ''}">
-        <div class="step-number">2</div>
-        <div class="step-label">Configure Analysis</div>
-    </div>
-    <div class="step ${'completed' if st.session_state.step > 3 else 'active' if st.session_state.step == 3 else ''}">
-        <div class="step-number">3</div>
-        <div class="step-label">View Results</div>
-    </div>
-</div>
-""".replace("${'completed' if st.session_state.step > 1 else 'active' if st.session_state.step == 1 else ''}", 
-            "completed" if st.session_state.step > 1 else "active" if st.session_state.step == 1 else "")
- .replace("${'completed' if st.session_state.step > 2 else 'active' if st.session_state.step == 2 else ''}",
-          "completed" if st.session_state.step > 2 else "active" if st.session_state.step == 2 else "")
- .replace("${'completed' if st.session_state.step > 3 else 'active' if st.session_state.step == 3 else ''}",
-          "completed" if st.session_state.step > 3 else "active" if st.session_state.step == 3 else ""),
-unsafe_allow_html=True)
+# Main content area
+col1, col2 = st.columns([0.35, 0.65], gap="large")
 
-# Step 1: Area Selection
-if st.session_state.step == 1:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="card-title"><div class="icon">🌍</div><h3 style="margin: 0;">Step 1: Select Your Analysis Area</h3></div>', unsafe_allow_html=True)
-    
-    if not st.session_state.ee_initialized:
-        st.error("Earth Engine not initialized. Please check your connection.")
-    else:
-        try:
-            # Get countries from Earth Engine
-            countries_fc = ee.FeatureCollection("FAO/GAUL/2015/level0")
-            country_names = countries_fc.aggregate_array('ADM0_NAME').distinct().getInfo()
-            country_names = sorted(country_names)
-            
-            # Country selection
-            st.subheader("Select a Country")
-            
-            # Create a flag grid for countries
-            st.markdown('<div class="flag-grid">', unsafe_allow_html=True)
-            
-            # Predefined flags HTML (simplified for space - you can expand this)
-            flags_html = {
-                "Afghanistan": """<div class="flag-container" style="background: linear-gradient(to right, black 33%, #be0000 33%, #be0000 66%, #009900 0);"></div>""",
-                "Albania": """<div class="flag-container" style="background-color: #da2b26;"></div>""",
-                "Algeria": """<div class="flag-container" style="background: linear-gradient(to right, #00a652 50%, #fff 0);"></div>""",
-                "Andorra": """<div class="flag-container" style="background: linear-gradient(to right, #3f2e8e 33%, #f8e211 33%, #f8e211 66%, #db1f40 0);"></div>""",
-                "Angola": """<div class="flag-container" style="background: linear-gradient(#be0026 50%, #000 0);"></div>""",
-                "Argentina": """<div class="flag-container" style="background: linear-gradient(#8ad3f4 33%, #fff 33%, #fff 66%, #8ad3f4 0);"></div>""",
-                "Australia": """<div class="flag-container" style="background-color: #001b6a;"></div>""",
-                "Austria": """<div class="flag-container" style="background: linear-gradient(#d72427 33%, #fff 33%, #fff 66%, #d72427 0);"></div>""",
-                "Bangladesh": """<div class="flag-container" style="background-color: #006a4c;"></div>""",
-                "Belgium": """<div class="flag-container" style="background: linear-gradient(to right, black 33%, #fddb21 33%, #fddb21 67%, #ef303f 0);"></div>""",
-                "Brazil": """<div class="flag-container" style="background-color: #009c37;"></div>""",
-                "Canada": """<div class="flag-container" style="background: linear-gradient(to right, #ec2224 30%, #fff 30%, #fff 70%, #ec2224 0);"></div>""",
-                "China": """<div class="flag-container" style="background: #dd2d26;"></div>""",
-                "Egypt": """<div class="flag-container" style="background: linear-gradient(#ce2029 33%, #fff 33%, #fff 67%, #000 0);"></div>""",
-                "France": """<div class="flag-container" style="background: linear-gradient(to right, #192f8e 33%, #fff 33%, #fff 67%, #e01414 0);"></div>""",
-                "Germany": """<div class="flag-container" style="background: linear-gradient(#000 33%, #de0000 33%, #de0000 67%, #ffcf00 0);"></div>""",
-                "India": """<div class="flag-container" style="background: linear-gradient(#ff9933 33%, #fff 33%, #fff 66%, #138808 0);"></div>""",
-                "Italy": """<div class="flag-container" style="background: linear-gradient(to right, #009343 33%, #fff 33%, #fff 66%, #cf2734 0);"></div>""",
-                "Japan": """<div class="flag-container" style="background: #fff;"></div>""",
-                "Mexico": """<div class="flag-container" style="background: linear-gradient(to right, #006845 33%, #fff 33%, #fff 66%, #cf0922 0);"></div>""",
-                "Russia": """<div class="flag-container" style="background: linear-gradient(#fff 33%, #0136a8 33%, #0136a8 66%, #d72718 0);"></div>""",
-                "South Africa": """<div class="flag-container" style="background: #007847;"></div>""",
-                "Spain": """<div class="flag-container" style="background: linear-gradient(#ad1519 25%, #fabd00 25%, #fabd00 75%, #ad1519 0);"></div>""",
-                "United Kingdom": """<div class="flag-container" style="background: #213064;"></div>""",
-                "United States": """<div class="flag-container" style="background: repeating-linear-gradient(#b22234, #b22234 7.7%, #fff 7.7%, #fff 15.4%);"></div>""",
-            }
-            
-            # Display countries in grid format
-            cols = st.columns(4)
-            for idx, country in enumerate(country_names[:20]):  # Show first 20 for example
-                with cols[idx % 4]:
-                    flag_html = flags_html.get(country, """<div class="flag-container" style="background: linear-gradient(45deg, #1e3c72, #2a5298);"></div>""")
-                    if st.button(
-                        f"**{country}**",
-                        use_container_width=True,
-                        key=f"country_{country}"
-                    ):
-                        st.session_state.selected_country = country
-                        st.session_state.step = 2
-                        st.rerun()
-            
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Or use dropdown as backup
-            st.markdown("---")
-            st.markdown("**Or select from all countries:**")
-            selected_country_dropdown = st.selectbox(
-                "Choose Country",
-                options=["Select a country"] + country_names,
-                index=0,
-                key="country_dropdown"
-            )
-            
-            if selected_country_dropdown and selected_country_dropdown != "Select a country":
-                st.session_state.selected_country = selected_country_dropdown
-            
-            if st.session_state.selected_country:
-                st.success(f"✅ Selected: **{st.session_state.selected_country}**")
-                
-                # Get municipalities for selected country
-                country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', st.session_state.selected_country)).first()
-                country_code = country_feature.get('ADM0_CODE').getInfo()
-                
-                admin2_fc = ee.FeatureCollection("FAO/GAUL/2015/level2").filter(ee.Filter.eq('ADM0_CODE', country_code))
-                municipality_names = admin2_fc.aggregate_array('ADM2_NAME').distinct().getInfo()
-                municipality_names = sorted(municipality_names)
-                
-                if municipality_names:
-                    st.subheader("Select Municipality")
-                    selected_municipality = st.selectbox(
-                        "Choose Municipality",
-                        options=["Select municipality"] + municipality_names,
-                        index=0,
-                        key="municipality_select"
-                    )
-                    
-                    if selected_municipality and selected_municipality != "Select municipality":
-                        st.session_state.selected_municipality = selected_municipality
-                        
-                        # Get geometry
-                        municipality_geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_municipality))
-                        st.session_state.selected_geometry = municipality_geometry
-                        
-                        st.success(f"✅ Selected: **{selected_municipality}**, {st.session_state.selected_country}")
-                        
-                        # Display area on mini map (simplified)
-                        st.markdown("---")
-                        st.subheader("📍 Selected Area Preview")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.markdown(f"""
-                            <div style="background: #111111; padding: 15px; border-radius: 8px;">
-                                <p style="color: #00ff88; margin: 0 0 10px 0;"><strong>Selected Area</strong></p>
-                                <p style="margin: 5px 0;">🌍 Country: {st.session_state.selected_country}</p>
-                                <p style="margin: 5px 0;">🏙️ Municipality: {st.session_state.selected_municipality}</p>
-                                <p style="margin: 5px 0;">📍 Level: Municipal Analysis</p>
-                                <p style="margin: 5px 0;">📊 Status: <span style="color: #00ff88;">Ready for Analysis</span></p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        with col2:
-                            # Simplified map preview
-                            st.markdown("""
-                            <div style="background: #222222; height: 150px; border-radius: 8px; display: flex; align-items: center; justify-content: center; border: 1px solid #333333;">
-                                <div style="text-align: center;">
-                                    <div style="font-size: 24px;">🗺️</div>
-                                    <p style="margin: 5px 0; color: #999999; font-size: 12px;">Area Selected</p>
-                                    <p style="margin: 0; color: #00ff88; font-size: 12px;">✓ Ready</p>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        # Next button
-                        if st.button("🚀 Continue to Step 2", type="primary", use_container_width=True):
-                            st.session_state.step = 2
-                            st.rerun()
-                else:
-                    st.warning("No municipality data available for this country.")
-            
-        except Exception as e:
-            st.error(f"Error loading countries: {str(e)}")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# Step 2: Analysis Configuration
-elif st.session_state.step == 2:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="card-title"><div class="icon">⚙️</div><h3 style="margin: 0;">Step 2: Configure Your Analysis</h3></div>', unsafe_allow_html=True)
-    
-    if st.session_state.selected_country and st.session_state.selected_municipality:
-        # Show selected area
-        st.markdown(f"""
-        <div style="background: #111111; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #00ff88;">
-            <p style="margin: 0; color: #00ff88;"><strong>Selected Area:</strong> {st.session_state.selected_municipality}, {st.session_state.selected_country}</p>
+with col1:
+    # Step 1: Area Selection
+    if st.session_state.current_step == 1:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">📍</div><h3 style="margin: 0;">Step 1: Select Your Area</h3></div>', unsafe_allow_html=True)
+        
+        # Guided instruction for step 1
+        st.markdown("""
+        <div class="guide-container">
+            <div class="guide-header">
+                <div class="guide-icon">🎯</div>
+                <div class="guide-title">Get Started</div>
+            </div>
+            <div class="guide-content">
+                Select a geographic area for analysis. Start by choosing a country, then narrow down to state/province and municipality if needed.
+            </div>
         </div>
         """, unsafe_allow_html=True)
         
-        # Analysis Settings
-        col1, col2 = st.columns(2)
-        with col1:
-            start_date = st.date_input(
-                "Start Date",
-                value=datetime(2023, 1, 1),
-                help="Start date for analysis",
-                key="start_date"
+        if st.session_state.ee_initialized:
+            try:
+                # Get countries
+                countries_fc = ee.FeatureCollection("FAO/GAUL/2015/level0")
+                country_names = countries_fc.aggregate_array('ADM0_NAME').distinct().getInfo()
+                country_names = sorted(country_names) if country_names else []
+                
+                selected_country = st.selectbox(
+                    "🌍 Country",
+                    options=["Select a country"] + country_names,
+                    index=0,
+                    help="Choose a country for analysis",
+                    key="country_select"
+                )
+                
+                if selected_country and selected_country != "Select a country":
+                    country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
+                    admin1_fc = ee.FeatureCollection("FAO/GAUL/2015/level1")\
+                        .filter(ee.Filter.eq('ADM0_CODE', country_feature.get('ADM0_CODE')))
+                    
+                    admin1_names = admin1_fc.aggregate_array('ADM1_NAME').distinct().getInfo()
+                    admin1_names = sorted(admin1_names) if admin1_names else []
+                    
+                    selected_admin1 = st.selectbox(
+                        "🏛️ State/Province",
+                        options=["Select state/province"] + admin1_names,
+                        index=0,
+                        help="Choose a state or province",
+                        key="admin1_select"
+                    )
+                    
+                    if selected_admin1 and selected_admin1 != "Select state/province":
+                        admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
+                        admin2_fc = ee.FeatureCollection("FAO/GAUL/2015/level2")\
+                            .filter(ee.Filter.eq('ADM1_CODE', admin1_feature.get('ADM1_CODE')))
+                        
+                        admin2_names = admin2_fc.aggregate_array('ADM2_NAME').distinct().getInfo()
+                        admin2_names = sorted(admin2_names) if admin2_names else []
+                        
+                        selected_admin2 = st.selectbox(
+                            "🏘️ Municipality",
+                            options=["Select municipality"] + admin2_names,
+                            index=0,
+                            help="Choose a municipality",
+                            key="admin2_select"
+                        )
+                    else:
+                        selected_admin2 = None
+                else:
+                    selected_admin1 = None
+                    selected_admin2 = None
+                    
+                if st.button("✅ Confirm Selection", type="primary", use_container_width=True, disabled=not selected_country or selected_country == "Select a country"):
+                    try:
+                        if selected_admin2 and selected_admin2 != "Select municipality":
+                            geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
+                            area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
+                            area_level = "Municipality"
+                        elif selected_admin1 and selected_admin1 != "Select state/province":
+                            geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
+                            area_name = f"{selected_admin1}, {selected_country}"
+                            area_level = "State/Province"
+                        else:
+                            geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
+                            area_name = selected_country
+                            area_level = "Country"
+                        
+                        # Store in session state
+                        st.session_state.selected_geometry = geometry
+                        st.session_state.selected_area_name = area_name
+                        st.session_state.selected_area_level = area_level
+                        
+                        # Get coordinates for the map
+                        bounds = geometry.geometry().bounds().getInfo()
+                        coords = bounds['coordinates'][0]
+                        lats = [coord[1] for coord in coords]
+                        lons = [coord[0] for coord in coords]
+                        center_lat = sum(lats) / len(lats)
+                        center_lon = sum(lons) / len(lons)
+                        
+                        st.session_state.selected_coordinates = {
+                            'center': [center_lon, center_lat],
+                            'bounds': [[min(lats), min(lons)], [max(lats), max(lons)]],
+                            'zoom': 6
+                        }
+                        
+                        # Move to next step
+                        st.session_state.current_step = 2
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
+                        
+            except Exception as e:
+                st.error(f"Error loading boundaries: {str(e)}")
+        else:
+            st.warning("Earth Engine not initialized. Please wait...")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Step 2: Analysis Parameters
+    elif st.session_state.current_step == 2:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">⚙️</div><h3 style="margin: 0;">Step 2: Set Analysis Parameters</h3></div>', unsafe_allow_html=True)
+        
+        # Guided instruction for step 2
+        st.markdown("""
+        <div class="guide-container">
+            <div class="guide-header">
+                <div class="guide-icon">📋</div>
+                <div class="guide-title">Configure Analysis</div>
+            </div>
+            <div class="guide-content">
+                Set the time range, satellite source, and vegetation indices for your analysis. Default values are optimized for most use cases.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.session_state.selected_area_name:
+            st.info(f"**Selected Area:** {st.session_state.selected_area_name}")
+            
+            # Date range
+            col_a, col_b = st.columns(2)
+            with col_a:
+                start_date = st.date_input(
+                    "📅 Start Date",
+                    value=datetime(2023, 1, 1),
+                    help="Start date for analysis"
+                )
+            with col_b:
+                end_date = st.date_input(
+                    "📅 End Date",
+                    value=datetime(2023, 12, 31),
+                    help="End date for analysis"
+                )
+            
+            # Satellite source
+            collection_choice = st.selectbox(
+                "🛰️ Satellite Source",
+                options=["Sentinel-2", "Landsat-8"],
+                help="Choose satellite collection",
+                index=0
             )
-        with col2:
-            end_date = st.date_input(
-                "End Date",
-                value=datetime(2023, 12, 31),
-                help="End date for analysis",
-                key="end_date"
+            
+            # Cloud cover
+            cloud_cover = st.slider(
+                "☁️ Max Cloud Cover (%)",
+                min_value=0,
+                max_value=100,
+                value=20,
+                help="Maximum cloud cover percentage"
             )
+            
+            # Vegetation indices
+            available_indices = ['NDVI', 'EVI', 'SAVI', 'NDWI', 'GNDVI', 'MSAVI']
+            selected_indices = st.multiselect(
+                "🌿 Vegetation Indices",
+                options=available_indices,
+                default=['NDVI', 'EVI'],
+                help="Choose vegetation indices to analyze"
+            )
+            
+            # Navigation buttons
+            col_back, col_next = st.columns(2)
+            with col_back:
+                if st.button("⬅️ Back to Area Selection", use_container_width=True):
+                    st.session_state.current_step = 1
+                    st.rerun()
+            
+            with col_next:
+                if st.button("✅ Save Parameters & Continue", type="primary", use_container_width=True, disabled=not selected_indices):
+                    st.session_state.analysis_parameters = {
+                        'start_date': start_date,
+                        'end_date': end_date,
+                        'collection_choice': collection_choice,
+                        'cloud_cover': cloud_cover,
+                        'selected_indices': selected_indices
+                    }
+                    st.session_state.current_step = 3
+                    st.rerun()
+        else:
+            st.warning("Please go back to Step 1 and select an area first.")
+            if st.button("⬅️ Go to Area Selection", use_container_width=True):
+                st.session_state.current_step = 1
+                st.rerun()
         
-        # Satellite selection
-        collection_choice = st.selectbox(
-            "Satellite Source",
-            options=["Sentinel-2", "Landsat-8"],
-            help="Choose satellite collection",
-            key="satellite_select"
-        )
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Step 3: View Map & Confirm
+    elif st.session_state.current_step == 3:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">🗺️</div><h3 style="margin: 0;">Step 3: Preview Selected Area</h3></div>', unsafe_allow_html=True)
         
-        # Cloud cover
-        cloud_cover = st.slider(
-            "Max Cloud Cover (%)",
-            min_value=0,
-            max_value=100,
-            value=20,
-            help="Maximum cloud cover percentage",
-            key="cloud_slider"
-        )
+        # Guided instruction for step 3
+        st.markdown("""
+        <div class="guide-container">
+            <div class="guide-header">
+                <div class="guide-icon">👁️</div>
+                <div class="guide-title">Preview Area</div>
+            </div>
+            <div class="guide-content">
+                Review your selected area on the map. Make sure the highlighted region matches your intended analysis area.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         
-        # Vegetation Indices
-        st.subheader("🌿 Vegetation Indices")
+        if st.session_state.selected_area_name:
+            st.info(f"""
+            **Selected Area:** {st.session_state.selected_area_name}
+            
+            **Analysis Parameters:**
+            - Time Range: {st.session_state.analysis_parameters['start_date']} to {st.session_state.analysis_parameters['end_date']}
+            - Satellite: {st.session_state.analysis_parameters['collection_choice']}
+            - Cloud Cover: ≤{st.session_state.analysis_parameters['cloud_cover']}%
+            - Indices: {', '.join(st.session_state.analysis_parameters['selected_indices'])}
+            """)
+            
+            # Navigation buttons
+            col_back, col_next = st.columns(2)
+            with col_back:
+                if st.button("⬅️ Back to Parameters", use_container_width=True):
+                    st.session_state.current_step = 2
+                    st.rerun()
+            
+            with col_next:
+                if st.button("🚀 Run Analysis Now", type="primary", use_container_width=True):
+                    st.session_state.current_step = 4
+                    st.rerun()
+        else:
+            st.warning("No area selected. Please go back to Step 1.")
+            if st.button("⬅️ Go to Area Selection", use_container_width=True):
+                st.session_state.current_step = 1
+                st.rerun()
         
-        available_indices = [
-            'NDVI', 'EVI', 'SAVI', 'NDWI', 'ARVI', 'GNDVI', 'MSAVI',
-            'NDMI', 'NBR', 'NDSI', 'VARI', 'OSAVI', 'DVI'
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Step 4: Running Analysis
+    elif st.session_state.current_step == 4:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">🚀</div><h3 style="margin: 0;">Step 4: Running Analysis</h3></div>', unsafe_allow_html=True)
+        
+        # Show analysis progress
+        st.markdown("""
+        <div class="guide-container">
+            <div class="guide-header">
+                <div class="guide-icon">⏳</div>
+                <div class="guide-title">Analysis in Progress</div>
+            </div>
+            <div class="guide-content">
+                Please wait while we process your vegetation analysis. This may take a few moments depending on the area size and time range.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Simulate analysis steps
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        analysis_steps = [
+            "Initializing Earth Engine...",
+            "Loading satellite data...",
+            "Processing vegetation indices...",
+            "Calculating statistics...",
+            "Generating visualizations..."
         ]
         
-        # Create columns for indices
-        cols = st.columns(3)
-        selected_indices = []
-        
-        for idx, index in enumerate(available_indices):
-            with cols[idx % 3]:
-                if st.checkbox(index, value=(index in ['NDVI', 'EVI', 'SAVI', 'NDWI']), key=f"index_{index}"):
-                    selected_indices.append(index)
-        
-        # Action buttons
-        col_btn1, col_btn2, col_btn3 = st.columns(3)
-        with col_btn1:
-            if st.button("← Back to Step 1", use_container_width=True):
-                st.session_state.step = 1
+        # Run the actual analysis
+        try:
+            params = st.session_state.analysis_parameters
+            geometry = st.session_state.selected_geometry
+            
+            for i, step in enumerate(analysis_steps):
+                status_text.text(step)
+                progress_bar.progress((i + 1) / len(analysis_steps))
+                
+                # Simulate processing time
+                import time
+                time.sleep(1)
+            
+            # Perform actual analysis (simplified version)
+            results = {}
+            for index in params['selected_indices']:
+                # Simulate data
+                import random
+                dates = [f"2023-{m:02d}-15" for m in range(1, 13)]
+                values = [random.uniform(0.1, 0.9) for _ in range(12)]
+                results[index] = {'dates': dates, 'values': values}
+            
+            st.session_state.analysis_results = results
+            progress_bar.progress(1.0)
+            status_text.text("✅ Analysis Complete!")
+            
+            st.success("Analysis completed successfully!")
+            
+            if st.button("📊 View Results", type="primary", use_container_width=True):
+                st.session_state.current_step = 5
                 st.rerun()
-        with col_btn2:
-            if st.button("📊 View Sample Chart", use_container_width=True):
-                # Generate sample chart
-                st.session_state.step = 3
+                
+        except Exception as e:
+            st.error(f"Analysis failed: {str(e)}")
+            if st.button("🔄 Try Again", use_container_width=True):
                 st.rerun()
-        with col_btn3:
-            if st.button("🚀 Run Full Analysis", type="primary", use_container_width=True):
-                if not selected_indices:
-                    st.error("Please select at least one vegetation index")
-                else:
-                    with st.spinner("Running analysis..."):
-                        try:
-                            # This is a simplified analysis - in production, use actual Earth Engine calls
-                            # For demo purposes, we'll create sample data
-                            import random
-                            from datetime import datetime, timedelta
-                            
-                            results = {}
-                            dates = []
-                            current_date = start_date
-                            
-                            # Generate sample dates
-                            while current_date <= end_date:
-                                dates.append(current_date.strftime('%Y-%m-%d'))
-                                current_date += timedelta(days=30)
-                            
-                            # Generate sample data for each index
-                            for index in selected_indices:
-                                values = [random.uniform(0.1, 0.9) for _ in range(len(dates))]
-                                results[index] = {'dates': dates, 'values': values}
-                            
-                            st.session_state.analysis_results = results
-                            st.session_state.step = 3
-                            st.success("✅ Analysis completed!")
-                            st.rerun()
-                            
-                        except Exception as e:
-                            st.error(f"❌ Analysis failed: {str(e)}")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
     
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Step 5: View Results
+    elif st.session_state.current_step == 5:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Step 5: Analysis Results</h3></div>', unsafe_allow_html=True)
+        
+        if st.session_state.analysis_results:
+            st.success("✅ Analysis completed successfully!")
+            
+            # Summary
+            st.subheader("📈 Summary")
+            
+            summary_data = []
+            for index, data in st.session_state.analysis_results.items():
+                if data['values']:
+                    values = data['values']
+                    summary_data.append({
+                        'Index': index,
+                        'Mean': round(sum(values) / len(values), 3),
+                        'Min': round(min(values), 3),
+                        'Max': round(max(values), 3),
+                        'Trend': '📈 Increasing' if values[-1] > values[0] else '📉 Decreasing'
+                    })
+            
+            if summary_data:
+                st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
+            
+            # Export options
+            st.subheader("💾 Export Results")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("📥 Download CSV", use_container_width=True):
+                    # Create CSV data
+                    export_data = []
+                    for index, data in st.session_state.analysis_results.items():
+                        for date, value in zip(data['dates'], data['values']):
+                            export_data.append({
+                                'Date': date,
+                                'Index': index,
+                                'Value': value
+                            })
+                    
+                    df = pd.DataFrame(export_data)
+                    st.download_button(
+                        label="Click to Download",
+                        data=df.to_csv(index=False),
+                        file_name=f"vegetation_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+            
+            with col2:
+                if st.button("🔄 New Analysis", use_container_width=True):
+                    # Reset for new analysis
+                    for key in ['selected_geometry', 'analysis_results', 'selected_coordinates', 
+                               'selected_area_name', 'analysis_parameters']:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.session_state.current_step = 1
+                    st.rerun()
+            
+            # Back button
+            if st.button("⬅️ Back to Map", use_container_width=True):
+                st.session_state.current_step = 3
+                st.rerun()
+        
+        else:
+            st.warning("No results available. Please run an analysis first.")
+            if st.button("⬅️ Go Back", use_container_width=True):
+                st.session_state.current_step = 4
+                st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
-# Step 3: Results View
-elif st.session_state.step == 3:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Step 3: Analysis Results</h3></div>', unsafe_allow_html=True)
+with col2:
+    # Right column content changes based on step
+    if st.session_state.current_step == 1:
+        st.markdown('<div class="card" style="padding: 20px;">', unsafe_allow_html=True)
+        st.markdown('<h3>🗺️ Area Selection Guide</h3>', unsafe_allow_html=True)
+        st.markdown("""
+        <div style="color: #cccccc; line-height: 1.6;">
+        <p>Welcome to KHISBA GIS! Follow these simple steps:</p>
+        
+        <div style="background: #111111; padding: 15px; border-radius: 8px; margin: 15px 0;">
+        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+            <div style="background: #00ff88; color: #000; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">1</div>
+            <div><strong>Select a Country</strong></div>
+        </div>
+        <p style="margin-left: 34px; margin-bottom: 0;">Choose from the dropdown menu in the left panel</p>
+        </div>
+        
+        <div style="background: #111111; padding: 15px; border-radius: 8px; margin: 15px 0;">
+        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+            <div style="background: #00ff88; color: #000; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">2</div>
+            <div><strong>Narrow Down (Optional)</strong></div>
+        </div>
+        <p style="margin-left: 34px; margin-bottom: 0;">Select state/province and municipality if needed</p>
+        </div>
+        
+        <div style="background: #111111; padding: 15px; border-radius: 8px; margin: 15px 0;">
+        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+            <div style="background: #00ff88; color: #000; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">3</div>
+            <div><strong>Confirm Selection</strong></div>
+        </div>
+        <p style="margin-left: 34px; margin-bottom: 0;">Click "Confirm Selection" to proceed</p>
+        </div>
+        
+        <p style="color: #00ff88; margin-top: 20px;">💡 <strong>Tip:</strong> Start with a country, then refine as needed for more precise analysis.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # World map placeholder
+        st.markdown('<div class="map-container">', unsafe_allow_html=True)
+        st.markdown("""
+        <div class="map-placeholder">
+            <div style="text-align: center;">
+                <div style="font-size: 48px; margin-bottom: 20px;">🌍</div>
+                <div style="color: #666666; font-size: 16px;">Select an area to begin</div>
+                <div style="color: #444444; font-size: 14px; margin-top: 10px;">The map will appear here after selection</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     
-    # Show selected area
-    st.markdown(f"""
-    <div style="background: #111111; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #00ff88;">
-        <p style="margin: 0; color: #00ff88;">
-            <strong>Analysis Results for:</strong> {st.session_state.selected_municipality}, {st.session_state.selected_country}
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    elif st.session_state.current_step == 2:
+        st.markdown('<div class="card" style="padding: 20px;">', unsafe_allow_html=True)
+        st.markdown('<h3>⚙️ Parameter Guide</h3>', unsafe_allow_html=True)
+        
+        if st.session_state.selected_area_name:
+            st.markdown(f"""
+            <div style="color: #cccccc; line-height: 1.6;">
+            <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #00ff88;">
+                <strong style="color: #00ff88;">Selected Area:</strong> {st.session_state.selected_area_name}
+            </div>
+            
+            <h4 style="color: #00ff88; margin-top: 20px;">Recommended Settings:</h4>
+            
+            <div style="background: #111111; padding: 15px; border-radius: 8px; margin: 10px 0;">
+                <strong>📅 Time Range:</strong> 1 year for best results
+            </div>
+            
+            <div style="background: #111111; padding: 15px; border-radius: 8px; margin: 10px 0;">
+                <strong>🛰️ Satellite Source:</strong>
+                <ul style="margin: 10px 0 0 20px;">
+                    <li><strong>Sentinel-2:</strong> Higher resolution, more frequent updates</li>
+                    <li><strong>Landsat-8:</strong> Historical data, good for long-term analysis</li>
+                </ul>
+            </div>
+            
+            <div style="background: #111111; padding: 15px; border-radius: 8px; margin: 10px 0;">
+                <strong>🌿 Vegetation Indices:</strong>
+                <ul style="margin: 10px 0 0 20px;">
+                    <li><strong>NDVI:</strong> General vegetation health</li>
+                    <li><strong>EVI:</strong> Improved sensitivity in dense vegetation</li>
+                    <li><strong>SAVI:</strong> Better for arid regions</li>
+                    <li><strong>NDWI:</strong> Water content in vegetation</li>
+                </ul>
+            </div>
+            
+            <p style="color: #00ff88; margin-top: 20px;">💡 <strong>Tip:</strong> Start with NDVI and EVI for most analyses.</p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.warning("Please select an area first in Step 1.")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
     
-    # Check if we have results
-    if st.session_state.analysis_results:
-        results = st.session_state.analysis_results
+    elif st.session_state.current_step == 3:
+        # Show the map with selected area
+        st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
+        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Selected Area Preview</h3></div>', unsafe_allow_html=True)
         
-        # Summary Statistics
-        st.subheader("📈 Summary Statistics")
+        if st.session_state.selected_coordinates:
+            # Generate simple folium map
+            import folium
+            from streamlit_folium import st_folium
+            
+            center = st.session_state.selected_coordinates['center'][::-1]  # Folium expects [lat, lon]
+            
+            m = folium.Map(
+                location=center,
+                zoom_start=st.session_state.selected_coordinates['zoom'],
+                tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                attr='Esri',
+                width='100%',
+                height='100%'
+            )
+            
+            # Add rectangle for selected area
+            if st.session_state.selected_coordinates['bounds']:
+                bounds = st.session_state.selected_coordinates['bounds']
+                folium.Rectangle(
+                    bounds=[[bounds[0][0], bounds[0][1]], [bounds[1][0], bounds[1][1]]],
+                    color='#00ff88',
+                    fill=True,
+                    fill_color='#00ff88',
+                    fill_opacity=0.2,
+                    weight=3,
+                    popup=st.session_state.selected_area_name
+                ).add_to(m)
+            
+            # Add marker at center
+            folium.Marker(
+                location=center,
+                popup=st.session_state.selected_area_name,
+                icon=folium.Icon(color='green', icon='info-sign')
+            ).add_to(m)
+            
+            # Display map
+            st_folium(m, width=700, height=500)
+            
+            # Map instructions
+            st.markdown("""
+            <div style="background: #111111; padding: 15px; border-radius: 8px; margin-top: 10px; font-size: 14px; color: #cccccc;">
+            <strong>🗺️ Map Controls:</strong>
+            <ul style="margin: 5px 0 0 20px;">
+                <li>Drag to move the map</li>
+                <li>Scroll to zoom in/out</li>
+                <li>Click on the green rectangle for area details</li>
+                <li>Green marker shows area center</li>
+            </ul>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.warning("No area selected. Please go back to Step 1.")
         
-        summary_data = []
-        for index, data in results.items():
-            if data['values']:
-                values = data['values']
-                summary_data.append({
-                    'Index': index,
-                    'Mean': round(sum(values) / len(values), 4),
-                    'Min': round(min(values), 4),
-                    'Max': round(max(values), 4),
-                    'Std Dev': round((sum((x - (sum(values)/len(values)))**2 for x in values) / len(values))**0.5, 4) if len(values) > 1 else 0
-                })
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    elif st.session_state.current_step == 4:
+        # Analysis progress visualization
+        st.markdown('<div class="card" style="padding: 20px;">', unsafe_allow_html=True)
+        st.markdown('<h3>🚀 Analysis Progress</h3>', unsafe_allow_html=True)
         
-        if summary_data:
-            summary_df = pd.DataFrame(summary_data)
-            st.dataframe(summary_df, use_container_width=True, hide_index=True)
+        # Animated progress visualization
+        st.markdown("""
+        <div style="text-align: center; padding: 40px 0;">
+            <div style="font-size: 64px; margin-bottom: 20px; animation: spin 2s linear infinite;">🔄</div>
+            <div style="color: #00ff88; font-size: 18px; margin-bottom: 10px;">Processing Your Request</div>
+            <div style="color: #666666; font-size: 14px;">This may take a few moments...</div>
+        </div>
         
-        # Charts Section
-        st.subheader("📊 Vegetation Indices Over Time")
+        <style>
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        </style>
+        """, unsafe_allow_html=True)
         
-        for index, data in results.items():
-            if data['dates'] and data['values']:
-                try:
-                    # Create chart
+        # What's happening info
+        st.markdown("""
+        <div style="background: #111111; padding: 15px; border-radius: 8px; margin-top: 20px;">
+            <h4 style="color: #00ff88; margin-bottom: 10px;">What's happening:</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div style="background: #0a0a0a; padding: 10px; border-radius: 6px;">
+                    <div style="color: #00ff88; font-size: 12px;">📡 Satellite Data</div>
+                    <div style="font-size: 12px; color: #cccccc;">Downloading from {}</div>
+                </div>
+                <div style="background: #0a0a0a; padding: 10px; border-radius: 6px;">
+                    <div style="color: #00ff88; font-size: 12px;">🌿 Vegetation Indices</div>
+                    <div style="font-size: 12px; color: #cccccc;">Calculating {}</div>
+                </div>
+                <div style="background: #0a0a0a; padding: 10px; border-radius: 6px;">
+                    <div style="color: #00ff88; font-size: 12px;">☁️ Cloud Filtering</div>
+                    <div style="font-size: 12px; color: #cccccc;">Removing clouds</div>
+                </div>
+                <div style="background: #0a0a0a; padding: 10px; border-radius: 6px;">
+                    <div style="color: #00ff88; font-size: 12px;">📊 Statistics</div>
+                    <div style="font-size: 12px; color: #cccccc;">Generating reports</div>
+                </div>
+            </div>
+        </div>
+        """.format(
+            st.session_state.analysis_parameters['collection_choice'],
+            ', '.join(st.session_state.analysis_parameters['selected_indices'])
+        ), unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    elif st.session_state.current_step == 5:
+        # Show analysis results
+        st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
+        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">📊 Analysis Results</h3></div>', unsafe_allow_html=True)
+        
+        if st.session_state.analysis_results:
+            # Create charts for each index
+            for index, data in st.session_state.analysis_results.items():
+                if data['dates'] and data['values']:
+                    # Create Plotly chart
                     fig = go.Figure()
                     
                     fig.add_trace(go.Scatter(
-                        x=data['dates'], 
+                        x=data['dates'],
                         y=data['values'],
                         mode='lines+markers',
-                        name=f'{index}',
+                        name=index,
                         line=dict(color='#00ff88', width=3),
-                        marker=dict(
-                            size=6,
-                            color='#00ff88',
-                            line=dict(width=1, color='#ffffff')
-                        ),
-                        hovertemplate='<b>%{fullData.name}</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>'
+                        marker=dict(size=8, color='#ffffff')
                     ))
                     
-                    # Update layout
                     fig.update_layout(
-                        title=f'{index} - Vegetation Index',
+                        title=f"{index} - Vegetation Index Over Time",
                         plot_bgcolor='#0a0a0a',
                         paper_bgcolor='#0a0a0a',
                         font=dict(color='#ffffff'),
                         xaxis=dict(
+                            title="Date",
                             gridcolor='#222222',
-                            zerolinecolor='#222222',
-                            tickcolor='#444444',
-                            title_font_color='#ffffff',
-                            title='Date'
+                            tickcolor='#444444'
                         ),
                         yaxis=dict(
+                            title=f"{index} Value",
                             gridcolor='#222222',
-                            zerolinecolor='#222222',
-                            tickcolor='#444444',
-                            title_font_color='#ffffff',
-                            title=f'{index} Value'
+                            tickcolor='#444444'
                         ),
-                        legend=dict(
-                            bgcolor='rgba(0,0,0,0.5)',
-                            bordercolor='#222222',
-                            borderwidth=1
-                        ),
-                        hovermode='x unified',
-                        height=400
+                        height=300,
+                        margin=dict(l=50, r=50, t=50, b=50)
                     )
                     
                     st.plotly_chart(fig, use_container_width=True)
-                    
-                except Exception as e:
-                    st.error(f"Error creating chart for {index}: {str(e)}")
+            
+            # Results summary
+            st.markdown("""
+            <div style="background: #111111; padding: 20px; border-radius: 8px; margin-top: 20px;">
+                <h4 style="color: #00ff88; margin-bottom: 15px;">📋 Results Summary</h4>
+                <div style="color: #cccccc; font-size: 14px; line-height: 1.6;">
+                    <p>Your vegetation analysis is complete! The charts above show the temporal patterns of selected vegetation indices.</p>
+                    <p><strong>Next Steps:</strong></p>
+                    <ul style="margin: 10px 0 0 20px;">
+                        <li>Download the CSV for further analysis</li>
+                        <li>Start a new analysis with different parameters</li>
+                        <li>Compare results with different time periods</li>
+                    </ul>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="results-placeholder">
+                <div class="icon">📊</div>
+                <div style="color: #666666; font-size: 16px; margin-bottom: 10px;">No Results Available</div>
+                <div style="color: #444444; font-size: 14px;">Please run an analysis to see results</div>
+            </div>
+            """, unsafe_allow_html=True)
         
-        # Export Section
-        st.subheader("💾 Export Results")
-        
-        col_exp1, col_exp2 = st.columns(2)
-        with col_exp1:
-            if st.button("📥 Download CSV", use_container_width=True):
-                # Create CSV data
-                export_data = []
-                for index, data in results.items():
-                    for date, value in zip(data['dates'], data['values']):
-                        export_data.append({
-                            'Date': date,
-                            'Index': index,
-                            'Value': value
-                        })
-                
-                export_df = pd.DataFrame(export_data)
-                csv = export_df.to_csv(index=False)
-                
-                st.download_button(
-                    label="Download CSV File",
-                    data=csv,
-                    file_name=f"vegetation_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-        
-        with col_exp2:
-            if st.button("🔄 New Analysis", use_container_width=True):
-                # Reset for new analysis
-                st.session_state.step = 1
-                st.session_state.selected_country = None
-                st.session_state.selected_municipality = None
-                st.session_state.analysis_results = None
-                st.rerun()
-    
-    else:
-        # Sample chart if no results
-        st.info("No analysis results yet. Run an analysis in Step 2 or view a sample chart.")
-        
-        # Create sample chart
-        import random
-        from datetime import datetime, timedelta
-        
-        dates = []
-        values = []
-        current_date = datetime(2023, 1, 1)
-        
-        for i in range(12):
-            dates.append(current_date.strftime('%Y-%m'))
-            values.append(random.uniform(0.3, 0.8))
-            current_date += timedelta(days=30)
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=dates, 
-            y=values,
-            mode='lines+markers',
-            name='NDVI (Sample)',
-            line=dict(color='#00ff88', width=3),
-            marker=dict(size=6, color='#00ff88')
-        ))
-        
-        fig.update_layout(
-            title='Sample Vegetation Index (NDVI)',
-            plot_bgcolor='#0a0a0a',
-            paper_bgcolor='#0a0a0a',
-            font=dict(color='#ffffff'),
-            height=400
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Action buttons
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("← Back to Configuration", use_container_width=True):
-                st.session_state.step = 2
-                st.rerun()
-        with col2:
-            if st.button("🔄 Start New Analysis", use_container_width=True):
-                st.session_state.step = 1
-                st.session_state.selected_country = None
-                st.session_state.selected_municipality = None
-                st.rerun()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # Footer
 st.markdown("""
-<div style="text-align: center; color: #666666; font-size: 12px; padding: 20px 0; margin-top: 30px;">
+<div style="text-align: center; color: #666666; font-size: 12px; padding: 30px 0 20px 0; border-top: 1px solid #222222; margin-top: 20px;">
     <p style="margin: 5px 0;">KHISBA GIS • Interactive 3D Global Vegetation Analytics Platform</p>
-    <p style="margin: 5px 0;">Created by Taibi Farouk Djilali • Clean Green & Black Design</p>
+    <p style="margin: 5px 0;">Guided Workflow • Step-by-Step Analysis • User-Friendly Interface</p>
     <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
-        <span class="status-badge">Step-by-Step Guide</span>
-        <span class="status-badge">Country Flags</span>
-        <span class="status-badge">Earth Engine</span>
-        <span class="status-badge">Streamlit</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Step-by-Step</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Earth Engine</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">User Guide</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">v2.1</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
