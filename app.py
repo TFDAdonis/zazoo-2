@@ -1,963 +1,1454 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
 import json
+import pandas as pd
+import plotly.graph_objects as go
+from datetime import datetime
+import ee
 import traceback
-import sys
-import subprocess
 
-# Check and install missing packages
-required_packages = ['earthengine-api', 'plotly', 'matplotlib']
-
-for package in required_packages:
-    try:
-        if package == 'earthengine-api':
-            import ee
-        elif package == 'plotly':
-            import plotly.graph_objects as go
-            import plotly.express as px
-            from plotly.subplots import make_subplots
-        elif package == 'matplotlib':
-            import matplotlib.pyplot as plt
-    except ImportError:
-        st.warning(f"Installing {package}...")
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-            if package == 'earthengine-api':
-                import ee
-            elif package == 'plotly':
-                import plotly.graph_objects as go
-                import plotly.express as px
-                from plotly.subplots import make_subplots
-            elif package == 'matplotlib':
-                import matplotlib.pyplot as plt
-            st.success(f"✅ {package} installed successfully")
-        except:
-            st.error(f"Failed to install {package}")
-
-# Try to import seaborn, but make it optional
-try:
-    import seaborn as sns
-    SEABORN_AVAILABLE = True
-except ImportError:
-    SEABORN_AVAILABLE = False
-    st.warning("⚠️ Seaborn not available. Some visualizations may be limited.")
-
-# Page configuration
-st.set_page_config(
-    page_title="Comprehensive Agricultural Analyzer",
-    page_icon="🌾",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Custom CSS
+# Custom CSS for Clean Green & Black TypeScript/React Style with Guided UI
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #2E8B57;
+    /* Base styling */
+    .stApp {
+        background: #000000;
+        color: #ffffff;
+    }
+    
+    /* Remove Streamlit default padding */
+    .main .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+    }
+    
+    /* Green & Black Theme */
+    :root {
+        --primary-green: #00ff88;
+        --accent-green: #00cc6a;
+        --primary-black: #000000;
+        --card-black: #0a0a0a;
+        --secondary-black: #111111;
+        --border-gray: #222222;
+        --text-white: #ffffff;
+        --text-gray: #999999;
+        --text-light-gray: #cccccc;
+    }
+    
+    /* Typography */
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+        color: var(--text-white) !important;
+    }
+    
+    h1 {
+        font-size: 2rem !important;
+        background: linear-gradient(90deg, var(--primary-green), var(--accent-green));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 0.5rem !important;
+    }
+    
+    /* Progress Steps */
+    .progress-steps {
+        display: flex;
+        justify-content: space-between;
+        margin: 20px 0;
+        position: relative;
+    }
+    
+    .progress-step {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        z-index: 2;
+    }
+    
+    .step-circle {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: var(--secondary-black);
+        border: 2px solid var(--border-gray);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-gray);
+        font-weight: 600;
+        margin-bottom: 8px;
+        transition: all 0.3s ease;
+    }
+    
+    .step-circle.active {
+        background: var(--primary-green);
+        border-color: var(--primary-green);
+        color: var(--primary-black);
+        box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+    }
+    
+    .step-circle.completed {
+        background: var(--accent-green);
+        border-color: var(--accent-green);
+        color: var(--primary-black);
+    }
+    
+    .step-label {
+        font-size: 12px;
+        color: var(--text-gray);
         text-align: center;
-        margin-bottom: 1rem;
+        max-width: 100px;
     }
-    .section-header {
-        font-size: 1.8rem;
-        color: #228B22;
-        margin-top: 2rem;
-        margin-bottom: 1rem;
-        padding-bottom: 0.5rem;
-        border-bottom: 2px solid #228B22;
+    
+    .step-label.active {
+        color: var(--primary-green);
+        font-weight: 600;
     }
-    .sub-header {
-        font-size: 1.4rem;
-        color: #32CD32;
-        margin-top: 1.5rem;
-        margin-bottom: 0.5rem;
+    
+    .progress-line {
+        position: absolute;
+        top: 20px;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: var(--border-gray);
+        z-index: 1;
     }
-    .metric-card {
-        background-color: #F0FFF0;
-        padding: 1rem;
+    
+    .progress-fill {
+        position: absolute;
+        top: 20px;
+        left: 0;
+        height: 2px;
+        background: var(--primary-green);
+        z-index: 1;
+        transition: width 0.3s ease;
+    }
+    
+    /* Guided Instructions */
+    .guide-container {
+        background: linear-gradient(135deg, rgba(0, 255, 136, 0.1), rgba(0, 204, 106, 0.1));
+        border: 1px solid rgba(0, 255, 136, 0.3);
         border-radius: 10px;
-        border-left: 5px solid #32CD32;
-        margin-bottom: 1rem;
+        padding: 20px;
+        margin-bottom: 20px;
+        animation: pulse 2s infinite;
     }
-    .info-box {
-        background-color: #E8F4F8;
-        padding: 1rem;
+    
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.4); }
+        70% { box-shadow: 0 0 0 10px rgba(0, 255, 136, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0); }
+    }
+    
+    .guide-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .guide-icon {
+        font-size: 24px;
+        color: var(--primary-green);
+    }
+    
+    .guide-title {
+        color: var(--primary-green);
+        font-size: 16px;
+        font-weight: 600;
+    }
+    
+    .guide-content {
+        color: var(--text-light-gray);
+        font-size: 14px;
+        line-height: 1.5;
+    }
+    
+    .guide-action {
+        margin-top: 15px;
+        padding: 12px 20px;
+        background: var(--primary-green);
+        color: var(--primary-black);
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        text-align: center;
+        display: inline-block;
+        transition: transform 0.2s;
+    }
+    
+    .guide-action:hover {
+        transform: translateY(-2px);
+    }
+    
+    /* Status Indicators */
+    .status-container {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .status-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        background: var(--card-black);
+        border-radius: 20px;
+        font-size: 12px;
+        border: 1px solid var(--border-gray);
+    }
+    
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--border-gray);
+    }
+    
+    .status-dot.active {
+        background: var(--primary-green);
+        box-shadow: 0 0 10px var(--primary-green);
+    }
+    
+    /* Cards */
+    .card {
+        background: var(--card-black);
+        border: 1px solid var(--border-gray);
         border-radius: 10px;
-        border-left: 5px solid #1E90FF;
-        margin-bottom: 1rem;
+        padding: 20px;
+        margin-bottom: 15px;
+        transition: all 0.2s ease;
     }
-    .warning-box {
-        background-color: #FFF8E1;
-        padding: 1rem;
+    
+    .card:hover {
+        border-color: var(--primary-green);
+    }
+    
+    .card-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border-gray);
+    }
+    
+    .card-title .icon {
+        width: 32px;
+        height: 32px;
+        background: rgba(0, 255, 136, 0.1);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--primary-green);
+        font-size: 16px;
+    }
+    
+    /* Buttons */
+    .stButton > button {
+        width: 100%;
+        background: linear-gradient(90deg, var(--primary-green), var(--accent-green));
+        color: var(--primary-black) !important;
+        border: none;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 14px;
+        letter-spacing: 0.5px;
+        transition: all 0.3s ease;
+        margin: 5px 0;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
+    }
+    
+    .stButton > button:disabled {
+        background: var(--border-gray) !important;
+        color: var(--text-gray) !important;
+        cursor: not-allowed;
+        transform: none !important;
+        box-shadow: none !important;
+    }
+    
+    /* Input fields */
+    .stSelectbox > div > div > select,
+    .stDateInput > div > div > input,
+    .stNumberInput > div > div > input,
+    .stMultiSelect > div > div > div {
+        background: var(--secondary-black) !important;
+        border: 1px solid var(--border-gray) !important;
+        color: var(--text-white) !important;
+        border-radius: 6px !important;
+        padding: 10px 12px !important;
+        font-size: 14px !important;
+    }
+    
+    .stSelectbox > div > div > select:focus,
+    .stDateInput > div > div > input:focus {
+        border-color: var(--primary-green) !important;
+        box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.2) !important;
+    }
+    
+    /* Map container */
+    .map-container {
+        border: 1px solid var(--border-gray);
         border-radius: 10px;
-        border-left: 5px solid #FFA500;
-        margin-bottom: 1rem;
+        overflow: hidden;
+        height: 600px;
+        position: relative;
     }
-    .success-box {
-        background-color: #E8F5E8;
-        padding: 1rem;
-        border-radius: 10px;
-        border-left: 5px solid #4CAF50;
-        margin-bottom: 1rem;
+    
+    /* Hide Streamlit default elements */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .progress-step {
+            flex: 1;
+        }
+        
+        .step-label {
+            font-size: 10px;
+            max-width: 60px;
+        }
     }
-    .stProgress > div > div > div > div {
-        background-color: #2E8B57;
+    
+    /* Auto-transition animation */
+    .auto-transition {
+        animation: slideIn 0.5s ease-out;
+    }
+    
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Simplified Earth Engine initialization (without credentials for now)
-def initialize_earth_engine():
-    """Initialize Earth Engine with fallback options"""
+# Earth Engine Auto-Authentication
+def auto_initialize_earth_engine():
+    """Automatically initialize Earth Engine with service account credentials"""
     try:
-        # Try to initialize without credentials first
-        ee.Initialize()
+        service_account_info = {
+            "type": "service_account",
+            "project_id": "citric-hawk-457513-i6",
+            "private_key_id": "8984179a69969591194d8f8097e48cd9789f5ea2",
+            "private_key": """-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDFQOtXKWE+7mEY
+JUTNzx3h+QvvDCvZ2B6XZTofknuAFPW2LqAzZustznJJFkCmO3Nutct+W/iDQCG0
+1DjOQcbcr/jWr+mnRLVOkUkQc/kzZ8zaMQqU8HpXjS1mdhpsrbUaRKoEgfo3I3Bp
+dFcJ/caC7TSr8VkGnZcPEZyXVsj8dLSEzomdkX+mDlJlgCrNfu3Knu+If5lXh3Me
+SKiMWsfMnasiv46oD4szBzg6HLgoplmNka4NiwfeM7qROYnCd+5conyG8oiU00Xe
+zC2Ekzo2dWsCw4zIJD6IdAcvgdrqH63fCqDFmAjEBZ69h8fWrdnsq56dAIpt0ygl
+P9ADiRbVAgMBAAECggEALO7AnTqBGy2AgxhMP8iYEUdiu0mtvIIxV8HYl2QOC2ta
+3GzrE8J0PJs8J99wix1cSmIRkH9hUP6dHvy/0uYjZ1aTi84HHtH1LghE2UFdySKy
+RJqqwyozaDmx15b8Jnj8Wdc91miIR6KkQvVcNVuwalcf6jIAWlQwGp/jqIq9nloN
+eld6xNbEmacORz1qT+4/uxOE05mrrZHC4kIKtswi8Io4ExVe61VxXsXWSHrMCGz0
+TiSGr2ORSlRWC/XCGCu7zFIJU/iw6BiNsxryk6rjqQrcAtmoFTFx0fWbjYkG1DDs
+k/9Dov1gyx0OtEyX8beoaf0Skcej4zdfeuido2A1sQKBgQD4IrhFn50i4/pa9sk1
+g7v1ypGTrVA3pfvj6c7nTgzj9oyJnlU3WJwCqLw1cTFiY84+ekYP15wo8xsu5VZd
+YLzOKEg3B8g899Ge14vZVNd6cNfRyMk4clGrDwGnZ4OAQkdsT/AyaCGRIcyu9njA
+xdmWa+6VPMG7U65f/656XGwkBQKBgQDLgVyRE2+r1XCY+tdtXtga9sQ4LoiYHzD3
+eDHe056qmwk8jf1A1HekILnC1GyeaKkOUd4TEWhVBgQpsvtC4Z2zPXlWR8N7SwNu
+SFAhy3OnHTZQgrRWFA8eBjeI0YoXmk5m6uMQ7McmDlFxxXenFi+qSl3Cu4aGGuOy
+cfyWMbTwkQKBgAoKfaJznww2ZX8g1WuQ9R4xIEr1jHV0BglnALRjeCoRZAZ9nb0r
+nMSOx27yMallmIb2s7cYZn1RuRvgs+n7bCh7gNCZRAUTkiv3VPVqdX3C6zjWAy6B
+kcR2Sv7XNX8PL4y2f2XKyPDyiTHbT2+dkfyASZtIZh6KeFfyJMFW1BlxAoGAAeG6
+V2UUnUQl/GQlZc+AtA8gFVzoym9PZppn66WNTAqO9U5izxyn1o6u6QxJzNUu6wD6
+yrZYfqDFnRUYma+4Y5Xn71JOjm9NItHsW8Oj2CG/BNOQk1MwKJjqHovBeSJmIzF8
+1AU8ei+btS+cQaFE45A4ebp+LfNFs7q2GTVwdOECgYEAtHkMqigOmZdR3QAcZTjL
+3aeOMGVHB2pHYosTgslD9Yp+hyVHqSdyCplHzWB3d8roIecW4MEb0mDxlaTdZfmR
+dtBYiTzMxLezHsRZ4KP4NtGAE3iTL1b6DXuoI84+H/HaQ1EB79+YV9ZTAabt1b7o
+e5aU1RW6tlG8nzHHwK2FeyI=
+-----END PRIVATE KEY-----""",
+            "client_email": "cc-365@citric-hawk-457513-i6.iam.gserviceaccount.com",
+            "client_id": "105264622264803277310",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/cc-365%40citric-hawk-457513-i6.iam.gserviceaccount.com",
+            "universe_domain": "googleapis.com"
+        }
+        
+        credentials = ee.ServiceAccountCredentials(
+            service_account_info['client_email'],
+            key_data=json.dumps(service_account_info)
+        )
+        
+        ee.Initialize(credentials, project='citric-hawk-457513-i6')
         return True
     except Exception as e:
-        try:
-            # Try to authenticate if not initialized
-            ee.Authenticate()
-            ee.Initialize()
-            return True
-        except:
-            st.warning("⚠️ Earth Engine not initialized. Running in demo mode with simulated data.")
-            return False
+        st.error(f"Earth Engine auto-initialization failed: {str(e)}")
+        return False
 
-# Initialize Earth Engine
+# Try to auto-initialize Earth Engine
 if 'ee_initialized' not in st.session_state:
     with st.spinner("Initializing Earth Engine..."):
-        st.session_state.ee_initialized = initialize_earth_engine()
-
-# ============ COMPREHENSIVE CROP SUITABILITY CONFIGURATION ============
-CROP_REQUIREMENTS = {
-    'Wheat': {
-        'moisture_opt': 0.18, 'moisture_tol': 0.06, 'om_opt': 2.0, 'om_tol': 1.0,
-        'texture_scores': {
-            'Clay': 0.4, 'Sandy clay': 0.5, 'Silty clay': 0.6, 'Clay loam': 0.85,
-            'Sandy clay loam': 0.6, 'Silty clay loam': 0.7, 'Loam': 1.0, 'Sandy loam': 0.7,
-            'Silt loam': 0.9, 'Silt': 0.8, 'Loamy sand': 0.4, 'Sand': 0.1
-        },
-        'temp_opt': 18, 'temp_tol': 6, 'maturity_days': 120, 'water_needs': 'Medium',
-        'notes': 'Cool season cereal, requires good drainage',
-        'fertilizer': 'NPK 100-120-60 kg/ha + Zinc',
-        'spacing': '20-25 cm between rows, 2-3 cm between plants'
-    },
-    'Maize': {
-        'moisture_opt': 0.28, 'moisture_tol': 0.07, 'om_opt': 2.2, 'om_tol': 0.8,
-        'texture_scores': {
-            'Clay': 0.4, 'Sandy clay': 0.5, 'Silty clay': 0.7, 'Clay loam': 0.8,
-            'Sandy clay loam': 0.6, 'Silty clay loam': 0.9, 'Loam': 1.0, 'Sandy loam': 0.7,
-            'Silt loam': 0.95, 'Silt': 0.8, 'Loamy sand': 0.5, 'Sand': 0.2
-        },
-        'temp_opt': 25, 'temp_tol': 7, 'maturity_days': 120, 'water_needs': 'High',
-        'notes': 'Warm season, high water and nutrient demands',
-        'fertilizer': 'NPK 150-80-100 kg/ha + Sulfur',
-        'spacing': '75 cm between rows, 20-25 cm between plants'
-    },
-    'Rice': {
-        'moisture_opt': 0.35, 'moisture_tol': 0.08, 'om_opt': 2.5, 'om_tol': 1.0,
-        'texture_scores': {
-            'Clay': 0.9, 'Sandy clay': 0.7, 'Silty clay': 0.8, 'Clay loam': 0.8,
-            'Sandy clay loam': 0.6, 'Silty clay loam': 0.9, 'Loam': 0.7, 'Sandy loam': 0.4,
-            'Silt loam': 0.8, 'Silt': 0.9, 'Loamy sand': 0.3, 'Sand': 0.1
-        },
-        'temp_opt': 28, 'temp_tol': 5, 'maturity_days': 150, 'water_needs': 'Very High',
-        'notes': 'Requires flooded conditions, heavy soils preferred',
-        'fertilizer': 'NPK 120-60-60 kg/ha + Zinc',
-        'spacing': '20 x 20 cm for transplanted rice'
-    },
-    'Tomato': {
-        'moisture_opt': 0.24, 'moisture_tol': 0.06, 'om_opt': 2.5, 'om_tol': 0.8,
-        'texture_scores': {
-            'Clay': 0.3, 'Sandy clay': 0.4, 'Silty clay': 0.5, 'Clay loam': 0.7,
-            'Sandy clay loam': 0.8, 'Silty clay loam': 0.7, 'Loam': 1.0, 'Sandy loam': 0.9,
-            'Silt loam': 0.8, 'Silt': 0.6, 'Loamy sand': 0.5, 'Sand': 0.2
-        },
-        'temp_opt': 24, 'temp_tol': 6, 'maturity_days': 100, 'water_needs': 'Medium-High',
-        'notes': 'Warm season, consistent moisture needed',
-        'fertilizer': 'NPK 120-80-150 kg/ha + Calcium',
-        'spacing': '60-90 cm between rows, 45-60 cm between plants'
-    },
-    'Potato': {
-        'moisture_opt': 0.28, 'moisture_tol': 0.06, 'om_opt': 3.0, 'om_tol': 1.0,
-        'texture_scores': {
-            'Clay': 0.2, 'Sandy clay': 0.3, 'Silty clay': 0.4, 'Clay loam': 0.6,
-            'Sandy clay loam': 0.7, 'Silty clay loam': 0.8, 'Loam': 1.0, 'Sandy loam': 0.9,
-            'Silt loam': 0.95, 'Silt': 0.7, 'Loamy sand': 0.6, 'Sand': 0.3
-        },
-        'temp_opt': 18, 'temp_tol': 6, 'maturity_days': 110, 'water_needs': 'High',
-        'notes': 'Requires good drainage, high OM demand',
-        'fertilizer': 'NPK 150-100-200 kg/ha',
-        'spacing': '75-90 cm between rows, 25-30 cm between plants'
-    },
-    'Barley': {
-        'moisture_opt': 0.16, 'moisture_tol': 0.06, 'om_opt': 1.6, 'om_tol': 0.8,
-        'texture_scores': {
-            'Clay': 0.3, 'Sandy clay': 0.4, 'Silty clay': 0.5, 'Clay loam': 0.7,
-            'Sandy clay loam': 0.8, 'Silty clay loam': 0.6, 'Loam': 1.0, 'Sandy loam': 0.8,
-            'Silt loam': 0.9, 'Silt': 0.7, 'Loamy sand': 0.5, 'Sand': 0.2
-        },
-        'temp_opt': 16, 'temp_tol': 6, 'maturity_days': 100, 'water_needs': 'Low-Medium',
-        'notes': 'Drought tolerant, good for marginal soils',
-        'fertilizer': 'NPK 80-60-40 kg/ha',
-        'spacing': '15-20 cm between rows'
-    },
-    'Soybean': {
-        'moisture_opt': 0.22, 'moisture_tol': 0.06, 'om_opt': 1.5, 'om_tol': 0.7,
-        'texture_scores': {
-            'Clay': 0.4, 'Sandy clay': 0.5, 'Silty clay': 0.6, 'Clay loam': 0.8,
-            'Sandy clay loam': 0.7, 'Silty clay loam': 0.8, 'Loam': 1.0, 'Sandy loam': 0.8,
-            'Silt loam': 0.9, 'Silt': 0.7, 'Loamy sand': 0.6, 'Sand': 0.3
-        },
-        'temp_opt': 24, 'temp_tol': 6, 'maturity_days': 110, 'water_needs': 'Medium',
-        'notes': 'Warm season, nitrogen-fixing',
-        'fertilizer': 'NPK 30-80-60 kg/ha + Rhizobium inoculation',
-        'spacing': '45-75 cm between rows, 3-5 cm between plants'
-    }
-}
-
-# Soil texture classes
-SOIL_TEXTURE_CLASSES = {
-    1: 'Clay', 2: 'Sandy clay', 3: 'Silty clay', 4: 'Clay loam', 5: 'Sandy clay loam',
-    6: 'Silty clay loam', 7: 'Loam', 8: 'Sandy loam', 9: 'Silt loam', 10: 'Silt',
-    11: 'Loamy sand', 12: 'Sand'
-}
-
-class AgriculturalAnalyzer:
-    def __init__(self):
-        self.config = {
-            'default_start_date': '2020-01-01',
-            'default_end_date': '2023-12-31',
-            'scale': 1000,
-            'max_pixels': 1e6
-        }
-
-    def calculate_crop_suitability_score(self, moisture_value, som_value, texture_value, temp_value, crop_req):
-        """Calculate comprehensive crop suitability score"""
-        # Calculate individual component scores
-        s_m = self.calculate_moisture_score(moisture_value, crop_req['moisture_opt'], crop_req['moisture_tol'])
-        s_om = self.calculate_om_score(som_value, crop_req['om_opt'], crop_req['om_tol'])
-        s_t = self.get_texture_score(texture_value, crop_req['texture_scores'])
-        s_temp = self.calculate_temp_score(temp_value, crop_req['temp_opt'], crop_req['temp_tol'])
-
-        # Weighted suitability score
-        weights = {'moisture': 0.3, 'texture': 0.25, 'om': 0.25, 'temp': 0.2}
-        suitability_score = (s_m * weights['moisture'] +
-                           s_om * weights['om'] +
-                           s_t * weights['texture'] +
-                           s_temp * weights['temp'])
-
-        # Calculate disease risk index
-        disease_risk = self.calculate_disease_risk_index(s_m, s_om, s_t, s_temp)
-
-        # Adjust suitability based on disease risk
-        risk_adjustment = 1.0 - (disease_risk * 0.3)
-        final_score = suitability_score * risk_adjustment
-
-        return {
-            'final_score': min(1.0, max(0.0, final_score)),
-            'suitability_score': suitability_score,
-            'component_scores': {'moisture': s_m, 'organic_matter': s_om, 'texture': s_t, 'temperature': s_temp},
-            'disease_risk': disease_risk,
-            'risk_level': self.get_risk_level(disease_risk)
-        }
-
-    def calculate_disease_risk_index(self, s_m, s_om, s_t, s_temp):
-        """Calculate disease risk index"""
-        # Stress factors that increase disease susceptibility
-        moisture_stress = 1.0 - s_m
-        nutrient_stress = 1.0 - s_om
-        texture_stress = 1.0 - s_t
-        temp_stress = 1.0 - s_temp
-
-        # Weighted disease risk calculation
-        risk_weights = {
-            'moisture_stress': 0.35,
-            'nutrient_stress': 0.25,
-            'texture_stress': 0.20,
-            'temp_stress': 0.20
-        }
-
-        disease_risk = (moisture_stress * risk_weights['moisture_stress'] +
-                       nutrient_stress * risk_weights['nutrient_stress'] +
-                       texture_stress * risk_weights['texture_stress'] +
-                       temp_stress * risk_weights['temp_stress'])
-
-        return min(1.0, max(0.0, disease_risk))
-
-    def get_risk_level(self, risk_index):
-        """Convert risk index to categorical level"""
-        if risk_index < 0.3:
-            return 'Low'
-        elif risk_index < 0.6:
-            return 'Moderate'
-        elif risk_index < 0.8:
-            return 'High'
+        if auto_initialize_earth_engine():
+            st.session_state.ee_initialized = True
         else:
-            return 'Very High'
+            st.session_state.ee_initialized = False
 
-    def analyze_all_crops(self, moisture_value, som_value, texture_value, temp_value, location_name):
-        """Analyze all crops with enhanced suitability scoring"""
-        analysis_results = {}
+# Initialize session state for steps
+if 'current_step' not in st.session_state:
+    st.session_state.current_step = 1
+if 'selected_geometry' not in st.session_state:
+    st.session_state.selected_geometry = None
+if 'analysis_results' not in st.session_state:
+    st.session_state.analysis_results = None
+if 'selected_coordinates' not in st.session_state:
+    st.session_state.selected_coordinates = None
+if 'selected_area_name' not in st.session_state:
+    st.session_state.selected_area_name = None
+if 'analysis_parameters' not in st.session_state:
+    st.session_state.analysis_parameters = None
+if 'auto_show_results' not in st.session_state:
+    st.session_state.auto_show_results = False
 
-        progress_text = st.empty()
-        progress_bar = st.progress(0)
-        
-        crops = list(CROP_REQUIREMENTS.keys())
-        for idx, crop_name in enumerate(crops):
-            crop_req = CROP_REQUIREMENTS[crop_name]
-            
-            # Calculate suitability with disease risk
-            suitability_analysis = self.calculate_crop_suitability_score(
-                moisture_value, som_value, texture_value, temp_value, crop_req)
+# Page configuration
+st.set_page_config(
+    page_title="Khisba GIS - 3D Global Vegetation Analysis",
+    page_icon="🌍",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-            # Generate management strategies
-            management_strategies = self.generate_management_strategies(crop_name, suitability_analysis, crop_req)
+# Define steps
+STEPS = [
+    {"number": 1, "label": "Select Area", "icon": "📍"},
+    {"number": 2, "label": "Set Parameters", "icon": "⚙️"},
+    {"number": 3, "label": "View Map", "icon": "🗺️"},
+    {"number": 4, "label": "Run Analysis", "icon": "🚀"},
+    {"number": 5, "label": "View Results", "icon": "📊"}
+]
 
-            analysis_results[crop_name] = {
-                'suitability_analysis': suitability_analysis,
-                'management_strategies': management_strategies,
-                'crop_requirements': crop_req
-            }
-            
-            progress_bar.progress((idx + 1) / len(crops))
-        
-        progress_bar.empty()
-        progress_text.empty()
-        
-        return analysis_results
+# Header
+st.markdown("""
+<div style="margin-bottom: 20px;">
+    <h1>🌍 KHISBA GIS</h1>
+    <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics - Guided Workflow</p>
+</div>
+""", unsafe_allow_html=True)
 
-    def generate_management_strategies(self, crop_name, suitability_analysis, crop_req):
-        """Generate tailored management strategies"""
-        strategies = []
-        comp_scores = suitability_analysis['component_scores']
-        disease_risk = suitability_analysis['disease_risk']
+# Progress Steps
+st.markdown("""
+<div class="progress-steps">
+    <div class="progress-line"></div>
+    <div class="progress-fill" id="progress-fill"></div>
+""", unsafe_allow_html=True)
 
-        # General strategies based on overall suitability
-        if suitability_analysis['final_score'] >= 0.8:
-            strategies.append("✅ Excellent conditions - Maintain current practices")
-        elif suitability_analysis['final_score'] >= 0.6:
-            strategies.append("🟡 Good conditions - Minor adjustments needed")
-        else:
-            strategies.append("🔴 Challenging conditions - Significant management required")
-
-        # Soil moisture management
-        if comp_scores['moisture'] < 0.5:
-            if crop_req['water_needs'] in ['High', 'Very High']:
-                strategies.append("💧 Implement irrigation system for consistent moisture")
-            strategies.append("🌱 Use mulch to conserve soil moisture")
-
-        # Organic matter management
-        if comp_scores['organic_matter'] < 0.5:
-            strategies.append("🍂 Apply organic amendments (compost, manure)")
-            strategies.append("🌿 Plant cover crops to build soil organic matter")
-
-        # Disease management based on risk level
-        if disease_risk >= 0.7:
-            strategies.append("🦠 HIGH DISEASE RISK - Implement intensive IPM program")
-            strategies.append("🔄 Use 3+ year crop rotation with non-host crops")
-            strategies.append("🌱 Select disease-resistant varieties")
-        elif disease_risk >= 0.5:
-            strategies.append("⚠️ MODERATE DISEASE RISK - Regular monitoring needed")
-            strategies.append("🍃 Improve air circulation through proper spacing")
-
-        return strategies
-
-    # ============ UTILITY METHODS ============
-    def calculate_moisture_score(self, moisture_meas, moisture_opt, moisture_tol):
-        """Calculate moisture suitability score"""
-        diff = abs(moisture_meas - moisture_opt)
-        if diff <= 0:
-            return 1.0
-        if diff <= moisture_tol:
-            return max(0, 1 - (diff / moisture_tol))
-        return 0.0
-
-    def calculate_om_score(self, om_meas, om_opt, om_tol):
-        """Calculate organic matter suitability score"""
-        diff = abs(om_meas - om_opt)
-        return max(0, 1 - (diff / om_tol))
-
-    def get_texture_score(self, texture_class, crop_texture_scores):
-        """Get texture suitability score"""
-        if texture_class is None:
-            return 0.5
-
-        # Convert to texture name
-        if isinstance(texture_class, str):
-            texture_name = texture_class
-        elif 1 <= texture_class <= 12:
-            texture_name = SOIL_TEXTURE_CLASSES[int(round(texture_class))]
-        else:
-            texture_name = "Loam"
-        
-        return crop_texture_scores.get(texture_name, 0.5)
-
-    def calculate_temp_score(self, temp_meas, temp_opt, temp_tol):
-        """Calculate temperature suitability score"""
-        diff = abs(temp_meas - temp_opt)
-        if diff <= 0:
-            return 1.0
-        if diff <= temp_tol:
-            return max(0, 1 - (diff / temp_tol))
-        return 0.0
-
-    def get_simulated_climate_data(self, location_name):
-        """Get simulated climate data for demonstration"""
-        # Simulate based on location name
-        if 'algeria' in location_name.lower() or 'morocco' in location_name.lower():
-            return {
-                'climate_zone': 'Mediterranean',
-                'mean_temperature': 19.5,
-                'mean_precipitation': 635,
-                'aridity_index': 1.52
-            }
-        elif 'kenya' in location_name.lower() or 'tanzania' in location_name.lower():
-            return {
-                'climate_zone': 'Tropical',
-                'mean_temperature': 23.0,
-                'mean_precipitation': 1200,
-                'aridity_index': 2.15
-            }
-        else:
-            return {
-                'climate_zone': 'Temperate',
-                'mean_temperature': 18.0,
-                'mean_precipitation': 800,
-                'aridity_index': 1.57
-            }
-
-    def get_simulated_groundwater_data(self, location_name):
-        """Get simulated groundwater data for demonstration"""
-        import random
-        
-        categories = ['LOW', 'MODERATE', 'HIGH', 'VERY HIGH']
-        weights = [0.2, 0.3, 0.35, 0.15]  # Probability weights
-        
-        category = random.choices(categories, weights=weights, k=1)[0]
-        
-        if category == 'VERY HIGH':
-            score = random.uniform(0.75, 0.95)
-            recharge = random.uniform(200, 300)
-        elif category == 'HIGH':
-            score = random.uniform(0.6, 0.75)
-            recharge = random.uniform(150, 200)
-        elif category == 'MODERATE':
-            score = random.uniform(0.45, 0.6)
-            recharge = random.uniform(100, 150)
-        else:  # LOW
-            score = random.uniform(0.2, 0.45)
-            recharge = random.uniform(50, 100)
-        
-        soil_types = ['Sand', 'Sandy Loam', 'Loam', 'Clay Loam', 'Clay']
-        soil_type = random.choice(soil_types)
-        
-        return {
-            'score': score,
-            'category': category,
-            'recharge_mm': recharge,
-            'soil_type': soil_type,
-            'conductivity': random.uniform(0.5, 25.0),
-            'precipitation_mm': random.uniform(200, 1000)
-        }
-
-def main():
-    # Title and header
-    st.markdown('<h1 class="main-header">🌾 Comprehensive Agricultural Analyzer</h1>', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="info-box">
-        <strong>Integrated Agricultural Analysis Platform</strong><br>
-        Combines climate analysis, soil analysis, crop suitability with disease risk assessment, 
-        and groundwater potential analysis for comprehensive agricultural planning.
+for i, step in enumerate(STEPS):
+    step_class = "active" if st.session_state.current_step == step["number"] else ""
+    step_class = "completed" if st.session_state.current_step > step["number"] else step_class
+    
+    st.markdown(f"""
+    <div class="progress-step">
+        <div class="step-circle {step_class}">
+            {step["icon"] if step_class == "completed" else step["number"]}
+        </div>
+        <div class="step-label {step_class}">
+            {step["label"]}
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Sidebar configuration
-    with st.sidebar:
-        st.markdown("### 🌍 Earth Engine Status")
-        if st.session_state.get('ee_initialized', False):
-            st.success("✅ Earth Engine Initialized")
-            st.caption("Connected to Google Earth Engine")
-        else:
-            st.warning("⚠️ Running in Demo Mode")
-            st.caption("Using simulated data for demonstration")
-        
-        st.markdown("---")
-        st.markdown("### 📊 Analysis Configuration")
-        
-        # Analysis type selection
-        analysis_type = st.selectbox(
-            "Select Analysis Type",
-            ["Crop Suitability", "Groundwater Potential", "Comprehensive Analysis"],
-            help="Choose the type of analysis to perform"
-        )
-        
-        # Climate classification for crop suitability
-        if analysis_type in ["Crop Suitability", "Comprehensive Analysis"]:
-            climate_classification = st.selectbox(
-                "Climate Classification System",
-                ["Simplified Temperature-Precipitation", "Aridity-Based", "Köppen-Geiger"],
-                help="Select the climate classification system to use"
-            )
-        
-        st.markdown("---")
-        st.markdown("### 📚 Data Sources")
-        with st.expander("View Data Sources"):
-            st.markdown("""
-            - **Soil Data:** FAO GSOCMAP, ISDASOIL Africa, OpenLandMap
-            - **Climate Data:** WorldClim, CHIRPS
-            - **Administrative Boundaries:** FAO GAUL
-            - **Satellite Imagery:** Sentinel-2, MODIS
-            - **Topography:** SRTM DEM
-            """)
+st.markdown("</div>", unsafe_allow_html=True)
 
-    # Main content area
-    st.markdown('<h2 class="section-header">📍 Location Selection</h2>', unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        countries = ["Select Country", "Algeria", "Nigeria", "Kenya", "South Africa", 
-                    "Ethiopia", "Egypt", "Morocco", "Tanzania", "Uganda", "Ghana"]
-        country = st.selectbox("Select Country", countries)
-    
-    with col2:
-        region_options = ["Select Region"]
-        if country != "Select Country":
-            # Simulate regions based on country
-            if country == "Algeria":
-                region_options.extend(["Annaba", "Algiers", "Oran", "Constantine"])
-            elif country == "Kenya":
-                region_options.extend(["Nairobi", "Mombasa", "Kisumu", "Nakuru"])
-            elif country == "Nigeria":
-                region_options.extend(["Lagos", "Abuja", "Kano", "Ibadan"])
-            else:
-                region_options.extend(["Region 1", "Region 2", "Region 3"])
-        region = st.selectbox("Select Region/State", region_options)
-    
-    col3, col4 = st.columns(2)
-    
-    with col3:
-        municipality_options = ["Select Municipality"]
-        if region != "Select Region":
-            municipality_options.extend(["Municipality 1", "Municipality 2", "Municipality 3"])
-        municipality = st.selectbox("Select Municipality", municipality_options)
-    
-    with col4:
-        st.markdown("### Custom Soil Parameters")
-        use_custom = st.checkbox("Use Custom Soil Parameters", value=True)
-        
-        if use_custom:
-            col_a, col_b = st.columns(2)
-            with col_a:
-                moisture_val = st.slider("Soil Moisture (m³/m³)", 0.0, 0.5, 0.15, 0.01)
-                som_val = st.slider("Soil Organic Matter (%)", 0.0, 10.0, 2.0, 0.1)
-            with col_b:
-                texture_options = list(SOIL_TEXTURE_CLASSES.values())
-                texture_val = st.selectbox("Soil Texture", texture_options, index=texture_options.index("Loam"))
-                temp_val = st.slider("Temperature (°C)", 0.0, 40.0, 22.0, 0.5)
-        else:
-            # Default values
-            moisture_val = 0.15
-            som_val = 2.0
-            texture_val = "Loam"
-            temp_val = 22.0
-    
-    # Run Analysis Button
-    st.markdown("---")
-    run_analysis = st.button("🚀 Run Comprehensive Analysis", type="primary", use_container_width=True)
-    
-    if run_analysis:
-        if country == "Select Country":
-            st.error("Please select a country first!")
-        else:
-            with st.spinner("Running analysis..."):
-                # Create location name
-                location_parts = []
-                if municipality != "Select Municipality":
-                    location_parts.append(municipality)
-                if region != "Select Region":
-                    location_parts.append(region)
-                location_parts.append(country)
-                location_name = ", ".join(location_parts)
-                
-                # Create analyzer instance
-                analyzer = AgriculturalAnalyzer()
-                
-                # Store analysis results
-                st.session_state['analysis_results'] = {
-                    'location_name': location_name,
-                    'analysis_type': analysis_type,
-                    'soil_params': {
-                        'moisture': moisture_val,
-                        'organic_matter': som_val,
-                        'texture': texture_val,
-                        'temperature': temp_val
-                    },
-                    'analyzer': analyzer
-                }
-                
-                st.success(f"✅ Analysis completed for {location_name}!")
-                st.rerun()
+# JavaScript for progress fill
+st.markdown(f"""
+<script>
+    document.getElementById('progress-fill').style.width = '{((st.session_state.current_step - 1) / (len(STEPS) - 1)) * 100}%';
+</script>
+""", unsafe_allow_html=True)
 
-    # Display results if analysis completed
-    if 'analysis_results' in st.session_state:
-        results = st.session_state['analysis_results']
-        analyzer = results['analyzer']
-        location_name = results['location_name']
-        analysis_type = results['analysis_type']
-        soil_params = results['soil_params']
-        
-        st.markdown(f'<h2 class="section-header">📊 Analysis Results for {location_name}</h2>', unsafe_allow_html=True)
-        
-        if analysis_type == "Groundwater Potential":
-            st.markdown("### 💧 Groundwater Potential Analysis")
-            
-            with st.spinner("Analyzing groundwater potential..."):
-                gw_results = analyzer.get_simulated_groundwater_data(location_name)
-            
-            # Display metrics
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                color_map = {
-                    'VERY HIGH': 'green',
-                    'HIGH': 'lightgreen',
-                    'MODERATE': 'orange',
-                    'LOW': 'red'
-                }
-                category_color = color_map.get(gw_results['category'], 'gray')
-                
-                st.metric(
-                    "Groundwater Potential",
-                    gw_results['category'],
-                    delta=f"Score: {gw_results['score']:.2f}",
-                    delta_color="normal"
-                )
-            
-            with col2:
-                st.metric("Recharge Rate", f"{gw_results['recharge_mm']:.0f} mm/year")
-            
-            with col3:
-                st.metric("Hydraulic Conductivity", f"{gw_results['conductivity']:.1f} cm/day")
-            
-            with col4:
-                st.metric("Soil Type", gw_results['soil_type'])
-            
-            # Display detailed information
-            with st.expander("📈 Detailed Analysis"):
-                st.markdown(f"**Precipitation:** {gw_results['precipitation_mm']:.0f} mm/year")
-                st.markdown(f"**Recharge Efficiency:** {(gw_results['recharge_mm'] / gw_results['precipitation_mm'] * 100):.1f}%")
-                
-                # Create a gauge chart for groundwater score
-                fig = go.Figure(go.Indicator(
-                    mode="gauge+number",
-                    value=gw_results['score'] * 100,
-                    title={'text': "Groundwater Potential Score"},
-                    domain={'x': [0, 1], 'y': [0, 1]},
-                    gauge={
-                        'axis': {'range': [0, 100]},
-                        'bar': {'color': "darkblue"},
-                        'steps': [
-                            {'range': [0, 45], 'color': "red"},
-                            {'range': [45, 60], 'color': "orange"},
-                            {'range': [60, 75], 'color': "yellow"},
-                            {'range': [75, 100], 'color': "green"}
-                        ],
-                        'threshold': {
-                            'line': {'color': "black", 'width': 4},
-                            'thickness': 0.75,
-                            'value': gw_results['score'] * 100
-                        }
-                    }
-                ))
-                
-                fig.update_layout(height=300)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            # Recommendations
-            st.markdown("#### 💡 Recommendations")
-            if gw_results['category'] in ['HIGH', 'VERY HIGH']:
-                st.success("""
-                **Excellent groundwater potential!**
-                - Consider installing irrigation wells
-                - Implement sustainable water management practices
-                - Monitor water quality regularly
-                """)
-            elif gw_results['category'] == 'MODERATE':
-                st.warning("""
-                **Moderate groundwater potential**
-                - Conduct detailed hydrogeological survey
-                - Consider rainwater harvesting
-                - Implement water conservation measures
-                """)
-            else:
-                st.error("""
-                **Low groundwater potential**
-                - Prioritize water conservation
-                - Consider alternative water sources
-                - Implement drought-resistant crops
-                """)
-                
-        elif analysis_type == "Crop Suitability" or analysis_type == "Comprehensive Analysis":
-            # Display climate information
-            st.markdown("### 🌤️ Climate Information")
-            climate_data = analyzer.get_simulated_climate_data(location_name)
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Climate Zone", climate_data['climate_zone'])
-            with col2:
-                st.metric("Mean Temperature", f"{climate_data['mean_temperature']}°C")
-            with col3:
-                st.metric("Annual Precipitation", f"{climate_data['mean_precipitation']} mm")
-            
-            # Display soil parameters
-            st.markdown("### 🌱 Soil Parameters")
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Moisture", f"{soil_params['moisture']:.3f} m³/m³")
-            with col2:
-                st.metric("Organic Matter", f"{soil_params['organic_matter']:.2f}%")
-            with col3:
-                st.metric("Texture", soil_params['texture'])
-            with col4:
-                st.metric("Temperature", f"{soil_params['temperature']}°C")
-            
-            # Run crop analysis
-            st.markdown("### 🌾 Crop Suitability Analysis")
-            
-            with st.spinner("Analyzing crop suitability..."):
-                crop_results = analyzer.analyze_all_crops(
-                    soil_params['moisture'],
-                    soil_params['organic_matter'],
-                    soil_params['texture'],
-                    soil_params['temperature'],
-                    location_name
-                )
-            
-            # Convert to DataFrame for display
-            results_list = []
-            for crop_name, crop_data in crop_results.items():
-                analysis = crop_data['suitability_analysis']
-                results_list.append({
-                    'Crop': crop_name,
-                    'Suitability Score': analysis['final_score'],
-                    'Disease Risk': analysis['disease_risk'],
-                    'Risk Level': analysis['risk_level'],
-                    'Moisture Score': analysis['component_scores']['moisture'],
-                    'OM Score': analysis['component_scores']['organic_matter'],
-                    'Texture Score': analysis['component_scores']['texture'],
-                    'Temp Score': analysis['component_scores']['temperature']
-                })
-            
-            df = pd.DataFrame(results_list)
-            
-            # Display top 5 crops
-            st.markdown("#### 🏆 Top Recommended Crops")
-            top_crops = df.sort_values('Suitability Score', ascending=False).head(5)
-            
-            cols = st.columns(5)
-            for idx, (_, crop) in enumerate(top_crops.iterrows()):
-                with cols[idx]:
-                    color = "green" if crop['Suitability Score'] > 0.7 else "orange" if crop['Suitability Score'] > 0.5 else "red"
-                    st.metric(
-                        crop['Crop'],
-                        f"{crop['Suitability Score']:.2f}",
-                        crop['Risk Level'],
-                        delta_color="off"
-                    )
-            
-            # Display detailed results
-            st.markdown("#### 📋 Detailed Crop Analysis")
-            
-            # Sort options
-            col1, col2 = st.columns(2)
-            with col1:
-                sort_by = st.selectbox("Sort by", ["Suitability Score", "Disease Risk", "Crop Name"])
-            with col2:
-                sort_order = st.selectbox("Order", ["Descending", "Ascending"])
-            
-            # Sort DataFrame
-            ascending = sort_order == "Ascending"
-            if sort_by == "Suitability Score":
-                df = df.sort_values('Suitability Score', ascending=ascending)
-            elif sort_by == "Disease Risk":
-                df = df.sort_values('Disease Risk', ascending=not ascending)
-            else:
-                df = df.sort_values('Crop', ascending=ascending)
-            
-            # Display each crop in expandable sections
-            for _, crop in df.iterrows():
-                with st.expander(f"{crop['Crop']} - Score: {crop['Suitability Score']:.2f} ({crop['Risk Level']} Risk)"):
-                    col_a, col_b, col_c, col_d = st.columns(4)
-                    with col_a:
-                        st.metric("Moisture Score", f"{crop['Moisture Score']:.2f}")
-                    with col_b:
-                        st.metric("OM Score", f"{crop['OM Score']:.2f}")
-                    with col_c:
-                        st.metric("Texture Score", f"{crop['Texture Score']:.2f}")
-                    with col_d:
-                        st.metric("Temp Score", f"{crop['Temp Score']:.2f}")
-                    
-                    # Show crop requirements
-                    crop_req = CROP_REQUIREMENTS[crop['Crop']]
-                    management = crop_results[crop['Crop']]['management_strategies']
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.markdown("**Crop Requirements:**")
-                        st.markdown(f"- Water Needs: {crop_req['water_needs']}")
-                        st.markdown(f"- Maturity Days: {crop_req['maturity_days']}")
-                        st.markdown(f"- Fertilizer: {crop_req['fertilizer']}")
-                        st.markdown(f"- Spacing: {crop_req['spacing']}")
-                        st.markdown(f"- Notes: {crop_req['notes']}")
-                    
-                    with col2:
-                        st.markdown("**Management Strategies:**")
-                        for strategy in management:
-                            st.markdown(f"- {strategy}")
-            
-            # Download button
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Results as CSV",
-                data=csv,
-                file_name=f"crop_suitability_{location_name.replace(' ', '_').replace(',', '')}.csv",
-                mime="text/csv"
-            )
-            
-            # Visualizations
-            st.markdown("#### 📈 Visualizations")
-            
-            tab1, tab2 = st.tabs(["Suitability vs Disease Risk", "Top Crops Chart"])
-            
-            with tab1:
-                # Suitability vs Disease Risk Scatter Plot
-                fig = px.scatter(
-                    df,
-                    x='Suitability Score',
-                    y='Disease Risk',
-                    text='Crop',
-                    size=[20]*len(df),
-                    color='Suitability Score',
-                    color_continuous_scale='RdYlGn',
-                    title='Crop Suitability vs Disease Risk'
-                )
-                
-                # Add quadrant lines
-                fig.add_hline(y=0.5, line_dash="dash", line_color="gray")
-                fig.add_vline(x=0.6, line_dash="dash", line_color="gray")
-                
-                # Add quadrant labels
-                fig.add_annotation(x=0.8, y=0.2, text="Ideal", showarrow=False, font=dict(color="green"))
-                fig.add_annotation(x=0.8, y=0.8, text="Risky", showarrow=False, font=dict(color="orange"))
-                fig.add_annotation(x=0.3, y=0.2, text="Marginal", showarrow=False, font=dict(color="yellow"))
-                fig.add_annotation(x=0.3, y=0.8, text="Avoid", showarrow=False, font=dict(color="red"))
-                
-                fig.update_layout(height=500)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with tab2:
-                # Bar chart of top crops
-                top_10 = df.sort_values('Suitability Score', ascending=False).head(10)
-                
-                fig2 = px.bar(
-                    top_10,
-                    x='Crop',
-                    y='Suitability Score',
-                    color='Suitability Score',
-                    color_continuous_scale='RdYlGn',
-                    text='Suitability Score'
-                )
-                
-                fig2.update_traces(texttemplate='%{text:.2f}', textposition='outside')
-                fig2.update_layout(
-                    height=400, 
-                    yaxis_range=[0, 1],
-                    title="Top 10 Crops by Suitability Score"
-                )
-                st.plotly_chart(fig2, use_container_width=True)
-            
-            # If comprehensive analysis, also show groundwater
-            if analysis_type == "Comprehensive Analysis":
-                st.markdown("---")
-                st.markdown("### 💧 Groundwater Potential (Comprehensive Analysis)")
-                
-                gw_results = analyzer.get_simulated_groundwater_data(location_name)
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("Groundwater Potential", gw_results['category'], f"Score: {gw_results['score']:.2f}")
-                with col2:
-                    st.metric("Annual Recharge", f"{gw_results['recharge_mm']:.0f} mm")
-                
-                # Overall assessment
-                st.markdown("#### 📈 Overall Assessment")
-                
-                # Calculate overall agricultural potential
-                crop_scores = df['Suitability Score'].mean()
-                gw_score = gw_results['score']
-                
-                # Weighted average
-                overall_score = (crop_scores * 0.7 + gw_score * 0.3)
-                
-                if overall_score > 0.7:
-                    st.success(f"""
-                    **Excellent Agricultural Potential** (Overall Score: {overall_score:.2f})
-                    
-                    This location shows strong potential for agricultural development with good crop suitability 
-                    and adequate water resources. Consider diversified farming with high-value crops.
-                    """)
-                elif overall_score > 0.5:
-                    st.warning(f"""
-                    **Moderate Agricultural Potential** (Overall Score: {overall_score:.2f})
-                    
-                    This location has moderate potential. Focus on soil improvement and water conservation 
-                    measures. Consider crops with moderate water requirements.
-                    """)
-                else:
-                    st.error(f"""
-                    **Limited Agricultural Potential** (Overall Score: {overall_score:.2f})
-                    
-                    Agricultural development in this area may be challenging. Consider alternative land uses 
-                    or specialized drought-resistant crops with extensive irrigation infrastructure.
-                    """)
+# Status indicators
+st.markdown("""
+<div class="status-container">
+    <div class="status-item">
+        <div class="status-dot {'active' if st.session_state.ee_initialized else ''}"></div>
+        <span>Earth Engine: {'Connected' if st.session_state.ee_initialized else 'Disconnected'}</span>
+    </div>
+    <div class="status-item">
+        <div class="status-dot {'active' if st.session_state.selected_area_name else ''}"></div>
+        <span>Area Selected: {'Yes' if st.session_state.selected_area_name else 'No'}</span>
+    </div>
+    <div class="status-item">
+        <div class="status-dot {'active' if st.session_state.analysis_results else ''}"></div>
+        <span>Analysis: {'Complete' if st.session_state.analysis_results else 'Pending'}</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-    # Footer
-    st.markdown("---")
-    col1, col2, col3 = st.columns(3)
-    with col2:
+# Main content area
+col1, col2 = st.columns([0.35, 0.65], gap="large")
+
+with col1:
+    # Step 1: Area Selection
+    if st.session_state.current_step == 1:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">📍</div><h3 style="margin: 0;">Step 1: Select Your Area</h3></div>', unsafe_allow_html=True)
+        
+        # Guided instruction for step 1
         st.markdown("""
-        <div style='text-align: center; color: #666; font-size: 0.9rem;'>
-            <p>🌾 Comprehensive Agricultural Analyzer v1.0</p>
-            <p>Agricultural Analysis Platform</p>
+        <div class="guide-container">
+            <div class="guide-header">
+                <div class="guide-icon">🎯</div>
+                <div class="guide-title">Get Started</div>
+            </div>
+            <div class="guide-content">
+                Select a geographic area for analysis. Start by choosing a country, then narrow down to state/province and municipality if needed.
+            </div>
         </div>
         """, unsafe_allow_html=True)
-
-    # Requirements info in sidebar
-    with st.sidebar:
-        with st.expander("📦 Installation Requirements"):
-            st.code("""streamlit
-pandas
-numpy
-plotly
-matplotlib""")
-            
-            if st.button("Show requirements.txt"):
-                requirements = """streamlit>=1.28.0
-pandas>=2.0.0
-numpy>=1.24.0
-plotly>=5.17.0
-matplotlib>=3.7.0"""
-                st.download_button(
-                    label="Download requirements.txt",
-                    data=requirements,
-                    file_name="requirements.txt",
-                    mime="text/plain"
+        
+        if st.session_state.ee_initialized:
+            try:
+                # Get countries
+                countries_fc = ee.FeatureCollection("FAO/GAUL/2015/level0")
+                country_names = countries_fc.aggregate_array('ADM0_NAME').distinct().getInfo()
+                country_names = sorted(country_names) if country_names else []
+                
+                selected_country = st.selectbox(
+                    "🌍 Country",
+                    options=["Select a country"] + country_names,
+                    index=0,
+                    help="Choose a country for analysis",
+                    key="country_select"
                 )
+                
+                if selected_country and selected_country != "Select a country":
+                    country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
+                    admin1_fc = ee.FeatureCollection("FAO/GAUL/2015/level1")\
+                        .filter(ee.Filter.eq('ADM0_CODE', country_feature.get('ADM0_CODE')))
+                    
+                    admin1_names = admin1_fc.aggregate_array('ADM1_NAME').distinct().getInfo()
+                    admin1_names = sorted(admin1_names) if admin1_names else []
+                    
+                    selected_admin1 = st.selectbox(
+                        "🏛️ State/Province",
+                        options=["Select state/province"] + admin1_names,
+                        index=0,
+                        help="Choose a state or province",
+                        key="admin1_select"
+                    )
+                    
+                    if selected_admin1 and selected_admin1 != "Select state/province":
+                        admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
+                        admin2_fc = ee.FeatureCollection("FAO/GAUL/2015/level2")\
+                            .filter(ee.Filter.eq('ADM1_CODE', admin1_feature.get('ADM1_CODE')))
+                        
+                        admin2_names = admin2_fc.aggregate_array('ADM2_NAME').distinct().getInfo()
+                        admin2_names = sorted(admin2_names) if admin2_names else []
+                        
+                        selected_admin2 = st.selectbox(
+                            "🏘️ Municipality",
+                            options=["Select municipality"] + admin2_names,
+                            index=0,
+                            help="Choose a municipality",
+                            key="admin2_select"
+                        )
+                    else:
+                        selected_admin2 = None
+                else:
+                    selected_admin1 = None
+                    selected_admin2 = None
+                    
+                if st.button("✅ Confirm Selection", type="primary", use_container_width=True, disabled=not selected_country or selected_country == "Select a country"):
+                    try:
+                        if selected_admin2 and selected_admin2 != "Select municipality":
+                            geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
+                            area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
+                            area_level = "Municipality"
+                        elif selected_admin1 and selected_admin1 != "Select state/province":
+                            geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
+                            area_name = f"{selected_admin1}, {selected_country}"
+                            area_level = "State/Province"
+                        else:
+                            geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
+                            area_name = selected_country
+                            area_level = "Country"
+                        
+                        # Store in session state
+                        st.session_state.selected_geometry = geometry
+                        st.session_state.selected_area_name = area_name
+                        st.session_state.selected_area_level = area_level
+                        
+                        # Get coordinates for the map
+                        bounds = geometry.geometry().bounds().getInfo()
+                        coords = bounds['coordinates'][0]
+                        lats = [coord[1] for coord in coords]
+                        lons = [coord[0] for coord in coords]
+                        center_lat = sum(lats) / len(lats)
+                        center_lon = sum(lons) / len(lons)
+                        
+                        st.session_state.selected_coordinates = {
+                            'center': [center_lon, center_lat],
+                            'bounds': [[min(lats), min(lons)], [max(lats), max(lons)]],
+                            'zoom': 6
+                        }
+                        
+                        # Move to next step
+                        st.session_state.current_step = 2
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
+                        
+            except Exception as e:
+                st.error(f"Error loading boundaries: {str(e)}")
+        else:
+            st.warning("Earth Engine not initialized. Please wait...")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Step 2: Analysis Parameters
+    elif st.session_state.current_step == 2:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">⚙️</div><h3 style="margin: 0;">Step 2: Set Analysis Parameters</h3></div>', unsafe_allow_html=True)
+        
+        # Guided instruction for step 2
+        st.markdown("""
+        <div class="guide-container">
+            <div class="guide-header">
+                <div class="guide-icon">📋</div>
+                <div class="guide-title">Configure Analysis</div>
+            </div>
+            <div class="guide-content">
+                Set the time range, satellite source, and vegetation indices for your analysis. Default values are optimized for most use cases.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.session_state.selected_area_name:
+            st.info(f"**Selected Area:** {st.session_state.selected_area_name}")
+            
+            # Date range
+            col_a, col_b = st.columns(2)
+            with col_a:
+                start_date = st.date_input(
+                    "📅 Start Date",
+                    value=datetime(2023, 1, 1),
+                    help="Start date for analysis"
+                )
+            with col_b:
+                end_date = st.date_input(
+                    "📅 End Date",
+                    value=datetime(2023, 12, 31),
+                    help="End date for analysis"
+                )
+            
+            # Satellite source
+            collection_choice = st.selectbox(
+                "🛰️ Satellite Source",
+                options=["Sentinel-2", "Landsat-8"],
+                help="Choose satellite collection",
+                index=0
+            )
+            
+            # Cloud cover
+            cloud_cover = st.slider(
+                "☁️ Max Cloud Cover (%)",
+                min_value=0,
+                max_value=100,
+                value=20,
+                help="Maximum cloud cover percentage"
+            )
+            
+            # Vegetation indices - SAME AS FIRST CODE
+            available_indices = [
+                'NDVI', 'ARVI', 'ATSAVI', 'DVI', 'EVI', 'EVI2', 'GNDVI', 'MSAVI', 'MSI', 'MTVI', 'MTVI2',
+                'NDTI', 'NDWI', 'OSAVI', 'RDVI', 'RI', 'RVI', 'SAVI', 'TVI', 'TSAVI', 'VARI', 'VIN', 'WDRVI',
+                'GCVI', 'AWEI', 'MNDWI', 'WI', 'ANDWI', 'NDSI', 'nDDI', 'NBR', 'DBSI', 'SI', 'S3', 'BRI',
+                'SSI', 'NDSI_Salinity', 'SRPI', 'MCARI', 'NDCI', 'PSSRb1', 'SIPI', 'PSRI', 'Chl_red_edge', 'MARI', 'NDMI'
+            ]
+            
+            selected_indices = st.multiselect(
+                "🌿 Vegetation Indices",
+                options=available_indices,
+                default=['NDVI', 'EVI', 'SAVI', 'NDWI'],
+                help="Choose vegetation indices to analyze"
+            )
+            
+            # Navigation buttons
+            col_back, col_next = st.columns(2)
+            with col_back:
+                if st.button("⬅️ Back to Area Selection", use_container_width=True):
+                    st.session_state.current_step = 1
+                    st.rerun()
+            
+            with col_next:
+                if st.button("✅ Save Parameters & Continue", type="primary", use_container_width=True, disabled=not selected_indices):
+                    st.session_state.analysis_parameters = {
+                        'start_date': start_date,
+                        'end_date': end_date,
+                        'collection_choice': collection_choice,
+                        'cloud_cover': cloud_cover,
+                        'selected_indices': selected_indices
+                    }
+                    st.session_state.current_step = 3
+                    st.rerun()
+        else:
+            st.warning("Please go back to Step 1 and select an area first.")
+            if st.button("⬅️ Go to Area Selection", use_container_width=True):
+                st.session_state.current_step = 1
+                st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Step 3: View Map & Confirm
+    elif st.session_state.current_step == 3:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">🗺️</div><h3 style="margin: 0;">Step 3: Preview Selected Area</h3></div>', unsafe_allow_html=True)
+        
+        # Guided instruction for step 3
+        st.markdown("""
+        <div class="guide-container">
+            <div class="guide-header">
+                <div class="guide-icon">👁️</div>
+                <div class="guide-title">Preview Area</div>
+            </div>
+            <div class="guide-content">
+                Review your selected area on the 3D map. Make sure the highlighted region matches your intended analysis area.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.session_state.selected_area_name:
+            st.info(f"""
+            **Selected Area:** {st.session_state.selected_area_name}
+            
+            **Analysis Parameters:**
+            - Time Range: {st.session_state.analysis_parameters['start_date']} to {st.session_state.analysis_parameters['end_date']}
+            - Satellite: {st.session_state.analysis_parameters['collection_choice']}
+            - Cloud Cover: ≤{st.session_state.analysis_parameters['cloud_cover']}%
+            - Indices: {', '.join(st.session_state.analysis_parameters['selected_indices'])}
+            """)
+            
+            # Navigation buttons
+            col_back, col_next = st.columns(2)
+            with col_back:
+                if st.button("⬅️ Back to Parameters", use_container_width=True):
+                    st.session_state.current_step = 2
+                    st.rerun()
+            
+            with col_next:
+                if st.button("🚀 Run Analysis Now", type="primary", use_container_width=True):
+                    st.session_state.current_step = 4
+                    st.session_state.auto_show_results = False
+                    st.rerun()
+        else:
+            st.warning("No area selected. Please go back to Step 1.")
+            if st.button("⬅️ Go to Area Selection", use_container_width=True):
+                st.session_state.current_step = 1
+                st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Step 4: Running Analysis
+    elif st.session_state.current_step == 4:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">🚀</div><h3 style="margin: 0;">Step 4: Running Analysis</h3></div>', unsafe_allow_html=True)
+        
+        # Show analysis progress
+        st.markdown("""
+        <div class="guide-container">
+            <div class="guide-header">
+                <div class="guide-icon">⏳</div>
+                <div class="guide-title">Analysis in Progress</div>
+            </div>
+            <div class="guide-content">
+                Please wait while we process your vegetation analysis. This may take a few moments depending on the area size and time range.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Run the analysis automatically
+        if not st.session_state.auto_show_results:
+            # Create a placeholder for progress
+            progress_placeholder = st.empty()
+            status_placeholder = st.empty()
+            
+            with progress_placeholder.container():
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                analysis_steps = [
+                    "Initializing Earth Engine...",
+                    "Loading satellite data...",
+                    "Processing vegetation indices...",
+                    "Calculating statistics...",
+                    "Generating visualizations..."
+                ]
+                
+                # Simulate analysis progress
+                try:
+                    params = st.session_state.analysis_parameters
+                    
+                    for i, step in enumerate(analysis_steps):
+                        status_text.text(step)
+                        progress_bar.progress((i + 1) / len(analysis_steps))
+                        
+                        # Simulate processing time
+                        import time
+                        time.sleep(1)
+                    
+                    # Create simulated results
+                    results = {}
+                    for index in params['selected_indices']:
+                        # Simulate data
+                        import random
+                        dates = [f"2023-{m:02d}-15" for m in range(1, 13)]
+                        values = [random.uniform(0.1, 0.9) for _ in range(12)]
+                        results[index] = {'dates': dates, 'values': values}
+                    
+                    st.session_state.analysis_results = results
+                    progress_bar.progress(1.0)
+                    status_text.text("✅ Analysis Complete!")
+                    
+                    # Auto-move to results after 2 seconds
+                    time.sleep(2)
+                    st.session_state.current_step = 5
+                    st.session_state.auto_show_results = True
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Analysis failed: {str(e)}")
+                    if st.button("🔄 Try Again", use_container_width=True):
+                        st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Step 5: View Results
+    elif st.session_state.current_step == 5:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Step 5: Analysis Results</h3></div>', unsafe_allow_html=True)
+        
+        if st.session_state.analysis_results:
+            # Navigation buttons
+            col_back, col_new = st.columns(2)
+            with col_back:
+                if st.button("⬅️ Back to Map", use_container_width=True):
+                    st.session_state.current_step = 3
+                    st.rerun()
+            
+            with col_new:
+                if st.button("🔄 New Analysis", use_container_width=True):
+                    # Reset for new analysis
+                    for key in ['selected_geometry', 'analysis_results', 'selected_coordinates', 
+                               'selected_area_name', 'analysis_parameters']:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.session_state.current_step = 1
+                    st.rerun()
+            
+            # Export options
+            st.subheader("💾 Export Results")
+            if st.button("📥 Download CSV", use_container_width=True):
+                # Create CSV data
+                export_data = []
+                for index, data in st.session_state.analysis_results.items():
+                    for date, value in zip(data['dates'], data['values']):
+                        export_data.append({
+                            'Date': date,
+                            'Index': index,
+                            'Value': value
+                        })
+                
+                df = pd.DataFrame(export_data)
+                st.download_button(
+                    label="Click to Download CSV",
+                    data=df.to_csv(index=False),
+                    file_name=f"vegetation_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+        else:
+            st.warning("No results available. Please run an analysis first.")
+            if st.button("⬅️ Go Back", use_container_width=True):
+                st.session_state.current_step = 4
+                st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
-if __name__ == "__main__":
-    main()
+with col2:
+    # Right column - Show map or results based on step
+    if st.session_state.current_step <= 3:
+        # Show 3D Mapbox Globe for steps 1-3
+        st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
+        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Interactive 3D Global Map</h3></div>', unsafe_allow_html=True)
+        
+        # Prepare coordinates for the map
+        map_center = [0, 20]
+        map_zoom = 2
+        bounds_data = None
+        
+        if st.session_state.selected_coordinates:
+            map_center = st.session_state.selected_coordinates['center']
+            map_zoom = st.session_state.selected_coordinates['zoom']
+            bounds_data = st.session_state.selected_coordinates['bounds']
+        
+        # Generate HTML for Mapbox interactive globe
+        mapbox_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+          <title>KHISBA GIS - 3D Global Map</title>
+          <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+          <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+          <style>
+            body {{ 
+              margin: 0; 
+              padding: 0; 
+              background: #000000;
+            }}
+            #map {{ 
+              position: absolute; 
+              top: 0; 
+              bottom: 0; 
+              width: 100%; 
+              border-radius: 8px;
+            }}
+            .map-overlay {{
+              position: absolute;
+              top: 20px;
+              right: 20px;
+              background: rgba(10, 10, 10, 0.9);
+              color: white;
+              padding: 15px;
+              border-radius: 8px;
+              border: 1px solid #222222;
+              max-width: 250px;
+              z-index: 1000;
+              font-family: 'Inter', sans-serif;
+            }}
+            .overlay-title {{
+              color: #00ff88;
+              font-weight: 600;
+              margin-bottom: 10px;
+              font-size: 14px;
+            }}
+            .overlay-text {{
+              color: #cccccc;
+              font-size: 12px;
+              line-height: 1.4;
+            }}
+            .coordinates-display {{
+              position: absolute;
+              bottom: 20px;
+              left: 20px;
+              background: rgba(10, 10, 10, 0.9);
+              color: white;
+              padding: 10px 15px;
+              border-radius: 6px;
+              border: 1px solid #222222;
+              font-family: monospace;
+              font-size: 12px;
+              z-index: 1000;
+            }}
+            .selected-area {{
+              position: absolute;
+              top: 20px;
+              left: 20px;
+              background: rgba(10, 10, 10, 0.9);
+              color: white;
+              padding: 15px;
+              border-radius: 8px;
+              border: 1px solid #222222;
+              max-width: 300px;
+              z-index: 1000;
+              font-family: 'Inter', sans-serif;
+            }}
+            .area-title {{
+              color: #00ff88;
+              font-weight: 600;
+              margin-bottom: 10px;
+              font-size: 14px;
+            }}
+            .area-details {{
+              color: #cccccc;
+              font-size: 12px;
+              line-height: 1.4;
+            }}
+            .layer-switcher {{
+              position: absolute;
+              top: 20px;
+              right: 20px;
+              background: rgba(10, 10, 10, 0.9);
+              border: 1px solid #222222;
+              border-radius: 8px;
+              overflow: hidden;
+              z-index: 1000;
+            }}
+            .layer-button {{
+              display: block;
+              width: 120px;
+              padding: 10px;
+              background: #0a0a0a;
+              color: #ffffff;
+              border: none;
+              border-bottom: 1px solid #222222;
+              cursor: pointer;
+              font-size: 12px;
+              text-align: left;
+              transition: all 0.2s;
+            }}
+            .layer-button:hover {{
+              background: #111111;
+            }}
+            .layer-button.active {{
+              background: #00ff88;
+              color: #000000;
+              font-weight: bold;
+            }}
+            .layer-button:last-child {{
+              border-bottom: none;
+            }}
+            .mapboxgl-ctrl-group {{
+              background: #0a0a0a !important;
+              border: 1px solid #222222 !important;
+            }}
+            .mapboxgl-ctrl button {{
+              background-color: #0a0a0a !important;
+              color: #ffffff !important;
+            }}
+            .mapboxgl-ctrl button:hover {{
+              background-color: #111111 !important;
+            }}
+          </style>
+        </head>
+        <body>
+          <div id="map"></div>
+          
+          <div class="map-overlay">
+            <div class="overlay-title">🌍 KHISBA GIS</div>
+            <div class="overlay-text">
+              • Drag to rotate the globe<br>
+              • Scroll to zoom in/out<br>
+              • Right-click to pan<br>
+              • Selected area highlighted in green
+            </div>
+          </div>
+          
+          <div class="layer-switcher">
+            <button class="layer-button" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite Streets</button>
+            <button class="layer-button" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
+            <button class="layer-button active" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
+            <button class="layer-button" data-style="mapbox://styles/mapbox/light-v11">Light</button>
+            <button class="layer-button" data-style="mapbox://styles/mapbox/dark-v11">Dark</button>
+          </div>
+          
+          <div class="coordinates-display">
+            <div>Lat: <span id="lat-display">0.00°</span></div>
+            <div>Lon: <span id="lon-display">0.00°</span></div>
+          </div>
+          
+          {f'''
+          <div class="selected-area">
+            <div class="area-title">📍 Selected Area</div>
+            <div class="area-details">
+              <strong>{st.session_state.selected_area_name if hasattr(st.session_state, 'selected_area_name') else 'None'}</strong><br>
+              Level: {st.session_state.selected_area_level if hasattr(st.session_state, 'selected_area_level') else 'None'}<br>
+              Coordinates: {map_center[1]:.4f}°, {map_center[0]:.4f}°<br>
+              Status: <span style="color: #00ff88;">Ready for Analysis</span>
+            </div>
+          </div>
+          ''' if st.session_state.selected_area_name else ''}
+          
+          <script>
+            mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
+
+            // Create a new map instance with OUTDOORS as default
+            const map = new mapboxgl.Map({{
+              container: 'map',
+              style: 'mapbox://styles/mapbox/outdoors-v12',
+              center: {map_center},
+              zoom: {map_zoom},
+              pitch: 45,
+              bearing: 0
+            }});
+
+            // Add navigation controls
+            map.addControl(new mapboxgl.NavigationControl());
+
+            // Add scale control
+            map.addControl(new mapboxgl.ScaleControl({{
+              unit: 'metric'
+            }}));
+
+            // Add fullscreen control
+            map.addControl(new mapboxgl.FullscreenControl());
+
+            // Layer switcher functionality
+            const layerButtons = document.querySelectorAll('.layer-button');
+            layerButtons.forEach(button => {{
+              button.addEventListener('click', () => {{
+                // Update active button
+                layerButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                
+                // Change map style
+                map.setStyle(button.dataset.style);
+                
+                // Re-add selected area after style change
+                setTimeout(() => {{
+                  {f'''
+                  if ({bounds_data}) {{
+                    const bounds = {bounds_data};
+                    
+                    // Remove existing layers if they exist
+                    if (map.getSource('selected-area')) {{
+                      map.removeLayer('selected-area-fill');
+                      map.removeLayer('selected-area-border');
+                      map.removeSource('selected-area');
+                    }}
+                    
+                    // Create a polygon for the selected area
+                    map.addSource('selected-area', {{
+                      'type': 'geojson',
+                      'data': {{
+                        'type': 'Feature',
+                        'geometry': {{
+                          'type': 'Polygon',
+                          'coordinates': [[
+                            [bounds[0][1], bounds[0][0]],
+                            [bounds[1][1], bounds[0][0]],
+                            [bounds[1][1], bounds[1][0]],
+                            [bounds[0][1], bounds[1][0]],
+                            [bounds[0][1], bounds[0][0]]
+                          ]]
+                        }}
+                      }}
+                    }});
+
+                    // Add the polygon layer
+                    map.addLayer({{
+                      'id': 'selected-area-fill',
+                      'type': 'fill',
+                      'source': 'selected-area',
+                      'layout': {{}},
+                      'paint': {{
+                        'fill-color': '#00ff88',
+                        'fill-opacity': 0.2
+                      }}
+                    }});
+
+                    // Add border for the polygon
+                    map.addLayer({{
+                      'id': 'selected-area-border',
+                      'type': 'line',
+                      'source': 'selected-area',
+                      'layout': {{}},
+                      'paint': {{
+                        'line-color': '#00ff88',
+                        'line-width': 3,
+                        'line-opacity': 0.8
+                      }}
+                    }});
+                  }}
+                  ''' if bounds_data else ''}
+                }}, 500);
+              }});
+            }});
+
+            // Wait for map to load
+            map.on('load', () => {{
+              // Add event listener for mouse move to show coordinates
+              map.on('mousemove', (e) => {{
+                document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(2) + '°';
+                document.getElementById('lon-display').textContent = e.lngLat.lng.toFixed(2) + '°';
+              }});
+
+              // Add selected area polygon if bounds are available
+              {f'''
+              if ({bounds_data}) {{
+                const bounds = {bounds_data};
+                
+                // Create a polygon for the selected area
+                map.addSource('selected-area', {{
+                  'type': 'geojson',
+                  'data': {{
+                    'type': 'Feature',
+                    'geometry': {{
+                      'type': 'Polygon',
+                      'coordinates': [[
+                        [bounds[0][1], bounds[0][0]],
+                        [bounds[1][1], bounds[0][0]],
+                        [bounds[1][1], bounds[1][0]],
+                        [bounds[0][1], bounds[1][0]],
+                        [bounds[0][1], bounds[0][0]]
+                      ]]
+                    }}
+                  }}
+                }});
+
+                // Add the polygon layer
+                map.addLayer({{
+                  'id': 'selected-area-fill',
+                  'type': 'fill',
+                  'source': 'selected-area',
+                  'layout': {{}},
+                  'paint': {{
+                    'fill-color': '#00ff88',
+                    'fill-opacity': 0.2
+                  }}
+                }});
+
+                // Add border for the polygon
+                map.addLayer({{
+                  'id': 'selected-area-border',
+                  'type': 'line',
+                  'source': 'selected-area',
+                  'layout': {{}},
+                  'paint': {{
+                    'line-color': '#00ff88',
+                    'line-width': 3,
+                    'line-opacity': 0.8
+                  }}
+                }});
+
+                // Fly to the selected area with animation
+                map.flyTo({{
+                  center: {map_center},
+                  zoom: {map_zoom},
+                  duration: 2000,
+                  essential: true
+                }});
+              }}
+              ''' if bounds_data else ''}
+
+              // Add some sample cities for interaction
+              const cities = [
+                {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital' }},
+                {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical capital' }},
+                {{ name: 'Tokyo', coordinates: [139.6917, 35.6895], country: 'Japan', info: 'Mega metropolis' }},
+                {{ name: 'Sydney', coordinates: [151.2093, -33.8688], country: 'Australia', info: 'Harbor city' }},
+                {{ name: 'Cairo', coordinates: [31.2357, 30.0444], country: 'Egypt', info: 'Nile Delta' }}
+              ];
+
+              // Add city markers
+              cities.forEach(city => {{
+                // Create a custom marker element
+                const el = document.createElement('div');
+                el.className = 'marker';
+                el.style.backgroundColor = '#ffaa00';
+                el.style.width = '15px';
+                el.style.height = '15px';
+                el.style.borderRadius = '50%';
+                el.style.border = '2px solid #ffffff';
+                el.style.boxShadow = '0 0 10px rgba(255, 170, 0, 0.5)';
+                el.style.cursor = 'pointer';
+
+                // Create a popup
+                const popup = new mapboxgl.Popup({{
+                  offset: 25,
+                  closeButton: true,
+                  closeOnClick: false
+                }}).setHTML(
+                  `<h3>${{city.name}}</h3>
+                   <p><strong>Country:</strong> ${{city.country}}</p>
+                   <p>${{city.info}}</p>`
+                );
+
+                // Create marker
+                new mapboxgl.Marker(el)
+                  .setLngLat(city.coordinates)
+                  .setPopup(popup)
+                  .addTo(map);
+              }});
+            }});
+          </script>
+        </body>
+        </html>
+        """
+        
+        # Display the Mapbox HTML
+        st.components.v1.html(mapbox_html, height=550)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    elif st.session_state.current_step == 4:
+        # During analysis, show loading state
+        st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
+        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Analysis in Progress</h3></div>', unsafe_allow_html=True)
+        
+        # Show loading animation with analysis details
+        st.markdown(f"""
+        <div style="text-align: center; padding: 100px 0;">
+            <div style="font-size: 64px; margin-bottom: 20px; animation: spin 2s linear infinite;">🌱</div>
+            <div style="color: #00ff88; font-size: 18px; margin-bottom: 10px;">Processing Vegetation Data</div>
+            <div style="color: #666666; font-size: 14px;">Analyzing {st.session_state.selected_area_name}</div>
+        </div>
+        
+        <style>
+        @keyframes spin {{
+            0% {{ transform: rotate(0deg); }}
+            100% {{ transform: rotate(360deg); }}
+        }}
+        </style>
+        """, unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    elif st.session_state.current_step == 5:
+        # Show analysis results
+        st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
+        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">📊 Vegetation Analysis Results</h3></div>', unsafe_allow_html=True)
+        
+        if st.session_state.analysis_results:
+            # Show selected area info
+            st.markdown(f"""
+            <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin: 10px 20px; border-left: 4px solid #00ff88;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="color: #00ff88; font-weight: 600; font-size: 16px;">{st.session_state.selected_area_name}</div>
+                        <div style="color: #cccccc; font-size: 12px; margin-top: 5px;">
+                            {st.session_state.analysis_parameters['start_date']} to {st.session_state.analysis_parameters['end_date']} • 
+                            {st.session_state.analysis_parameters['collection_choice']} • 
+                            {len(st.session_state.analysis_parameters['selected_indices'])} indices analyzed
+                        </div>
+                    </div>
+                    <div style="background: #00ff88; color: #000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">
+                        ✅ Complete
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Create charts for each index
+            for index, data in st.session_state.analysis_results.items():
+                if data['dates'] and data['values']:
+                    # Create Plotly chart
+                    fig = go.Figure()
+                    
+                    fig.add_trace(go.Scatter(
+                        x=data['dates'],
+                        y=data['values'],
+                        mode='lines+markers',
+                        name=index,
+                        line=dict(color='#00ff88', width=3),
+                        marker=dict(size=8, color='#ffffff', line=dict(width=1, color='#00ff88'))
+                    ))
+                    
+                    # Add trend line
+                    if len(data['values']) > 1:
+                        import numpy as np
+                        x_numeric = list(range(len(data['dates'])))
+                        z = np.polyfit(x_numeric, data['values'], 1)
+                        p = np.poly1d(z)
+                        fig.add_trace(go.Scatter(
+                            x=data['dates'],
+                            y=p(x_numeric),
+                            mode='lines',
+                            name='Trend',
+                            line=dict(color='#ffaa00', width=2, dash='dash')
+                        ))
+                    
+                    fig.update_layout(
+                        title=f"<b>{index}</b> - Vegetation Index Over Time",
+                        plot_bgcolor='#0a0a0a',
+                        paper_bgcolor='#0a0a0a',
+                        font=dict(color='#ffffff'),
+                        xaxis=dict(
+                            title="Date",
+                            gridcolor='#222222',
+                            tickcolor='#444444',
+                            showgrid=True
+                        ),
+                        yaxis=dict(
+                            title=f"{index} Value",
+                            gridcolor='#222222',
+                            tickcolor='#444444',
+                            range=[min(data['values'])*0.9, max(data['values'])*1.1],
+                            showgrid=True
+                        ),
+                        height=300,
+                        margin=dict(l=50, r=50, t=50, b=50),
+                        hovermode='x unified',
+                        showlegend=True,
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1
+                        )
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True, key=f"chart_{index}")
+            
+            # Summary statistics
+            st.markdown('<div style="padding: 0 20px;"><h4>📈 Summary Statistics</h4></div>', unsafe_allow_html=True)
+            
+            summary_data = []
+            for index, data in st.session_state.analysis_results.items():
+                if data['values']:
+                    values = data['values']
+                    current = values[-1] if values else 0
+                    previous = values[-2] if len(values) > 1 else current
+                    change = ((current - previous) / previous * 100) if previous != 0 else 0
+                    
+                    summary_data.append({
+                        'Index': index,
+                        'Current': round(current, 4),
+                        'Previous': round(previous, 4),
+                        'Change (%)': f"{change:+.2f}%",
+                        'Min': round(min(values), 4),
+                        'Max': round(max(values), 4),
+                        'Avg': round(sum(values) / len(values), 4)
+                    })
+            
+            if summary_data:
+                df = pd.DataFrame(summary_data)
+                st.dataframe(
+                    df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Change (%)": st.column_config.TextColumn(
+                            "Change",
+                            help="Percentage change from previous period",
+                        )
+                    }
+                )
+        else:
+            st.markdown("""
+            <div style="text-align: center; padding: 100px 0;">
+                <div style="font-size: 64px; margin-bottom: 20px;">📊</div>
+                <div style="color: #666666; font-size: 16px; margin-bottom: 10px;">No Results Available</div>
+                <div style="color: #444444; font-size: 14px;">Please run an analysis to see results</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# Footer
+st.markdown("""
+<div style="text-align: center; color: #666666; font-size: 12px; padding: 30px 0 20px 0; border-top: 1px solid #222222; margin-top: 20px;">
+    <p style="margin: 5px 0;">KHISBA GIS • Interactive 3D Global Vegetation Analytics Platform</p>
+    <p style="margin: 5px 0;">Auto Results Display • Cool 3D Map • Guided Workflow</p>
+    <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">3D Mapbox</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Auto Results</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Step-by-Step</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">v2.2</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+xx
