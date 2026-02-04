@@ -1,19 +1,12 @@
 import streamlit as st
 import json
-import tempfile
-import os
 import pandas as pd
-import folium
-from streamlit_folium import st_folium
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
+from datetime import datetime
 import ee
 import traceback
 
-# Custom CSS for Mobile-First Design
+# Custom CSS for Integrated Map & UI
 st.markdown("""
 <style>
     /* Base styling */
@@ -24,84 +17,67 @@ st.markdown("""
     }
     
     /* Mobile-first design */
-    .main .block-container {
-        padding: 0.5rem !important;
-        max-width: 100% !important;
-    }
-    
-    /* Mobile-specific styles */
     @media (max-width: 768px) {
+        .main .block-container {
+            padding: 0.25rem !important;
+            max-width: 100% !important;
+        }
+        
         .desktop-only {
             display: none !important;
         }
         
-        /* Adjust font sizes for mobile */
         h1 {
-            font-size: 1.5rem !important;
-            margin-bottom: 0.5rem !important;
+            font-size: 1.4rem !important;
+            margin-bottom: 0.3rem !important;
         }
         
         h2 {
-            font-size: 1.25rem !important;
+            font-size: 1.2rem !important;
         }
         
         h3 {
             font-size: 1.1rem !important;
-            margin-bottom: 0.75rem !important;
+            margin-bottom: 0.5rem !important;
         }
         
-        /* Make everything more compact */
-        .card {
-            padding: 12px !important;
-            margin-bottom: 8px !important;
-            border-radius: 8px !important;
+        .integrated-container {
+            height: 85vh !important;
         }
         
-        /* Stack all columns */
-        [data-testid="column"] {
-            width: 100% !important;
+        .map-panel {
+            height: 50% !important;
         }
         
-        /* Better touch targets */
+        .ui-panel {
+            height: 50% !important;
+            padding: 8px !important;
+        }
+        
+        .ui-section {
+            max-height: 120px !important;
+            overflow-y: auto !important;
+            margin-bottom: 5px !important;
+        }
+        
+        .chart-container {
+            max-height: 150px !important;
+            margin-bottom: 5px !important;
+        }
+        
         .stButton > button {
-            padding: 10px 12px !important;
-            font-size: 13px !important;
-            margin: 4px 0 !important;
-            min-height: 44px !important;
-        }
-        
-        /* Input fields */
-        .stTextInput > div > div > input,
-        .stSelectbox > div > div > select,
-        .stDateInput > div > div > input,
-        .stNumberInput > div > div > input,
-        .stTextArea > div > div > textarea,
-        .stMultiSelect > div > div > div {
             padding: 8px 10px !important;
-            font-size: 13px !important;
-            min-height: 42px !important;
+            font-size: 12px !important;
+            margin: 2px 0 !important;
+            min-height: 36px !important;
         }
         
-        /* Hide complex badges on mobile */
-        .badge-container {
-            flex-wrap: wrap;
-            gap: 4px;
+        .compact-select {
+            margin-bottom: 5px !important;
         }
         
-        .status-badge {
-            padding: 3px 8px !important;
-            font-size: 10px !important;
-        }
-        
-        /* Reduce chart heights */
-        .js-plotly-plot {
-            height: 250px !important;
-        }
-        
-        /* Smaller map container */
-        .map-container {
-            height: 300px !important;
-            border-radius: 8px !important;
+        .compact-slider {
+            margin: 5px 0 !important;
         }
     }
     
@@ -111,20 +87,17 @@ st.markdown("""
             display: none !important;
         }
         
-        .main .block-container {
-            padding: 1rem !important;
-            max-width: 100%;
+        .integrated-container {
+            height: 85vh !important;
         }
         
-        .card {
-            padding: 20px;
-            margin-bottom: 15px;
-            border-radius: 10px;
+        .map-panel {
+            height: 65% !important;
         }
         
-        .map-container {
-            height: 500px;
-            border-radius: 10px;
+        .ui-panel {
+            height: 35% !important;
+            padding: 15px !important;
         }
     }
     
@@ -141,191 +114,149 @@ st.markdown("""
         --text-light-gray: #cccccc;
     }
     
-    /* Typography */
-    h1, h2, h3, h4, h5, h6 {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    /* Integrated Container */
+    .integrated-container {
+        display: flex;
+        flex-direction: column;
+        background: var(--primary-black);
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid var(--border-gray);
+        width: 100%;
+    }
+    
+    /* Map Panel */
+    .map-panel {
+        width: 100%;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    /* UI Panel */
+    .ui-panel {
+        width: 100%;
+        background: var(--card-black);
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    /* UI Sections */
+    .ui-section {
+        background: rgba(10, 10, 10, 0.8);
+        border: 1px solid var(--border-gray);
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 8px;
+        backdrop-filter: blur(5px);
+    }
+    
+    .ui-section-title {
+        color: var(--primary-green);
+        font-size: 14px;
         font-weight: 600;
-        letter-spacing: -0.025em;
-        color: var(--text-white) !important;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
     
-    h1 {
-        font-size: 2rem !important;
-        background: linear-gradient(90deg, var(--primary-green), var(--accent-green));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+    .ui-section-content {
+        max-height: 100px;
+        overflow-y: auto;
     }
     
-    h2 {
-        font-size: 1.5rem !important;
-        color: var(--primary-green) !important;
+    /* Compact controls */
+    .compact-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 5px;
     }
     
-    h3 {
-        font-size: 1.25rem !important;
+    .compact-col {
+        flex: 1;
     }
     
-    /* Mobile Header */
-    .mobile-header {
+    /* Chart containers */
+    .chart-container {
+        background: rgba(10, 10, 10, 0.8);
+        border: 1px solid var(--border-gray);
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 8px;
+        height: 150px;
+        backdrop-filter: blur(5px);
+    }
+    
+    .chart-title {
+        color: var(--primary-green);
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 5px;
+        text-align: center;
+    }
+    
+    /* Status indicators */
+    .status-indicator {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 6px;
+        background: rgba(0, 255, 136, 0.1);
+        color: var(--primary-green);
+        border: 1px solid rgba(0, 255, 136, 0.3);
+        border-radius: 12px;
+        font-size: 10px;
+        font-weight: 600;
+        margin: 1px;
+    }
+    
+    /* Header */
+    .app-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
         padding: 8px 0;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
         flex-wrap: wrap;
     }
     
-    /* Cards */
-    .card {
-        background: var(--card-black);
+    /* Mobile toggle */
+    .mobile-toggle {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 1000;
+        background: rgba(10, 10, 10, 0.9);
         border: 1px solid var(--border-gray);
-        transition: all 0.2s ease;
-    }
-    
-    .card:hover {
-        border-color: var(--primary-green);
-    }
-    
-    .card-title {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 12px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid var(--border-gray);
-    }
-    
-    .card-title .icon {
-        width: 28px;
-        height: 28px;
-        background: rgba(0, 255, 136, 0.1);
-        border-radius: 6px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        border-radius: 20px;
+        padding: 5px 10px;
         color: var(--primary-green);
-        font-size: 14px;
-    }
-    
-    /* Buttons */
-    .stButton > button {
-        width: 100%;
-        background: linear-gradient(90deg, var(--primary-green), var(--accent-green));
-        color: var(--primary-black) !important;
-        border: none;
-        padding: 12px 20px;
-        border-radius: 8px;
-        font-weight: 600;
-        font-size: 14px;
-        letter-spacing: 0.5px;
-        transition: all 0.3s ease;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
-    }
-    
-    /* Input fields */
-    .stTextInput > div > div > input,
-    .stSelectbox > div > div > select,
-    .stDateInput > div > div > input,
-    .stNumberInput > div > div > input,
-    .stTextArea > div > div > textarea,
-    .stMultiSelect > div > div > div {
-        background: var(--secondary-black) !important;
-        border: 1px solid var(--border-gray) !important;
-        color: var(--text-white) !important;
-        border-radius: 6px !important;
-        font-size: 14px !important;
-    }
-    
-    .stTextInput > div > div > input:focus,
-    .stSelectbox > div > div > select:focus,
-    .stDateInput > div > div > input:focus {
-        border-color: var(--primary-green) !important;
-        box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.2) !important;
-    }
-    
-    /* Map container */
-    .map-container {
-        border: 1px solid var(--border-gray);
-        overflow: hidden;
-        width: 100%;
-    }
-    
-    /* Status badges */
-    .status-badge {
-        display: inline-flex;
-        align-items: center;
-        padding: 4px 10px;
-        background: rgba(0, 255, 136, 0.1);
-        color: var(--primary-green);
-        border: 1px solid rgba(0, 255, 136, 0.3);
-        border-radius: 16px;
         font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.3px;
-        margin: 2px;
-    }
-    
-    /* Mobile tabs for navigation */
-    .mobile-tabs {
-        display: flex;
-        background: var(--card-black);
-        border-radius: 8px;
-        overflow: hidden;
-        border: 1px solid var(--border-gray);
-        margin-bottom: 10px;
-    }
-    
-    .mobile-tab {
-        flex: 1;
-        padding: 10px;
-        text-align: center;
-        color: var(--text-gray);
-        font-size: 13px;
-        font-weight: 500;
         cursor: pointer;
-        transition: all 0.2s;
     }
     
-    .mobile-tab.active {
-        background: var(--primary-green);
-        color: var(--primary-black);
-    }
-    
-    /* Hide Streamlit default elements */
+    /* Hide Streamlit elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Prevent horizontal scroll */
-    body {
-        overflow-x: hidden;
-        position: relative;
-        width: 100%;
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+        width: 4px;
     }
     
-    /* Better scrolling for mobile */
-    .stApp {
-        -webkit-overflow-scrolling: touch;
+    ::-webkit-scrollbar-track {
+        background: var(--secondary-black);
     }
     
-    /* Mobile footer */
-    .mobile-footer {
-        text-align: center;
-        color: #666666;
-        font-size: 10px;
-        padding: 10px 0;
-        margin-top: 15px;
-        border-top: 1px solid var(--border-gray);
+    ::-webkit-scrollbar-thumb {
+        background: var(--primary-green);
+        border-radius: 2px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Earth Engine Auto-Authentication with Service Account
+# Earth Engine Auto-Authentication
 def auto_initialize_earth_engine():
     """Automatically initialize Earth Engine with service account credentials"""
     try:
@@ -378,24 +309,16 @@ e5aU1RW6tlG8nzHHwK2FeyI=
         ee.Initialize(credentials, project='citric-hawk-457513-i6')
         return True
     except Exception as e:
-        st.error(f"Earth Engine auto-initialization failed: {str(e)}")
         return False
 
-# Try to auto-initialize Earth Engine on app start
-if 'ee_auto_initialized' not in st.session_state:
-    with st.spinner("Initializing Earth Engine..."):
-        if auto_initialize_earth_engine():
-            st.session_state.ee_auto_initialized = True
-            st.session_state.ee_initialized = True
-        else:
-            st.session_state.ee_auto_initialized = False
-            st.session_state.ee_initialized = False
+# Initialize Earth Engine
+if 'ee_initialized' not in st.session_state:
+    if auto_initialize_earth_engine():
+        st.session_state.ee_initialized = True
+    else:
+        st.session_state.ee_initialized = False
 
 # Initialize session state
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = True
-if 'ee_initialized' not in st.session_state:
-    st.session_state.ee_initialized = False
 if 'selected_geometry' not in st.session_state:
     st.session_state.selected_geometry = None
 if 'analysis_results' not in st.session_state:
@@ -404,74 +327,33 @@ if 'selected_coordinates' not in st.session_state:
     st.session_state.selected_coordinates = None
 if 'selected_area_name' not in st.session_state:
     st.session_state.selected_area_name = None
-if 'mobile_tab' not in st.session_state:
-    st.session_state.mobile_tab = "map"
+if 'ui_collapsed' not in st.session_state:
+    st.session_state.ui_collapsed = False
 
-# Page configuration for mobile
+# Page configuration
 st.set_page_config(
-    page_title="Khisba GIS - Mobile",
+    page_title="Khisba GIS - Integrated View",
     page_icon="🌍",
     layout="wide",
-    initial_sidebar_state="collapsed",
-    menu_items=None
+    initial_sidebar_state="collapsed"
 )
 
-# Mobile Header
+# Header
 st.markdown("""
-<div class="mobile-header">
+<div class="app-header">
     <div>
         <h1>🌍 KHISBA GIS</h1>
-        <p style="color: #999999; margin: 0; font-size: 12px;">Mobile Vegetation Analytics</p>
+        <p style="color: #999999; margin: 0; font-size: 12px;">Integrated Vegetation Analytics</p>
     </div>
-    <div class="badge-container">
-        <span class="status-badge">Mobile</span>
-        <span class="status-badge">🌿</span>
+    <div>
+        <span class="status-indicator">Online</span>
+        <span class="status-indicator">🌿</span>
+        <span class="status-indicator">Mapbox</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# Mobile Tabs Navigation
-st.markdown("""
-<div class="mobile-tabs">
-    <div class="mobile-tab active" id="tab-map">🌍 Map</div>
-    <div class="mobile-tab" id="tab-controls">⚙️ Controls</div>
-    <div class="mobile-tab" id="tab-results">📊 Results</div>
-</div>
-""", unsafe_allow_html=True)
-
-# JavaScript for mobile tabs
-st.markdown("""
-<script>
-function setActiveTab(tabName) {
-    // Update tab UI
-    document.querySelectorAll('.mobile-tab').forEach(tab => {
-        tab.classList.remove('active');
-    });
-    event.target.classList.add('active');
-    
-    // Show corresponding content
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.style.display = 'none';
-    });
-    document.getElementById(tabName).style.display = 'block';
-}
-
-// Add click handlers to tabs
-document.querySelectorAll('.mobile-tab').forEach(tab => {
-    tab.addEventListener('click', function() {
-        const tabId = this.id.replace('tab-', '');
-        setActiveTab(tabId);
-    });
-});
-
-// Initialize with map tab active
-document.addEventListener('DOMContentLoaded', function() {
-    setActiveTab('map');
-});
-</script>
-""", unsafe_allow_html=True)
-
-# Helper Functions for Earth Engine
+# Helper Functions
 def get_admin_boundaries(level, country_code=None, admin1_code=None):
     """Get administrative boundaries from Earth Engine"""
     try:
@@ -490,7 +372,6 @@ def get_admin_boundaries(level, country_code=None, admin1_code=None):
                 return admin2.filter(ee.Filter.eq('ADM0_CODE', country_code))
             return admin2
     except Exception as e:
-        st.error(f"Error loading boundaries: {str(e)}")
         return None
 
 def get_boundary_names(feature_collection, level):
@@ -509,9 +390,7 @@ def get_boundary_names(feature_collection, level):
         if names_list:
             return sorted(names_list)
         return []
-        
-    except Exception as e:
-        st.error(f"Error extracting names: {str(e)}")
+    except Exception:
         return []
 
 def get_geometry_coordinates(geometry):
@@ -524,7 +403,6 @@ def get_geometry_coordinates(geometry):
         center_lat = sum(lats) / len(lats)
         center_lon = sum(lons) / len(lons)
         
-        # Get bounds for drawing rectangle
         min_lat = min(lats)
         max_lat = max(lats)
         min_lon = min(lons)
@@ -535,34 +413,48 @@ def get_geometry_coordinates(geometry):
             'bounds': [[min_lat, min_lon], [max_lat, max_lon]],
             'zoom': 6
         }
-    except Exception as e:
-        st.error(f"Error getting coordinates: {str(e)}")
+    except Exception:
         return {'center': [0, 20], 'bounds': None, 'zoom': 2}
 
-# TAB 1: MAP (Always visible on mobile)
-st.markdown('<div class="tab-content" id="map">', unsafe_allow_html=True)
+# Main Integrated Container
+st.markdown('<div class="integrated-container">', unsafe_allow_html=True)
 
-# Map Section - Top priority on mobile
-st.markdown('<div class="card" style="padding: 8px; margin-bottom: 10px;">', unsafe_allow_html=True)
+# Map Panel (Top 65% on desktop, 50% on mobile)
+st.markdown('<div class="map-panel">', unsafe_allow_html=True)
 
-# Prepare coordinates for the map
+# Mobile toggle button
+toggle_label = "▲" if st.session_state.ui_collapsed else "▼"
+st.markdown(f'''
+<div class="mobile-toggle" onclick="toggleUI()">
+    {toggle_label}
+</div>
+''', unsafe_allow_html=True)
+
+# Prepare map data
 map_center = [0, 20]
 map_zoom = 2
 bounds_data = None
+selected_area_info = ""
 
 if st.session_state.selected_coordinates:
     map_center = st.session_state.selected_coordinates['center']
     map_zoom = st.session_state.selected_coordinates['zoom']
     bounds_data = st.session_state.selected_coordinates['bounds']
+    selected_area_info = f"""
+    <div style="position: absolute; top: 10px; left: 10px; background: rgba(10, 10, 10, 0.9); color: white; padding: 10px; border-radius: 6px; border: 1px solid #222222; font-family: 'Inter', sans-serif; font-size: 12px; z-index: 1000; max-width: 200px;">
+        <div style="color: #00ff88; font-weight: 600; margin-bottom: 5px;">📍 {st.session_state.selected_area_name[:25]}{'...' if st.session_state.selected_area_name and len(st.session_state.selected_area_name) > 25 else ''}</div>
+        <div style="color: #cccccc; font-size: 11px;">{st.session_state.selected_area_level}</div>
+    </div>
+    """
 
-# Simple Mapbox HTML for mobile
+# Integrated Mapbox HTML with inline UI elements
 mapbox_html = f"""
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>KHISBA GIS Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Integrated GIS</title>
   <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
   <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
   <style>
@@ -580,83 +472,183 @@ mapbox_html = f"""
       height: 100%;
     }}
     
-    .mobile-map-info {{
+    /* Map overlays */
+    .map-overlay {{
       position: absolute;
-      top: 10px;
-      left: 10px;
-      right: 10px;
-      background: rgba(10, 10, 10, 0.95);
-      color: white;
-      padding: 10px;
-      border-radius: 6px;
+      background: rgba(10, 10, 10, 0.85);
       border: 1px solid #222222;
+      border-radius: 8px;
+      color: white;
       font-family: 'Inter', sans-serif;
-      font-size: 12px;
       z-index: 1000;
+      backdrop-filter: blur(5px);
     }}
     
-    .coordinates {{
-      position: absolute;
+    .coordinates-overlay {{
       bottom: 10px;
       left: 10px;
-      background: rgba(10, 10, 10, 0.9);
-      color: white;
       padding: 8px 12px;
-      border-radius: 6px;
-      border: 1px solid #222222;
-      font-family: monospace;
       font-size: 11px;
-      z-index: 1000;
     }}
     
-    .mapboxgl-ctrl-group {{
-      margin: 60px 10px 0 10px !important;
+    .quick-controls {{
+      top: 10px;
+      right: 10px;
+      padding: 10px;
+      min-width: 150px;
+    }}
+    
+    .control-button {{
+      display: block;
+      width: 100%;
+      background: linear-gradient(90deg, #00ff88, #00cc6a);
+      color: #000000;
+      border: none;
+      padding: 8px;
+      margin: 3px 0;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+    }}
+    
+    .control-button:hover {{
+      opacity: 0.9;
+    }}
+    
+    /* Mini charts overlay */
+    .charts-overlay {{
+      bottom: 50px;
+      left: 10px;
+      right: 10px;
+      padding: 8px;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+    }}
+    
+    .mini-chart {{
+      flex: 0 0 auto;
+      width: 100px;
+      height: 60px;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 4px;
+      padding: 4px;
+    }}
+    
+    .chart-value {{
+      color: #00ff88;
+      font-size: 16px;
+      font-weight: bold;
+      text-align: center;
+      margin: 2px 0;
+    }}
+    
+    .chart-label {{
+      color: #cccccc;
+      font-size: 9px;
+      text-align: center;
+    }}
+    
+    /* Legend overlay */
+    .legend-overlay {{
+      bottom: 10px;
+      right: 10px;
+      padding: 8px;
+      font-size: 10px;
+    }}
+    
+    .legend-item {{
+      display: flex;
+      align-items: center;
+      margin: 2px 0;
+    }}
+    
+    .legend-color {{
+      width: 12px;
+      height: 12px;
+      margin-right: 6px;
+      border-radius: 2px;
+    }}
+    
+    /* Selected area overlay */
+    .area-overlay {{
+      top: 50px;
+      left: 10px;
+      max-width: 180px;
+      padding: 10px;
     }}
   </style>
 </head>
 <body>
   <div id="map"></div>
   
-  {f'''
-  <div class="mobile-map-info">
-    <div style="color: #00ff88; font-weight: 600; margin-bottom: 5px;">📍 {st.session_state.selected_area_name[:30]}{'...' if st.session_state.selected_area_name and len(st.session_state.selected_area_name) > 30 else ''}</div>
-    <div style="color: #cccccc; font-size: 11px;">Tap "Controls" tab below to configure analysis</div>
-  </div>
-  ''' if st.session_state.selected_area_name else '''
-  <div class="mobile-map-info">
-    <div style="color: #00ff88; font-weight: 600; margin-bottom: 5px;">🌍 Global Vegetation Map</div>
-    <div style="color: #cccccc; font-size: 11px;">Select an area in Controls tab to begin analysis</div>
-  </div>
-  '''}
+  {selected_area_info}
   
-  <div class="coordinates">
+  <div class="map-overlay coordinates-overlay">
     <div>Lat: <span id="lat">0.00°</span></div>
     <div>Lon: <span id="lon">0.00°</span></div>
+  </div>
+  
+  <div class="map-overlay quick-controls">
+    <div style="color: #00ff88; font-size: 12px; font-weight: 600; margin-bottom: 8px;">Quick Actions</div>
+    <button class="control-button" onclick="zoomToSelection()">📍 Zoom to Area</button>
+    <button class="control-button" onclick="resetView()">🌍 Reset View</button>
+    <button class="control-button" onclick="toggleSatellite()">🛰️ Toggle View</button>
+  </div>
+  
+  <!-- Mini Charts (will be populated by JavaScript) -->
+  <div class="map-overlay charts-overlay" id="miniCharts">
+    <div class="mini-chart">
+      <div class="chart-label">NDVI</div>
+      <div class="chart-value" id="ndviValue">0.00</div>
+    </div>
+    <div class="mini-chart">
+      <div class="chart-label">EVI</div>
+      <div class="chart-value" id="eviValue">0.00</div>
+    </div>
+    <div class="mini-chart">
+      <div class="chart-label">Vegetation</div>
+      <div class="chart-value" id="vegValue">0%</div>
+    </div>
+  </div>
+  
+  <!-- Legend -->
+  <div class="map-overlay legend-overlay">
+    <div style="color: #00ff88; font-size: 11px; font-weight: 600; margin-bottom: 5px;">Legend</div>
+    <div class="legend-item">
+      <div class="legend-color" style="background: #00ff88;"></div>
+      <div>Selected Area</div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background: #ffaa00;"></div>
+      <div>High Vegetation</div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background: #ff4444;"></div>
+      <div>Low Vegetation</div>
+    </div>
   </div>
   
   <script>
     mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
     
-    // Create map with mobile optimizations
+    let currentStyle = 'satellite';
     const map = new mapboxgl.Map({{
       container: 'map',
       style: 'mapbox://styles/mapbox/satellite-streets-v12',
       center: {map_center},
       zoom: {map_zoom},
-      pitch: 30,
+      pitch: 45,
       bearing: 0,
       touchZoomRotate: true,
       dragPan: true,
-      cooperativeGestures: false,
-      attributionControl: false
+      cooperativeGestures: false
     }});
     
-    // Add only essential controls
-    map.addControl(new mapboxgl.NavigationControl({{
-      showCompass: true,
-      showZoom: true,
-      visualizePitch: true
-    }}));
+    // Add controls
+    map.addControl(new mapboxgl.NavigationControl());
     
     // Show coordinates
     map.on('mousemove', (e) => {{
@@ -671,7 +663,7 @@ mapbox_html = f"""
       }}
     }});
     
-    // Add selected area if available
+    // Add selected area
     map.on('load', () => {{
       {f'''
       if ({bounds_data}) {{
@@ -715,375 +707,328 @@ mapbox_html = f"""
           }}
         }});
         
-        // Fly to area
-        map.flyTo({{
-          center: {map_center},
-          zoom: {map_zoom},
-          duration: 1500,
-          essential: true
-        }});
+        // Update mini charts with mock data
+        updateMiniCharts();
       }}
       ''' if bounds_data else ''}
     }});
+    
+    // Functions for quick controls
+    function zoomToSelection() {{
+      {f'''
+      if ({bounds_data}) {{
+        const bounds = {bounds_data};
+        const center = {map_center};
+        map.flyTo({{
+          center: center,
+          zoom: 8,
+          duration: 1000
+        }});
+      }}
+      ''' if bounds_data else '''
+      alert("No area selected");
+      '''}
+    }}
+    
+    function resetView() {{
+      map.flyTo({{
+        center: [0, 20],
+        zoom: 2,
+        duration: 1000
+      }});
+    }}
+    
+    function toggleSatellite() {{
+      if (currentStyle === 'satellite') {{
+        map.setStyle('mapbox://styles/mapbox/outdoors-v12');
+        currentStyle = 'outdoors';
+      }} else {{
+        map.setStyle('mapbox://styles/mapbox/satellite-streets-v12');
+        currentStyle = 'satellite';
+      }}
+    }}
+    
+    // Update mini charts with mock/real data
+    function updateMiniCharts() {{
+      // Mock data - replace with real data from analysis
+      const ndvi = (Math.random() * 0.8).toFixed(2);
+      const evi = (Math.random() * 0.6).toFixed(2);
+      const vegetation = Math.round(Math.random() * 100);
+      
+      document.getElementById('ndviValue').textContent = ndvi;
+      document.getElementById('eviValue').textContent = evi;
+      document.getElementById('vegValue').textContent = vegetation + '%';
+    }}
+    
+    // Update charts every 5 seconds (simulate live data)
+    setInterval(updateMiniCharts, 5000);
+    
+    // Initial update
+    updateMiniCharts();
   </script>
 </body>
 </html>
 """
 
-# Display the map with appropriate height for mobile
-st.components.v1.html(mapbox_html, height=350)
+# Display the integrated map
+st.components.v1.html(mapbox_html, height=400)
 
-st.markdown('</div>', unsafe_allow_html=True)  # Close map card
+st.markdown('</div>', unsafe_allow_html=True)  # Close map panel
 
-# Quick Status Card (below map on mobile)
-if st.session_state.selected_area_name:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        st.markdown(f"**Selected Area:** {st.session_state.selected_area_name}")
-        st.markdown(f"**Level:** {st.session_state.selected_area_level}")
-    with col2:
-        if st.button("📊 Analyze", use_container_width=True):
-            st.session_state.mobile_tab = "controls"
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-st.markdown('</div>', unsafe_allow_html=True)  # Close map tab
-
-# TAB 2: CONTROLS
-st.markdown('<div class="tab-content" id="controls" style="display: none;">', unsafe_allow_html=True)
-
-# Area Selection Card
-st.markdown('<div class="card">', unsafe_allow_html=True)
-st.markdown('<div class="card-title"><div class="icon">📍</div><h3 style="margin: 0;">Area Selection</h3></div>', unsafe_allow_html=True)
-
-if st.session_state.ee_initialized:
-    try:
-        # Get countries
-        countries_fc = get_admin_boundaries(0)
-        if countries_fc:
-            country_names = get_boundary_names(countries_fc, 0)
-            selected_country = st.selectbox(
-                "Country",
-                options=["Select a country"] + country_names,
-                index=0,
-                help="Choose a country",
-                key="country_select_mobile"
-            )
-            
-            if selected_country and selected_country != "Select a country":
-                country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
-                
-                # Get admin1 regions
-                admin1_fc = get_admin_boundaries(1, country_feature.get('ADM0_CODE').getInfo())
-                if admin1_fc:
-                    admin1_names = get_boundary_names(admin1_fc, 1)
-                    selected_admin1 = st.selectbox(
-                        "State/Province",
-                        options=["Select state/province"] + admin1_names,
+# UI Panel (Bottom 35% on desktop, 50% on mobile) - Only show if not collapsed
+if not st.session_state.ui_collapsed:
+    st.markdown('<div class="ui-panel">', unsafe_allow_html=True)
+    
+    # Create two columns for controls and charts
+    col_controls, col_charts = st.columns([1, 1])
+    
+    with col_controls:
+        # Area Selection Section
+        st.markdown('<div class="ui-section">', unsafe_allow_html=True)
+        st.markdown('<div class="ui-section-title">📍 Area Selection</div>', unsafe_allow_html=True)
+        
+        if st.session_state.ee_initialized:
+            try:
+                countries_fc = get_admin_boundaries(0)
+                if countries_fc:
+                    country_names = get_boundary_names(countries_fc, 0)
+                    selected_country = st.selectbox(
+                        "Country",
+                        options=["Select country"] + country_names,
                         index=0,
-                        help="Choose a state",
-                        key="admin1_select_mobile"
+                        key="country_integrated",
+                        label_visibility="collapsed"
                     )
                     
-                    if selected_admin1 and selected_admin1 != "Select state/province":
-                        admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
+                    if selected_country and selected_country != "Select country":
+                        country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
                         
-                        # Get admin2 regions
-                        admin2_fc = get_admin_boundaries(2, None, admin1_feature.get('ADM1_CODE').getInfo())
-                        if admin2_fc:
-                            admin2_names = get_boundary_names(admin2_fc, 2)
-                            selected_admin2 = st.selectbox(
-                                "Municipality",
-                                options=["Select municipality"] + admin2_names,
+                        admin1_fc = get_admin_boundaries(1, country_feature.get('ADM0_CODE').getInfo())
+                        if admin1_fc:
+                            admin1_names = get_boundary_names(admin1_fc, 1)
+                            selected_admin1 = st.selectbox(
+                                "State",
+                                options=["Select state"] + admin1_names,
                                 index=0,
-                                help="Choose a municipality",
-                                key="admin2_select_mobile"
+                                key="admin1_integrated",
+                                label_visibility="collapsed"
                             )
-                        else:
-                            selected_admin2 = None
+                            
+                            if selected_admin1 and selected_admin1 != "Select state":
+                                admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
+                                
+                                admin2_fc = get_admin_boundaries(2, None, admin1_feature.get('ADM1_CODE').getInfo())
+                                if admin2_fc:
+                                    admin2_names = get_boundary_names(admin2_fc, 2)
+                                    selected_admin2 = st.selectbox(
+                                        "Municipality",
+                                        options=["Select municipality"] + admin2_names,
+                                        index=0,
+                                        key="admin2_integrated",
+                                        label_visibility="collapsed"
+                                    )
+            except Exception:
+                pass
+        
+        # Update selected area
+        if st.button("✅ Set Area", use_container_width=True):
+            if selected_country and selected_country != "Select country":
+                try:
+                    if selected_admin2 and selected_admin2 != "Select municipality":
+                        geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
+                        area_name = f"{selected_admin2}, {selected_country}"
+                        area_level = "Municipality"
+                    elif selected_admin1 and selected_admin1 != "Select state":
+                        geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
+                        area_name = f"{selected_admin1}, {selected_country}"
+                        area_level = "State"
                     else:
-                        selected_admin2 = None
-                else:
-                    selected_admin1 = None
-                    selected_admin2 = None
-            else:
-                selected_admin1 = None
-                selected_admin2 = None
-        else:
-            st.error("Failed to load countries")
-            selected_country = None
-            selected_admin1 = None
-            selected_admin2 = None
-            
-    except Exception as e:
-        st.error(f"Error: {str(e)}")
-        selected_country = None
-        selected_admin1 = None
-        selected_admin2 = None
-else:
-    st.warning("Earth Engine not ready")
-    selected_country = None
-    selected_admin1 = None
-    selected_admin2 = None
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-# Update selected geometry
-if selected_country and selected_country != "Select a country":
-    try:
-        if selected_admin2 and selected_admin2 != "Select municipality":
-            geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
-            area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
-            area_level = "Municipality"
-        elif selected_admin1 and selected_admin1 != "Select state/province":
-            geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
-            area_name = f"{selected_admin1}, {selected_country}"
-            area_level = "State/Province"
-        else:
-            geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
-            area_name = selected_country
-            area_level = "Country"
+                        geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
+                        area_name = selected_country
+                        area_level = "Country"
+                    
+                    coords_info = get_geometry_coordinates(geometry)
+                    
+                    st.session_state.selected_geometry = geometry
+                    st.session_state.selected_coordinates = coords_info
+                    st.session_state.selected_area_name = area_name
+                    st.session_state.selected_area_level = area_level
+                    
+                    st.rerun()
+                except Exception:
+                    pass
         
-        coords_info = get_geometry_coordinates(geometry)
+        st.markdown('</div>', unsafe_allow_html=True)
         
-        st.session_state.selected_geometry = geometry
-        st.session_state.selected_coordinates = coords_info
-        st.session_state.selected_area_name = area_name
-        st.session_state.selected_area_level = area_level
+        # Analysis Settings Section
+        st.markdown('<div class="ui-section">', unsafe_allow_html=True)
+        st.markdown('<div class="ui-section-title">⚙️ Analysis Settings</div>', unsafe_allow_html=True)
         
-        st.success(f"✅ Area selected: {area_name}")
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input(
+                "Start",
+                value=datetime(2023, 1, 1),
+                key="start_integrated",
+                label_visibility="collapsed"
+            )
+        with col2:
+            end_date = st.date_input(
+                "End",
+                value=datetime(2023, 12, 31),
+                key="end_integrated",
+                label_visibility="collapsed"
+            )
         
-    except Exception as e:
-        st.error(f"Error: {str(e)}")
-
-# Analysis Settings Card (only if area selected)
-if selected_country and selected_country != "Select a country":
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="card-title"><div class="icon">⚙️</div><h3 style="margin: 0;">Analysis Settings</h3></div>', unsafe_allow_html=True)
-    
-    # Date range
-    start_date = st.date_input(
-        "Start Date",
-        value=datetime(2023, 1, 1),
-        help="Start date",
-        key="start_date_mobile"
-    )
-    
-    end_date = st.date_input(
-        "End Date",
-        value=datetime(2023, 12, 31),
-        help="End date",
-        key="end_date_mobile"
-    )
-    
-    # Satellite source
-    collection_choice = st.selectbox(
-        "Satellite",
-        options=["Sentinel-2", "Landsat-8"],
-        help="Satellite source",
-        key="satellite_select_mobile"
-    )
-    
-    # Cloud cover
-    cloud_cover = st.slider(
-        "Max Cloud Cover (%)",
-        min_value=0,
-        max_value=100,
-        value=20,
-        help="Cloud cover limit",
-        key="cloud_slider_mobile"
-    )
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Vegetation Indices Card
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="card-title"><div class="icon">🌿</div><h3 style="margin: 0;">Vegetation Indices</h3></div>', unsafe_allow_html=True)
-    
-    # Most common indices for mobile
-    common_indices = ['NDVI', 'EVI', 'SAVI', 'NDWI', 'GNDVI', 'MSAVI', 'OSAVI', 'ARVI']
-    
-    selected_indices = st.multiselect(
-        "Select indices (max 4 for mobile)",
-        options=common_indices,
-        default=['NDVI', 'EVI', 'SAVI', 'NDWI'],
-        help="Choose vegetation indices",
-        key="indices_select_mobile",
-        max_selections=4
-    )
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Action Buttons
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        if st.button("📊 Run Analysis", type="primary", use_container_width=True):
-            if not selected_indices:
-                st.error("Select at least one index")
+        satellite = st.selectbox(
+            "Satellite",
+            options=["Sentinel-2", "Landsat-8"],
+            key="satellite_integrated",
+            label_visibility="collapsed"
+        )
+        
+        cloud_cover = st.slider(
+            "Cloud Cover %",
+            min_value=0,
+            max_value=100,
+            value=20,
+            key="cloud_integrated",
+            label_visibility="collapsed"
+        )
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Run Analysis Button
+        if st.button("🚀 Run Analysis", type="primary", use_container_width=True):
+            if not st.session_state.selected_geometry:
+                st.error("Please select an area first")
             else:
                 with st.spinner("Analyzing..."):
                     try:
-                        # Simplified analysis for mobile
-                        if collection_choice == "Sentinel-2":
-                            collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-                        else:
-                            collection = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
-                        
-                        filtered_collection = (collection
-                            .filterDate(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
-                            .filterBounds(st.session_state.selected_geometry.geometry())
-                            .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
-                            .limit(10)  # Limit for mobile performance
-                        )
-                        
-                        # Simple NDVI calculation for demo
+                        # Mock analysis results
                         results = {}
-                        for index in selected_indices:
-                            # Mock results for mobile demo
-                            dates = ['2023-01-01', '2023-04-01', '2023-07-01', '2023-10-01']
-                            values = [0.2 + i * 0.1 + (ord(index[0]) % 10) * 0.01 for i in range(4)]
+                        indices = ['NDVI', 'EVI', 'SAVI', 'NDWI']
+                        
+                        for index in indices:
+                            dates = [
+                                '2023-01-15', '2023-02-15', '2023-03-15', '2023-04-15',
+                                '2023-05-15', '2023-06-15', '2023-07-15', '2023-08-15',
+                                '2023-09-15', '2023-10-15', '2023-11-15', '2023-12-15'
+                            ]
+                            base_value = 0.3 if index == 'NDVI' else 0.2
+                            values = [base_value + (i * 0.05) + (0.1 * (ord(index[0]) % 5) / 10) for i in range(12)]
                             results[index] = {'dates': dates, 'values': values}
                         
                         st.session_state.analysis_results = results
-                        st.session_state.mobile_tab = "results"
                         st.success("✅ Analysis complete!")
                         st.rerun()
-                        
-                    except Exception as e:
-                        st.error(f"Analysis failed: {str(e)}")
+                    except Exception:
+                        st.error("Analysis failed")
     
-    with col_btn2:
-        if st.button("🗺️ View Map", use_container_width=True):
-            st.session_state.mobile_tab = "map"
-            st.rerun()
-
-st.markdown('</div>', unsafe_allow_html=True)  # Close controls tab
-
-# TAB 3: RESULTS
-st.markdown('<div class="tab-content" id="results" style="display: none;">', unsafe_allow_html=True)
-
-if st.session_state.analysis_results:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Analysis Results</h3></div>', unsafe_allow_html=True)
-    
-    results = st.session_state.analysis_results
-    
-    # Summary
-    st.markdown("**Summary Statistics**")
-    summary_data = []
-    for index, data in results.items():
-        if data['values']:
-            values = [v for v in data['values'] if v is not None]
-            if values:
-                summary_data.append({
-                    'Index': index,
-                    'Avg': round(sum(values) / len(values), 3),
-                    'Min': round(min(values), 3),
-                    'Max': round(max(values), 3)
-                })
-    
-    if summary_data:
-        summary_df = pd.DataFrame(summary_data)
-        st.dataframe(summary_df, use_container_width=True, hide_index=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Charts
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Trends</h3></div>', unsafe_allow_html=True)
-    
-    for index in list(results.keys())[:2]:  # Show max 2 charts on mobile
-        data = results[index]
-        if data['dates'] and data['values']:
-            try:
-                df = pd.DataFrame({
-                    'Date': pd.to_datetime(data['dates']),
-                    'Value': data['values']
-                })
-                
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=df['Date'],
-                    y=df['Value'],
-                    mode='lines+markers',
-                    name=index,
-                    line=dict(color='#00ff88', width=2),
-                    marker=dict(size=6)
-                ))
-                
-                fig.update_layout(
-                    title=f"{index} Trend",
-                    plot_bgcolor='#0a0a0a',
-                    paper_bgcolor='#0a0a0a',
-                    font=dict(color='#ffffff', size=12),
-                    height=200,
-                    margin=dict(t=30, b=30, l=30, r=30),
-                    xaxis=dict(showgrid=True, gridcolor='#222222'),
-                    yaxis=dict(showgrid=True, gridcolor='#222222')
-                )
-                
-                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-                
-            except Exception:
-                pass
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Export
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="card-title"><div class="icon">💾</div><h3 style="margin: 0;">Export</h3></div>', unsafe_allow_html=True)
-    
-    if st.button("📥 Download CSV", use_container_width=True):
-        export_data = []
-        for index, data in results.items():
-            for date, value in zip(data['dates'], data['values']):
-                export_data.append({'Date': date, 'Index': index, 'Value': value})
-        
-        if export_data:
-            export_df = pd.DataFrame(export_data)
-            csv = export_df.to_csv(index=False)
+    with col_charts:
+        # Display charts if analysis results exist
+        if st.session_state.analysis_results:
+            results = st.session_state.analysis_results
             
-            st.download_button(
-                label="⬇️ Download Now",
-                data=csv,
-                file_name="vegetation_data.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+            # Show first 2 charts
+            for i, (index, data) in enumerate(list(results.items())[:2]):
+                if data['dates'] and data['values']:
+                    try:
+                        st.markdown(f'<div class="chart-container">', unsafe_allow_html=True)
+                        st.markdown(f'<div class="chart-title">{index}</div>', unsafe_allow_html=True)
+                        
+                        # Create mini chart
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(
+                            x=data['dates'],
+                            y=data['values'],
+                            mode='lines',
+                            line=dict(color='#00ff88', width=2)
+                        ))
+                        
+                        fig.update_layout(
+                            height=100,
+                            margin=dict(l=0, r=0, t=0, b=0),
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            xaxis=dict(
+                                showgrid=False,
+                                zeroline=False,
+                                showticklabels=False
+                            ),
+                            yaxis=dict(
+                                showgrid=False,
+                                zeroline=False,
+                                showticklabels=False
+                            )
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+                        
+                        # Show current value
+                        if data['values']:
+                            current_value = data['values'][-1]
+                            trend = "↗️" if len(data['values']) > 1 and data['values'][-1] > data['values'][-2] else "↘️"
+                            st.markdown(f'<div style="text-align: center; color: #00ff88; font-size: 14px; font-weight: bold;">{current_value:.3f} {trend}</div>', unsafe_allow_html=True)
+                        
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                    except Exception:
+                        pass
+            
+            # Show summary for remaining indices
+            if len(results) > 2:
+                st.markdown('<div class="ui-section">', unsafe_allow_html=True)
+                st.markdown('<div class="ui-section-title">📊 Summary</div>', unsafe_allow_html=True)
+                
+                summary_text = ""
+                for index, data in list(results.items())[2:4]:  # Show next 2
+                    if data['values']:
+                        avg = sum(data['values']) / len(data['values'])
+                        summary_text += f"{index}: {avg:.3f}<br>"
+                
+                if summary_text:
+                    st.markdown(f'<div style="color: #cccccc; font-size: 11px;">{summary_text}</div>', unsafe_allow_html=True)
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            # Show placeholder charts
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.markdown('<div class="chart-title">NDVI</div>', unsafe_allow_html=True)
+            st.markdown('<div style="text-align: center; color: #666666; margin-top: 40px;">Run analysis to see data</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.markdown('<div class="chart-title">EVI</div>', unsafe_allow_html=True)
+            st.markdown('<div style="text-align: center; color: #666666; margin-top: 40px;">Run analysis to see data</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
     
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-else:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown("""
-    <div style="text-align: center; padding: 20px;">
-        <div style="font-size: 48px; color: #666666; margin-bottom: 10px;">📊</div>
-        <h3>No Results Yet</h3>
-        <p style="color: #999999;">Run an analysis first in the Controls tab</p>
-        <div style="margin-top: 20px;">
-            <button style="background: #00ff88; color: #000; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer;" onclick="setActiveTab('controls')">Go to Controls</button>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)  # Close UI panel
 
-st.markdown('</div>', unsafe_allow_html=True)  # Close results tab
-
-# Mobile Footer
+# Footer
 st.markdown("""
-<div class="mobile-footer">
-    <p style="margin: 5px 0;">KHISBA GIS • Mobile Edition</p>
-    <p style="margin: 5px 0; font-size: 9px;">Tap tabs to navigate • Optimized for mobile</p>
+<div style="text-align: center; color: #666666; font-size: 10px; padding: 8px 0; margin-top: 5px;">
+    <p style="margin: 2px 0;">KHISBA GIS • Integrated Map & Analytics</p>
+    <p style="margin: 2px 0; font-size: 9px;">🌍 Map + 📊 Charts + ⚙️ Controls = Unified View</p>
 </div>
 """, unsafe_allow_html=True)
 
-# Desktop Layout (hidden on mobile)
+st.markdown('</div>', unsafe_allow_html=True)  # Close integrated container
+
+# JavaScript for UI toggle
 st.markdown("""
-<div class="desktop-only">
-    <div style="text-align: center; padding: 20px; color: #666666;">
-        <h2>Desktop Version Available</h2>
-        <p>For full features and better experience, use desktop browser</p>
-    </div>
-</div>
+<script>
+function toggleUI() {
+    // Send message to Streamlit
+    window.parent.postMessage({
+        'type': 'streamlit:setComponentValue',
+        'value': 'toggle_ui'
+    }, '*');
+}
+</script>
 """, unsafe_allow_html=True)
+
+# Handle UI toggle
+if st.query_params.get("toggle_ui") == "true":
+    st.session_state.ui_collapsed = not st.session_state.ui_collapsed
+    st.query_params.clear()
