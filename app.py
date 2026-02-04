@@ -6,7 +6,7 @@ from datetime import datetime
 import ee
 import traceback
 
-# Custom CSS for Clean Green & Black TypeScript/React Style with Enhanced Guides
+# Custom CSS for Clean Green & Black TypeScript/React Style with Guided UI
 st.markdown("""
 <style>
     /* Base styling */
@@ -127,53 +127,20 @@ st.markdown("""
         transition: width 0.3s ease;
     }
     
-    /* Enhanced Guide System */
-    .guide-master-container {
-        position: fixed;
-        top: 100px;
-        right: 30px;
-        width: 320px;
-        z-index: 1000;
-        background: var(--card-black);
-        border: 2px solid var(--primary-green);
-        border-radius: 12px;
+    /* Guided Instructions */
+    .guide-container {
+        background: linear-gradient(135deg, rgba(0, 255, 136, 0.1), rgba(0, 204, 106, 0.1));
+        border: 1px solid rgba(0, 255, 136, 0.3);
+        border-radius: 10px;
         padding: 20px;
-        box-shadow: 0 10px 30px rgba(0, 255, 136, 0.2);
-        animation: slideInRight 0.5s ease-out;
+        margin-bottom: 20px;
+        animation: pulse 2s infinite;
     }
     
-    @keyframes slideInRight {
-        from {
-            opacity: 0;
-            transform: translateX(50px);
-        }
-        to {
-            opacity: 1;
-            transform: translateX(0);
-        }
-    }
-    
-    .guide-hand-icon {
-        position: absolute;
-        top: -15px;
-        left: -15px;
-        background: var(--primary-green);
-        color: var(--primary-black);
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 20px;
-        animation: pointWave 1.5s infinite;
-        z-index: 1001;
-    }
-    
-    @keyframes pointWave {
-        0%, 100% { transform: translateX(0) rotate(0deg); }
-        25% { transform: translateX(5px) rotate(10deg); }
-        75% { transform: translateX(-5px) rotate(-10deg); }
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.4); }
+        70% { box-shadow: 0 0 0 10px rgba(0, 255, 136, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0); }
     }
     
     .guide-header {
@@ -181,8 +148,6 @@ st.markdown("""
         align-items: center;
         gap: 10px;
         margin-bottom: 15px;
-        padding-bottom: 10px;
-        border-bottom: 1px solid var(--border-gray);
     }
     
     .guide-icon {
@@ -200,67 +165,24 @@ st.markdown("""
         color: var(--text-light-gray);
         font-size: 14px;
         line-height: 1.5;
-        margin-bottom: 15px;
     }
     
-    .guide-actions {
-        display: flex;
-        gap: 10px;
+    .guide-action {
         margin-top: 15px;
-    }
-    
-    .guide-btn {
-        flex: 1;
-        padding: 8px 15px;
-        border-radius: 6px;
-        font-size: 12px;
-        font-weight: 600;
-        cursor: pointer;
-        text-align: center;
-        transition: all 0.2s;
-    }
-    
-    .guide-btn-primary {
+        padding: 12px 20px;
         background: var(--primary-green);
         color: var(--primary-black);
         border: none;
-    }
-    
-    .guide-btn-primary:hover {
-        background: var(--accent-green);
-        transform: translateY(-2px);
-    }
-    
-    .guide-btn-secondary {
-        background: transparent;
-        color: var(--text-light-gray);
-        border: 1px solid var(--border-gray);
-    }
-    
-    .guide-btn-secondary:hover {
-        border-color: var(--primary-green);
-        color: var(--primary-green);
-    }
-    
-    .guide-dots {
-        display: flex;
-        justify-content: center;
-        gap: 6px;
-        margin-top: 15px;
-    }
-    
-    .guide-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: var(--border-gray);
+        border-radius: 8px;
+        font-weight: 600;
         cursor: pointer;
-        transition: all 0.3s;
+        text-align: center;
+        display: inline-block;
+        transition: transform 0.2s;
     }
     
-    .guide-dot.active {
-        background: var(--primary-green);
-        transform: scale(1.2);
+    .guide-action:hover {
+        transform: translateY(-2px);
     }
     
     /* Status Indicators */
@@ -399,34 +321,22 @@ st.markdown("""
             font-size: 10px;
             max-width: 60px;
         }
-        
-        .guide-master-container {
-            display: none;
+    }
+    
+    /* Auto-transition animation */
+    .auto-transition {
+        animation: slideIn 0.5s ease-out;
+    }
+    
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
         }
-    }
-    
-    /* Tooltip highlights */
-    .highlight-element {
-        position: relative;
-        z-index: 100;
-    }
-    
-    .highlight-element::before {
-        content: '';
-        position: absolute;
-        top: -5px;
-        left: -5px;
-        right: -5px;
-        bottom: -5px;
-        border: 2px solid var(--primary-green);
-        border-radius: 8px;
-        animation: pulseBorder 2s infinite;
-        pointer-events: none;
-    }
-    
-    @keyframes pulseBorder {
-        0%, 100% { opacity: 0.3; }
-        50% { opacity: 0.8; }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -495,7 +405,7 @@ if 'ee_initialized' not in st.session_state:
         else:
             st.session_state.ee_initialized = False
 
-# Initialize session state for steps and guides
+# Initialize session state for steps
 if 'current_step' not in st.session_state:
     st.session_state.current_step = 1
 if 'selected_geometry' not in st.session_state:
@@ -510,12 +420,6 @@ if 'analysis_parameters' not in st.session_state:
     st.session_state.analysis_parameters = None
 if 'auto_show_results' not in st.session_state:
     st.session_state.auto_show_results = False
-if 'show_guide' not in st.session_state:
-    st.session_state.show_guide = True  # Show guide by default
-if 'current_guide_step' not in st.session_state:
-    st.session_state.current_guide_step = 0
-if 'guide_completed' not in st.session_state:
-    st.session_state.guide_completed = False
 
 # Page configuration
 st.set_page_config(
@@ -534,185 +438,13 @@ STEPS = [
     {"number": 5, "label": "View Results", "icon": "📊"}
 ]
 
-# Define comprehensive guide steps for each workflow step
-GUIDES = {
-    1: [
-        {
-            "title": "Welcome to KHISBA GIS! 👋",
-            "content": "I'm your hand guide. Let's analyze vegetation together! First, we need to select an area.",
-            "action": "Click on the country dropdown below to get started",
-            "element": "country_select"
-        },
-        {
-            "title": "Select a Country 🌍",
-            "content": "Choose any country from the list. The map will update to show your selection.",
-            "action": "Pick a country like 'United States' or 'India'",
-            "element": "country_select"
-        },
-        {
-            "title": "Narrow Down (Optional) 🏛️",
-            "content": "For more precise analysis, select a state/province and municipality.",
-            "action": "Choose state and municipality if you want detailed analysis",
-            "element": "admin1_select"
-        },
-        {
-            "title": "Confirm Selection ✅",
-            "content": "Great choice! Now let's confirm and move to the next step.",
-            "action": "Click the green 'Confirm Selection' button",
-            "element": "confirm_area"
-        }
-    ],
-    2: [
-        {
-            "title": "Set Time Range 📅",
-            "content": "Choose when you want to analyze vegetation. We recommend 1 year for best results.",
-            "action": "Set start and end dates (default is 2023)",
-            "element": "time_range"
-        },
-        {
-            "title": "Choose Satellite 🛰️",
-            "content": "Sentinel-2 offers higher resolution. Landsat-8 has more historical data.",
-            "action": "Select Sentinel-2 for modern data",
-            "element": "satellite_select"
-        },
-        {
-            "title": "Cloud Filter ☁️",
-            "content": "Remove cloudy images. 20% is optimal to keep enough clear data.",
-            "action": "Keep cloud cover at 20% or lower",
-            "element": "cloud_slider"
-        },
-        {
-            "title": "Pick Vegetation Indices 🌿",
-            "content": "NDVI is essential. Add EVI for better sensitivity in dense areas.",
-            "action": "Select at least NDVI and EVI",
-            "element": "indices_select"
-        },
-        {
-            "title": "Save & Continue 💾",
-            "content": "Perfect! Your settings are ready. Let's preview the area.",
-            "action": "Click 'Save Parameters & Continue'",
-            "element": "save_params"
-        }
-    ],
-    3: [
-        {
-            "title": "Explore the 3D Map 🌐",
-            "content": "This interactive 3D globe shows your selected area. Try rotating and zooming!",
-            "action": "Drag the globe to rotate, scroll to zoom",
-            "element": "map_interaction"
-        },
-        {
-            "title": "Area Highlighted 🟢",
-            "content": "Your selected area is highlighted in green. Make sure it's correct.",
-            "action": "Verify the highlighted region matches your target",
-            "element": "map_area"
-        },
-        {
-            "title": "Ready for Analysis 🚀",
-            "content": "Everything looks good! Time to run the vegetation analysis.",
-            "action": "Click 'Run Analysis Now'",
-            "element": "run_analysis"
-        }
-    ],
-    4: [
-        {
-            "title": "Analysis in Progress ⏳",
-            "content": "We're now processing satellite data and calculating vegetation indices.",
-            "action": "Wait for analysis to complete (auto-continues)",
-            "element": "progress_bar"
-        }
-    ],
-    5: [
-        {
-            "title": "Results Ready! 📊",
-            "content": "Analysis complete! Here are your vegetation charts and statistics.",
-            "action": "Review the charts below",
-            "element": "results_charts"
-        },
-        {
-            "title": "Download Data 📥",
-            "content": "You can download all data as CSV for further analysis.",
-            "action": "Click 'Download CSV' to save your data",
-            "element": "download_csv"
-        },
-        {
-            "title": "Start New Analysis 🔄",
-            "content": "Want to analyze another area? Start fresh with new parameters.",
-            "action": "Click 'New Analysis' to begin again",
-            "element": "new_analysis"
-        }
-    ]
-}
-
-# Function to render the guide
-def render_guide():
-    if st.session_state.show_guide and st.session_state.current_step in GUIDES:
-        guides = GUIDES[st.session_state.current_step]
-        current_guide = guides[min(st.session_state.current_guide_step, len(guides) - 1)]
-        
-        st.markdown(f'''
-        <div class="guide-master-container">
-            <div class="guide-hand-icon">👆</div>
-            <div class="guide-header">
-                <div class="guide-icon">🗺️</div>
-                <div class="guide-title">{current_guide["title"]}</div>
-            </div>
-            <div class="guide-content">
-                {current_guide["content"]}<br><br>
-                <strong>👉 Action: </strong>{current_guide["action"]}
-            </div>
-            <div class="guide-actions">
-                <button class="guide-btn guide-btn-secondary" onclick="parent.postMessage({{'type': 'streamlit:setComponentValue', 'value': 'guide_prev'}}, '*')">
-                    ← Previous
-                </button>
-                <button class="guide-btn guide-btn-primary" onclick="parent.postMessage({{'type': 'streamlit:setComponentValue', 'value': 'guide_next'}}, '*')">
-                    {st.session_state.current_guide_step >= len(guides) - 1 and st.session_state.current_step >= 5 ? 'Finish' : 'Next Step'} →
-                </button>
-            </div>
-            <div class="guide-dots">
-                {''.join([f'<div class="guide-dot {"active" if i == st.session_state.current_guide_step else ""}" onclick="parent.postMessage({{"type": "streamlit:setComponentValue", "value": "guide_jump_{i}"}}, "*")"></div>' for i in range(len(guides))])}
-            </div>
-        </div>
-        ''', unsafe_allow_html=True)
-
-# JavaScript for guide interactions
-guide_js = '''
-<script>
-    window.addEventListener('message', function(event) {
-        if (event.data.type === 'streamlit:setComponentValue') {
-            const value = event.data.value;
-            if (value.startsWith('guide_')) {
-                // Send to Streamlit via custom component
-                const event = new CustomEvent('guideAction', { detail: value });
-                document.dispatchEvent(event);
-            }
-        }
-    });
-</script>
-'''
-
-st.components.v1.html(guide_js, height=0)
-
 # Header
 st.markdown("""
 <div style="margin-bottom: 20px;">
     <h1>🌍 KHISBA GIS</h1>
-    <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics - With Hand Guide</p>
-    <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222; font-size: 12px;">👋 Interactive Guide</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222; font-size: 12px;">🚀 Auto Results</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222; font-size: 12px;">🗺️ 3D Mapbox</span>
-        <button onclick="parent.postMessage({'type': 'streamlit:setComponentValue', 'value': 'toggle_guide'}, '*')" style="margin-left: auto; background: transparent; color: #00ff88; border: 1px solid #00ff88; padding: 4px 12px; border-radius: 20px; font-size: 12px; cursor: pointer;">
-            {icon} Guide
-        </button>
-    </div>
+    <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics - Guided Workflow</p>
 </div>
-""".format(icon="👁️ Hide" if st.session_state.show_guide else "👋 Show"), unsafe_allow_html=True)
-
-# Toggle guide button handler
-if st.button("Toggle Guide", key="toggle_guide_hidden", help="Show/hide the hand guide"):
-    st.session_state.show_guide = not st.session_state.show_guide
-    st.rerun()
+""", unsafe_allow_html=True)
 
 # Progress Steps
 st.markdown("""
@@ -745,8 +477,8 @@ st.markdown(f"""
 </script>
 """, unsafe_allow_html=True)
 
-# Status indicators with guide status
-st.markdown(f"""
+# Status indicators
+st.markdown("""
 <div class="status-container">
     <div class="status-item">
         <div class="status-dot {'active' if st.session_state.ee_initialized else ''}"></div>
@@ -760,10 +492,6 @@ st.markdown(f"""
         <div class="status-dot {'active' if st.session_state.analysis_results else ''}"></div>
         <span>Analysis: {'Complete' if st.session_state.analysis_results else 'Pending'}</span>
     </div>
-    <div class="status-item">
-        <div class="status-dot {'active' if st.session_state.show_guide else ''}"></div>
-        <span>Guide: {'Active' if st.session_state.show_guide else 'Hidden'}</span>
-    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -776,15 +504,15 @@ with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title"><div class="icon">📍</div><h3 style="margin: 0;">Step 1: Select Your Area</h3></div>', unsafe_allow_html=True)
         
-        # Enhanced guidance for step 1
+        # Guided instruction for step 1
         st.markdown("""
-        <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid #00ff88;">
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                <div style="background: #00ff88; color: #000; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">1</div>
-                <div style="color: #00ff88; font-weight: 600;">Select a Country</div>
+        <div class="guide-container">
+            <div class="guide-header">
+                <div class="guide-icon">🎯</div>
+                <div class="guide-title">Get Started</div>
             </div>
-            <div style="color: #cccccc; font-size: 13px; margin-left: 34px;">
-                Start by choosing a country from the dropdown below. Your guide will help you through each step.
+            <div class="guide-content">
+                Select a geographic area for analysis. Start by choosing a country, then narrow down to state/province and municipality if needed.
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -795,11 +523,6 @@ with col1:
                 countries_fc = ee.FeatureCollection("FAO/GAUL/2015/level0")
                 country_names = countries_fc.aggregate_array('ADM0_NAME').distinct().getInfo()
                 country_names = sorted(country_names) if country_names else []
-                
-                # Add guide highlighting
-                guide_highlight = ""
-                if st.session_state.show_guide and st.session_state.current_guide_step == 0:
-                    guide_highlight = "highlight-element"
                 
                 selected_country = st.selectbox(
                     "🌍 Country",
@@ -817,16 +540,11 @@ with col1:
                     admin1_names = admin1_fc.aggregate_array('ADM1_NAME').distinct().getInfo()
                     admin1_names = sorted(admin1_names) if admin1_names else []
                     
-                    # Guide step 2 highlight
-                    guide_highlight2 = ""
-                    if st.session_state.show_guide and st.session_state.current_guide_step == 1:
-                        guide_highlight2 = "highlight-element"
-                    
                     selected_admin1 = st.selectbox(
-                        "🏛️ State/Province (Optional)",
+                        "🏛️ State/Province",
                         options=["Select state/province"] + admin1_names,
                         index=0,
-                        help="Choose a state or province for more precise analysis",
+                        help="Choose a state or province",
                         key="admin1_select"
                     )
                     
@@ -839,10 +557,10 @@ with col1:
                         admin2_names = sorted(admin2_names) if admin2_names else []
                         
                         selected_admin2 = st.selectbox(
-                            "🏘️ Municipality (Optional)",
+                            "🏘️ Municipality",
                             options=["Select municipality"] + admin2_names,
                             index=0,
-                            help="Choose a municipality for most precise analysis",
+                            help="Choose a municipality",
                             key="admin2_select"
                         )
                     else:
@@ -851,14 +569,7 @@ with col1:
                     selected_admin1 = None
                     selected_admin2 = None
                     
-                # Guide step 3 highlight for confirm button
-                confirm_highlight = ""
-                if st.session_state.show_guide and st.session_state.current_guide_step >= 2:
-                    confirm_highlight = "highlight-element"
-                
-                if st.button("✅ Confirm Selection", type="primary", use_container_width=True, 
-                           disabled=not selected_country or selected_country == "Select a country",
-                           key="confirm_area"):
+                if st.button("✅ Confirm Selection", type="primary", use_container_width=True, disabled=not selected_country or selected_country == "Select a country"):
                     try:
                         if selected_admin2 and selected_admin2 != "Select municipality":
                             geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
@@ -892,9 +603,8 @@ with col1:
                             'zoom': 6
                         }
                         
-                        # Move to next step and reset guide
+                        # Move to next step
                         st.session_state.current_step = 2
-                        st.session_state.current_guide_step = 0
                         st.rerun()
                         
                     except Exception as e:
@@ -905,19 +615,6 @@ with col1:
         else:
             st.warning("Earth Engine not initialized. Please wait...")
         
-        # Quick tips for step 1
-        st.markdown("""
-        <div style="background: #111111; padding: 12px; border-radius: 8px; margin-top: 15px; border: 1px solid #222222;">
-            <div style="color: #00ff88; font-size: 12px; font-weight: 600; margin-bottom: 5px;">💡 Quick Tips:</div>
-            <div style="color: #999999; font-size: 11px; line-height: 1.4;">
-                • Start with a country<br>
-                • Add state/province for more precision<br>
-                • Add municipality for detailed local analysis<br>
-                • Don't worry, you can always go back!
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
         st.markdown('</div>', unsafe_allow_html=True)
     
     # Step 2: Analysis Parameters
@@ -925,26 +622,23 @@ with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title"><div class="icon">⚙️</div><h3 style="margin: 0;">Step 2: Set Analysis Parameters</h3></div>', unsafe_allow_html=True)
         
-        if st.session_state.selected_area_name:
-            # Enhanced guidance
-            st.markdown(f"""
-            <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid #00ff88;">
-                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                    <div style="background: #00ff88; color: #000; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">2</div>
-                    <div style="color: #00ff88; font-weight: 600;">Configure Your Analysis</div>
-                </div>
-                <div style="color: #cccccc; font-size: 13px; margin-left: 34px;">
-                    Adjust settings for {st.session_state.selected_area_name}. Use recommended values for best results.
-                </div>
+        # Guided instruction for step 2
+        st.markdown("""
+        <div class="guide-container">
+            <div class="guide-header">
+                <div class="guide-icon">📋</div>
+                <div class="guide-title">Configure Analysis</div>
             </div>
-            """, unsafe_allow_html=True)
+            <div class="guide-content">
+                Set the time range, satellite source, and vegetation indices for your analysis. Default values are optimized for most use cases.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.session_state.selected_area_name:
+            st.info(f"**Selected Area:** {st.session_state.selected_area_name}")
             
-            # Date range with guide highlight
-            date_highlight = ""
-            if st.session_state.show_guide and st.session_state.current_guide_step == 0:
-                date_highlight = "highlight-element"
-            
-            st.markdown(f'<div class="{date_highlight}">', unsafe_allow_html=True)
+            # Date range
             col_a, col_b = st.columns(2)
             with col_a:
                 start_date = st.date_input(
@@ -958,72 +652,42 @@ with col1:
                     value=datetime(2023, 12, 31),
                     help="End date for analysis"
                 )
-            st.markdown('</div>', unsafe_allow_html=True)
             
-            # Satellite source with guide highlight
-            satellite_highlight = ""
-            if st.session_state.show_guide and st.session_state.current_guide_step == 1:
-                satellite_highlight = "highlight-element"
-            
-            st.markdown(f'<div class="{satellite_highlight}">', unsafe_allow_html=True)
+            # Satellite source
             collection_choice = st.selectbox(
                 "🛰️ Satellite Source",
                 options=["Sentinel-2", "Landsat-8"],
                 help="Choose satellite collection",
-                index=0,
-                key="satellite_select"
+                index=0
             )
-            st.markdown('</div>', unsafe_allow_html=True)
             
-            # Cloud cover with guide highlight
-            cloud_highlight = ""
-            if st.session_state.show_guide and st.session_state.current_guide_step == 2:
-                cloud_highlight = "highlight-element"
-            
-            st.markdown(f'<div class="{cloud_highlight}">', unsafe_allow_html=True)
+            # Cloud cover
             cloud_cover = st.slider(
                 "☁️ Max Cloud Cover (%)",
                 min_value=0,
                 max_value=100,
                 value=20,
-                help="Maximum cloud cover percentage",
-                key="cloud_slider"
+                help="Maximum cloud cover percentage"
             )
-            st.markdown('</div>', unsafe_allow_html=True)
             
-            # Vegetation indices with guide highlight
-            indices_highlight = ""
-            if st.session_state.show_guide and st.session_state.current_guide_step == 3:
-                indices_highlight = "highlight-element"
-            
-            st.markdown(f'<div class="{indices_highlight}">', unsafe_allow_html=True)
+            # Vegetation indices
             available_indices = ['NDVI', 'EVI', 'SAVI', 'NDWI', 'GNDVI', 'MSAVI']
             selected_indices = st.multiselect(
                 "🌿 Vegetation Indices",
                 options=available_indices,
                 default=['NDVI', 'EVI'],
-                help="Choose vegetation indices to analyze",
-                key="indices_select"
+                help="Choose vegetation indices to analyze"
             )
-            st.markdown('</div>', unsafe_allow_html=True)
             
-            # Navigation buttons with guide highlight
-            save_highlight = ""
-            if st.session_state.show_guide and st.session_state.current_guide_step >= 4:
-                save_highlight = "highlight-element"
-            
-            st.markdown(f'<div class="{save_highlight}">', unsafe_allow_html=True)
+            # Navigation buttons
             col_back, col_next = st.columns(2)
             with col_back:
                 if st.button("⬅️ Back to Area Selection", use_container_width=True):
                     st.session_state.current_step = 1
-                    st.session_state.current_guide_step = 0
                     st.rerun()
             
             with col_next:
-                if st.button("✅ Save Parameters & Continue", type="primary", 
-                           use_container_width=True, disabled=not selected_indices,
-                           key="save_params"):
+                if st.button("✅ Save Parameters & Continue", type="primary", use_container_width=True, disabled=not selected_indices):
                     st.session_state.analysis_parameters = {
                         'start_date': start_date,
                         'end_date': end_date,
@@ -1032,27 +696,11 @@ with col1:
                         'selected_indices': selected_indices
                     }
                     st.session_state.current_step = 3
-                    st.session_state.current_guide_step = 0
                     st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Recommended settings
-            st.markdown("""
-            <div style="background: #111111; padding: 12px; border-radius: 8px; margin-top: 15px; border: 1px solid #222222;">
-                <div style="color: #00ff88; font-size: 12px; font-weight: 600; margin-bottom: 5px;">🎯 Recommended Settings:</div>
-                <div style="color: #999999; font-size: 11px; line-height: 1.4;">
-                    • <strong>Time Range:</strong> 1 year (Jan-Dec 2023)<br>
-                    • <strong>Satellite:</strong> Sentinel-2 (higher resolution)<br>
-                    • <strong>Cloud Cover:</strong> ≤20% (balances data quality & quantity)<br>
-                    • <strong>Indices:</strong> NDVI + EVI (covers most use cases)
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
         else:
             st.warning("Please go back to Step 1 and select an area first.")
             if st.button("⬅️ Go to Area Selection", use_container_width=True):
                 st.session_state.current_step = 1
-                st.session_state.current_guide_step = 0
                 st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1062,20 +710,20 @@ with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title"><div class="icon">🗺️</div><h3 style="margin: 0;">Step 3: Preview Selected Area</h3></div>', unsafe_allow_html=True)
         
-        if st.session_state.selected_area_name:
-            # Enhanced guidance
-            st.markdown(f"""
-            <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid #00ff88;">
-                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                    <div style="background: #00ff88; color: #000; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">3</div>
-                    <div style="color: #00ff88; font-weight: 600;">Preview & Confirm</div>
-                </div>
-                <div style="color: #cccccc; font-size: 13px; margin-left: 34px;">
-                    Review your selection on the 3D map. Explore the globe before running analysis.
-                </div>
+        # Guided instruction for step 3
+        st.markdown("""
+        <div class="guide-container">
+            <div class="guide-header">
+                <div class="guide-icon">👁️</div>
+                <div class="guide-title">Preview Area</div>
             </div>
-            """, unsafe_allow_html=True)
-            
+            <div class="guide-content">
+                Review your selected area on the 3D map. Make sure the highlighted region matches your intended analysis area.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.session_state.selected_area_name:
             st.info(f"""
             **Selected Area:** {st.session_state.selected_area_name}
             
@@ -1086,46 +734,22 @@ with col1:
             - Indices: {', '.join(st.session_state.analysis_parameters['selected_indices'])}
             """)
             
-            # Navigation buttons with guide highlight
-            run_highlight = ""
-            if st.session_state.show_guide and st.session_state.current_guide_step >= 2:
-                run_highlight = "highlight-element"
-            
-            st.markdown(f'<div class="{run_highlight}">', unsafe_allow_html=True)
+            # Navigation buttons
             col_back, col_next = st.columns(2)
             with col_back:
                 if st.button("⬅️ Back to Parameters", use_container_width=True):
                     st.session_state.current_step = 2
-                    st.session_state.current_guide_step = 0
                     st.rerun()
             
             with col_next:
-                if st.button("🚀 Run Analysis Now", type="primary", use_container_width=True,
-                           key="run_analysis"):
+                if st.button("🚀 Run Analysis Now", type="primary", use_container_width=True):
                     st.session_state.current_step = 4
-                    st.session_state.current_guide_step = 0
                     st.session_state.auto_show_results = False
                     st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Map exploration tips
-            st.markdown("""
-            <div style="background: #111111; padding: 12px; border-radius: 8px; margin-top: 15px; border: 1px solid #222222;">
-                <div style="color: #00ff88; font-size: 12px; font-weight: 600; margin-bottom: 5px;">🗺️ Map Controls:</div>
-                <div style="color: #999999; font-size: 11px; line-height: 1.4;">
-                    • <strong>Drag:</strong> Rotate the 3D globe<br>
-                    • <strong>Scroll:</strong> Zoom in/out<br>
-                    • <strong>Right-click drag:</strong> Pan the view<br>
-                    • <strong>Layer buttons:</strong> Switch map styles<br>
-                    • <strong>City markers:</strong> Click for info
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
         else:
             st.warning("No area selected. Please go back to Step 1.")
             if st.button("⬅️ Go to Area Selection", use_container_width=True):
                 st.session_state.current_step = 1
-                st.session_state.current_guide_step = 0
                 st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1135,27 +759,22 @@ with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title"><div class="icon">🚀</div><h3 style="margin: 0;">Step 4: Running Analysis</h3></div>', unsafe_allow_html=True)
         
-        # Enhanced guidance
+        # Show analysis progress
         st.markdown("""
-        <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid #00ff88;">
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                <div style="background: #00ff88; color: #000; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">4</div>
-                <div style="color: #00ff88; font-weight: 600;">Processing Your Data</div>
+        <div class="guide-container">
+            <div class="guide-header">
+                <div class="guide-icon">⏳</div>
+                <div class="guide-title">Analysis in Progress</div>
             </div>
-            <div style="color: #cccccc; font-size: 13px; margin-left: 34px;">
-                We're analyzing satellite data. This may take a moment. Results will appear automatically!
+            <div class="guide-content">
+                Please wait while we process your vegetation analysis. This may take a few moments depending on the area size and time range.
             </div>
         </div>
         """, unsafe_allow_html=True)
         
         # Run the analysis automatically
         if not st.session_state.auto_show_results:
-            # Create a placeholder for progress with guide highlight
-            progress_highlight = ""
-            if st.session_state.show_guide and st.session_state.current_guide_step == 0:
-                progress_highlight = "highlight-element"
-            
-            st.markdown(f'<div class="{progress_highlight}">', unsafe_allow_html=True)
+            # Create a placeholder for progress
             progress_placeholder = st.empty()
             status_placeholder = st.empty()
             
@@ -1199,7 +818,6 @@ with col1:
                     # Auto-move to results after 2 seconds
                     time.sleep(2)
                     st.session_state.current_step = 5
-                    st.session_state.current_guide_step = 0
                     st.session_state.auto_show_results = True
                     st.rerun()
                     
@@ -1207,26 +825,6 @@ with col1:
                     st.error(f"Analysis failed: {str(e)}")
                     if st.button("🔄 Try Again", use_container_width=True):
                         st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        # What's happening info
-        st.markdown("""
-        <div style="background: #111111; padding: 12px; border-radius: 8px; margin-top: 15px; border: 1px solid #222222;">
-            <div style="color: #00ff88; font-size: 12px; font-weight: 600; margin-bottom: 5px;">🔍 What's Happening:</div>
-            <div style="color: #999999; font-size: 11px; line-height: 1.4;">
-                • Downloading satellite imagery from {satellite}<br>
-                • Filtering out clouds (≤{cloud}% coverage)<br>
-                • Calculating {indices_count} vegetation indices<br>
-                • Processing data for {area_name}<br>
-                • Generating interactive charts
-            </div>
-        </div>
-        """.format(
-            satellite=st.session_state.analysis_parameters['collection_choice'],
-            cloud=st.session_state.analysis_parameters['cloud_cover'],
-            indices_count=len(st.session_state.analysis_parameters['selected_indices']),
-            area_name=st.session_state.selected_area_name[:30] + "..." if len(st.session_state.selected_area_name) > 30 else st.session_state.selected_area_name
-        ), unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -1236,103 +834,47 @@ with col1:
         st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Step 5: Analysis Results</h3></div>', unsafe_allow_html=True)
         
         if st.session_state.analysis_results:
-            # Enhanced guidance
-            st.markdown("""
-            <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid #00ff88;">
-                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                    <div style="background: #00ff88; color: #000; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">5</div>
-                    <div style="color: #00ff88; font-weight: 600;">Your Results Are Ready!</div>
-                </div>
-                <div style="color: #cccccc; font-size: 13px; margin-left: 34px;">
-                    Explore your vegetation analysis results below. Download data or start a new analysis.
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Success message
-            st.success(f"""
-            ✅ **Analysis Complete!** 
-            
-            Successfully analyzed vegetation for **{st.session_state.selected_area_name}** 
-            over {len(st.session_state.analysis_results)} indices.
-            """)
-            
-            # Navigation buttons with guide highlights
+            # Navigation buttons
             col_back, col_new = st.columns(2)
-            
-            # Download button with guide highlight
-            download_highlight = ""
-            if st.session_state.show_guide and st.session_state.current_guide_step == 1:
-                download_highlight = "highlight-element"
-            
-            st.markdown(f'<div class="{download_highlight}">', unsafe_allow_html=True)
-            st.subheader("💾 Export Results")
-            
-            # Create CSV data
-            export_data = []
-            for index, data in st.session_state.analysis_results.items():
-                for date, value in zip(data['dates'], data['values']):
-                    export_data.append({
-                        'Date': date,
-                        'Index': index,
-                        'Value': value
-                    })
-            
-            if export_data:
-                df = pd.DataFrame(export_data)
-                csv_data = df.to_csv(index=False)
-                
-                st.download_button(
-                    label="📥 Download CSV File",
-                    data=csv_data,
-                    file_name=f"vegetation_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                    key="download_csv"
-                )
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            # New analysis button with guide highlight
-            new_highlight = ""
-            if st.session_state.show_guide and st.session_state.current_guide_step == 2:
-                new_highlight = "highlight-element"
-            
-            st.markdown(f'<div class="{new_highlight}">', unsafe_allow_html=True)
-            if st.button("🔄 Start New Analysis", use_container_width=True, key="new_analysis"):
-                # Reset for new analysis
-                for key in ['selected_geometry', 'analysis_results', 'selected_coordinates', 
-                           'selected_area_name', 'analysis_parameters']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.session_state.current_step = 1
-                st.session_state.current_guide_step = 0
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Back button
             with col_back:
                 if st.button("⬅️ Back to Map", use_container_width=True):
                     st.session_state.current_step = 3
-                    st.session_state.current_guide_step = 0
                     st.rerun()
             
-            # What you can do next
-            st.markdown("""
-            <div style="background: #111111; padding: 12px; border-radius: 8px; margin-top: 15px; border: 1px solid #222222;">
-                <div style="color: #00ff88; font-size: 12px; font-weight: 600; margin-bottom: 5px;">🚀 What's Next:</div>
-                <div style="color: #999999; font-size: 11px; line-height: 1.4;">
-                    • <strong>Download CSV:</strong> For further analysis in Excel/Python<br>
-                    • <strong>Start New Analysis:</strong> Try different area or parameters<br>
-                    • <strong>Compare Results:</strong> Run analysis for different time periods<br>
-                    • <strong>Share Findings:</strong> Use charts for reports/presentations
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            with col_new:
+                if st.button("🔄 New Analysis", use_container_width=True):
+                    # Reset for new analysis
+                    for key in ['selected_geometry', 'analysis_results', 'selected_coordinates', 
+                               'selected_area_name', 'analysis_parameters']:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.session_state.current_step = 1
+                    st.rerun()
+            
+            # Export options
+            st.subheader("💾 Export Results")
+            if st.button("📥 Download CSV", use_container_width=True):
+                # Create CSV data
+                export_data = []
+                for index, data in st.session_state.analysis_results.items():
+                    for date, value in zip(data['dates'], data['values']):
+                        export_data.append({
+                            'Date': date,
+                            'Index': index,
+                            'Value': value
+                        })
+                
+                df = pd.DataFrame(export_data)
+                st.download_button(
+                    label="Click to Download CSV",
+                    data=df.to_csv(index=False),
+                    file_name=f"vegetation_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
         else:
             st.warning("No results available. Please run an analysis first.")
             if st.button("⬅️ Go Back", use_container_width=True):
                 st.session_state.current_step = 4
-                st.session_state.current_guide_step = 0
                 st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1342,13 +884,7 @@ with col2:
     if st.session_state.current_step <= 3:
         # Show 3D Mapbox Globe for steps 1-3
         st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-        
-        # Map title with guide interaction
-        map_title = '<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Interactive 3D Global Map</h3>'
-        if st.session_state.show_guide and st.session_state.current_step == 3 and st.session_state.current_guide_step == 0:
-            map_title += '<div style="color: #00ff88; font-size: 12px; margin-top: 5px;">👆 Your guide will show you how to explore this 3D map</div>'
-        map_title += '</div>'
-        st.markdown(map_title, unsafe_allow_html=True)
+        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Interactive 3D Global Map</h3></div>', unsafe_allow_html=True)
         
         # Prepare coordinates for the map
         map_center = [0, 20]
@@ -1489,37 +1025,10 @@ with col2:
             .mapboxgl-ctrl button:hover {{
               background-color: #111111 !important;
             }}
-            .guide-pointer {{
-              position: absolute;
-              top: 50%;
-              left: 50%;
-              transform: translate(-50%, -50%);
-              width: 60px;
-              height: 60px;
-              background: rgba(0, 255, 136, 0.2);
-              border: 2px solid #00ff88;
-              border-radius: 50%;
-              animation: pulseGuide 2s infinite;
-              z-index: 1001;
-              pointer-events: none;
-            }}
-            @keyframes pulseGuide {{
-              0%, 100% {{ 
-                transform: translate(-50%, -50%) scale(1);
-                opacity: 0.5;
-              }}
-              50% {{ 
-                transform: translate(-50%, -50%) scale(1.2);
-                opacity: 0.8;
-              }}
-            }}
           </style>
         </head>
         <body>
           <div id="map"></div>
-          
-          {f'''
-          {'''<div class="guide-pointer"></div>''' if st.session_state.show_guide and st.session_state.current_step == 3 and st.session_state.current_guide_step == 0 else ''}
           
           <div class="map-overlay">
             <div class="overlay-title">🌍 KHISBA GIS</div>
@@ -1792,7 +1301,7 @@ with col2:
         st.markdown('</div>', unsafe_allow_html=True)
     
     elif st.session_state.current_step == 5:
-        # Show analysis results with enhanced visuals
+        # Show analysis results
         st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
         st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">📊 Vegetation Analysis Results</h3></div>', unsafe_allow_html=True)
         
@@ -1821,13 +1330,6 @@ with col2:
                 if data['dates'] and data['values']:
                     # Create Plotly chart
                     fig = go.Figure()
-                    
-                    # Guide highlight for charts
-                    chart_highlight = ""
-                    if st.session_state.show_guide and st.session_state.current_guide_step == 0 and index == list(st.session_state.analysis_results.keys())[0]:
-                        chart_highlight = "highlight-element"
-                    
-                    st.markdown(f'<div class="{chart_highlight}">', unsafe_allow_html=True)
                     
                     fig.add_trace(go.Scatter(
                         x=data['dates'],
@@ -1884,7 +1386,6 @@ with col2:
                     )
                     
                     st.plotly_chart(fig, use_container_width=True, key=f"chart_{index}")
-                    st.markdown('</div>', unsafe_allow_html=True)
             
             # Summary statistics
             st.markdown('<div style="padding: 0 20px;"><h4>📈 Summary Statistics</h4></div>', unsafe_allow_html=True)
@@ -1931,81 +1432,16 @@ with col2:
         
         st.markdown('</div>', unsafe_allow_html=True)
 
-# Render the guide (floating panel)
-render_guide()
-
 # Footer
 st.markdown("""
 <div style="text-align: center; color: #666666; font-size: 12px; padding: 30px 0 20px 0; border-top: 1px solid #222222; margin-top: 20px;">
     <p style="margin: 5px 0;">KHISBA GIS • Interactive 3D Global Vegetation Analytics Platform</p>
-    <p style="margin: 5px 0;">Interactive Hand Guide • Auto Results • Cool 3D Map • Step-by-Step Workflow</p>
+    <p style="margin: 5px 0;">Auto Results Display • Cool 3D Map • Guided Workflow</p>
     <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">👋 Hand Guide</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">🚀 Auto Results</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">🗺️ 3D Mapbox</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">v3.0</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">3D Mapbox</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Auto Results</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Step-by-Step</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">v2.2</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
-
-# JavaScript for guide navigation
-guide_navigation_js = '''
-<script>
-    // Listen for guide actions
-    document.addEventListener('guideAction', function(e) {
-        const action = e.detail;
-        
-        if (action === 'guide_prev') {
-            window.parent.postMessage({
-                type: 'streamlit:setComponentValue',
-                value: 'guide_prev_button'
-            }, '*');
-        } else if (action === 'guide_next') {
-            window.parent.postMessage({
-                type: 'streamlit:setComponentValue',
-                value: 'guide_next_button'
-            }, '*');
-        } else if (action.startsWith('guide_jump_')) {
-            const step = parseInt(action.split('_')[2]);
-            window.parent.postMessage({
-                type: 'streamlit:setComponentValue',
-                value: `guide_jump_${step}_button`
-            }, '*');
-        } else if (action === 'toggle_guide') {
-            window.parent.postMessage({
-                type: 'streamlit:setComponentValue',
-                value: 'toggle_guide_button'
-            }, '*');
-        }
-    });
-</script>
-'''
-
-st.components.v1.html(guide_navigation_js, height=0)
-
-# Guide navigation buttons (hidden but functional)
-col_guide1, col_guide2, col_guide3 = st.columns(3)
-with col_guide1:
-    if st.button("👈 Prev Guide", key="guide_prev_button", help="Previous guide step"):
-        if st.session_state.current_guide_step > 0:
-            st.session_state.current_guide_step -= 1
-        st.rerun()
-with col_guide2:
-    if st.button("Next Guide 👉", key="guide_next_button", help="Next guide step"):
-        current_guides = GUIDES.get(st.session_state.current_step, [])
-        if st.session_state.current_guide_step < len(current_guides) - 1:
-            st.session_state.current_guide_step += 1
-        elif st.session_state.current_step < 5:
-            st.session_state.current_step += 1
-            st.session_state.current_guide_step = 0
-        st.rerun()
-with col_guide3:
-    if st.button("Toggle Guide 👁️", key="toggle_guide_button", help="Show/hide guide"):
-        st.session_state.show_guide = not st.session_state.show_guide
-        st.rerun()
-
-# Create jump buttons for each guide step
-for step_num in range(6):  # Max 6 steps per guide
-    if st.button(f"Jump to guide {step_num}", key=f"guide_jump_{step_num}_button", help=f"Jump to guide step {step_num}"):
-        st.session_state.current_guide_step = step_num
-        st.rerun()
