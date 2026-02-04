@@ -1,11 +1,8 @@
 import streamlit as st
 import json
 import pandas as pd
-import folium
-from streamlit_folium import st_folium
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
+from datetime import datetime
 import ee
 import traceback
 
@@ -309,34 +306,6 @@ st.markdown("""
         position: relative;
     }
     
-    .map-placeholder {
-        width: 100%;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: var(--card-black);
-        color: var(--text-gray);
-        font-size: 14px;
-    }
-    
-    /* Results container */
-    .results-placeholder {
-        width: 100%;
-        padding: 40px;
-        text-align: center;
-        background: var(--card-black);
-        border-radius: 10px;
-        border: 2px dashed var(--border-gray);
-        color: var(--text-gray);
-    }
-    
-    .results-placeholder .icon {
-        font-size: 48px;
-        margin-bottom: 20px;
-        color: var(--border-gray);
-    }
-    
     /* Hide Streamlit default elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
@@ -351,6 +320,22 @@ st.markdown("""
         .step-label {
             font-size: 10px;
             max-width: 60px;
+        }
+    }
+    
+    /* Auto-transition animation */
+    .auto-transition {
+        animation: slideIn 0.5s ease-out;
+    }
+    
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
         }
     }
 </style>
@@ -433,6 +418,8 @@ if 'selected_area_name' not in st.session_state:
     st.session_state.selected_area_name = None
 if 'analysis_parameters' not in st.session_state:
     st.session_state.analysis_parameters = None
+if 'auto_show_results' not in st.session_state:
+    st.session_state.auto_show_results = False
 
 # Page configuration
 st.set_page_config(
@@ -731,7 +718,7 @@ with col1:
                 <div class="guide-title">Preview Area</div>
             </div>
             <div class="guide-content">
-                Review your selected area on the map. Make sure the highlighted region matches your intended analysis area.
+                Review your selected area on the 3D map. Make sure the highlighted region matches your intended analysis area.
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -757,6 +744,7 @@ with col1:
             with col_next:
                 if st.button("🚀 Run Analysis Now", type="primary", use_container_width=True):
                     st.session_state.current_step = 4
+                    st.session_state.auto_show_results = False
                     st.rerun()
         else:
             st.warning("No area selected. Please go back to Step 1.")
@@ -784,54 +772,59 @@ with col1:
         </div>
         """, unsafe_allow_html=True)
         
-        # Simulate analysis steps
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        analysis_steps = [
-            "Initializing Earth Engine...",
-            "Loading satellite data...",
-            "Processing vegetation indices...",
-            "Calculating statistics...",
-            "Generating visualizations..."
-        ]
-        
-        # Run the actual analysis
-        try:
-            params = st.session_state.analysis_parameters
-            geometry = st.session_state.selected_geometry
+        # Run the analysis automatically
+        if not st.session_state.auto_show_results:
+            # Create a placeholder for progress
+            progress_placeholder = st.empty()
+            status_placeholder = st.empty()
             
-            for i, step in enumerate(analysis_steps):
-                status_text.text(step)
-                progress_bar.progress((i + 1) / len(analysis_steps))
+            with progress_placeholder.container():
+                progress_bar = st.progress(0)
+                status_text = st.empty()
                 
-                # Simulate processing time
-                import time
-                time.sleep(1)
-            
-            # Perform actual analysis (simplified version)
-            results = {}
-            for index in params['selected_indices']:
-                # Simulate data
-                import random
-                dates = [f"2023-{m:02d}-15" for m in range(1, 13)]
-                values = [random.uniform(0.1, 0.9) for _ in range(12)]
-                results[index] = {'dates': dates, 'values': values}
-            
-            st.session_state.analysis_results = results
-            progress_bar.progress(1.0)
-            status_text.text("✅ Analysis Complete!")
-            
-            st.success("Analysis completed successfully!")
-            
-            if st.button("📊 View Results", type="primary", use_container_width=True):
-                st.session_state.current_step = 5
-                st.rerun()
+                analysis_steps = [
+                    "Initializing Earth Engine...",
+                    "Loading satellite data...",
+                    "Processing vegetation indices...",
+                    "Calculating statistics...",
+                    "Generating visualizations..."
+                ]
                 
-        except Exception as e:
-            st.error(f"Analysis failed: {str(e)}")
-            if st.button("🔄 Try Again", use_container_width=True):
-                st.rerun()
+                # Simulate analysis progress
+                try:
+                    params = st.session_state.analysis_parameters
+                    
+                    for i, step in enumerate(analysis_steps):
+                        status_text.text(step)
+                        progress_bar.progress((i + 1) / len(analysis_steps))
+                        
+                        # Simulate processing time
+                        import time
+                        time.sleep(1)
+                    
+                    # Create simulated results
+                    results = {}
+                    for index in params['selected_indices']:
+                        # Simulate data
+                        import random
+                        dates = [f"2023-{m:02d}-15" for m in range(1, 13)]
+                        values = [random.uniform(0.1, 0.9) for _ in range(12)]
+                        results[index] = {'dates': dates, 'values': values}
+                    
+                    st.session_state.analysis_results = results
+                    progress_bar.progress(1.0)
+                    status_text.text("✅ Analysis Complete!")
+                    
+                    # Auto-move to results after 2 seconds
+                    time.sleep(2)
+                    st.session_state.current_step = 5
+                    st.session_state.auto_show_results = True
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Analysis failed: {str(e)}")
+                    if st.button("🔄 Try Again", use_container_width=True):
+                        st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -841,51 +834,14 @@ with col1:
         st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Step 5: Analysis Results</h3></div>', unsafe_allow_html=True)
         
         if st.session_state.analysis_results:
-            st.success("✅ Analysis completed successfully!")
+            # Navigation buttons
+            col_back, col_new = st.columns(2)
+            with col_back:
+                if st.button("⬅️ Back to Map", use_container_width=True):
+                    st.session_state.current_step = 3
+                    st.rerun()
             
-            # Summary
-            st.subheader("📈 Summary")
-            
-            summary_data = []
-            for index, data in st.session_state.analysis_results.items():
-                if data['values']:
-                    values = data['values']
-                    summary_data.append({
-                        'Index': index,
-                        'Mean': round(sum(values) / len(values), 3),
-                        'Min': round(min(values), 3),
-                        'Max': round(max(values), 3),
-                        'Trend': '📈 Increasing' if values[-1] > values[0] else '📉 Decreasing'
-                    })
-            
-            if summary_data:
-                st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
-            
-            # Export options
-            st.subheader("💾 Export Results")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if st.button("📥 Download CSV", use_container_width=True):
-                    # Create CSV data
-                    export_data = []
-                    for index, data in st.session_state.analysis_results.items():
-                        for date, value in zip(data['dates'], data['values']):
-                            export_data.append({
-                                'Date': date,
-                                'Index': index,
-                                'Value': value
-                            })
-                    
-                    df = pd.DataFrame(export_data)
-                    st.download_button(
-                        label="Click to Download",
-                        data=df.to_csv(index=False),
-                        file_name=f"vegetation_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv"
-                    )
-            
-            with col2:
+            with col_new:
                 if st.button("🔄 New Analysis", use_container_width=True):
                     # Reset for new analysis
                     for key in ['selected_geometry', 'analysis_results', 'selected_coordinates', 
@@ -895,11 +851,26 @@ with col1:
                     st.session_state.current_step = 1
                     st.rerun()
             
-            # Back button
-            if st.button("⬅️ Back to Map", use_container_width=True):
-                st.session_state.current_step = 3
-                st.rerun()
-        
+            # Export options
+            st.subheader("💾 Export Results")
+            if st.button("📥 Download CSV", use_container_width=True):
+                # Create CSV data
+                export_data = []
+                for index, data in st.session_state.analysis_results.items():
+                    for date, value in zip(data['dates'], data['values']):
+                        export_data.append({
+                            'Date': date,
+                            'Index': index,
+                            'Value': value
+                        })
+                
+                df = pd.DataFrame(export_data)
+                st.download_button(
+                    label="Click to Download CSV",
+                    data=df.to_csv(index=False),
+                    file_name=f"vegetation_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
         else:
             st.warning("No results available. Please run an analysis first.")
             if st.button("⬅️ Go Back", use_container_width=True):
@@ -909,217 +880,451 @@ with col1:
         st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
-    # Right column content changes based on step
-    if st.session_state.current_step == 1:
-        st.markdown('<div class="card" style="padding: 20px;">', unsafe_allow_html=True)
-        st.markdown('<h3>🗺️ Area Selection Guide</h3>', unsafe_allow_html=True)
-        st.markdown("""
-        <div style="color: #cccccc; line-height: 1.6;">
-        <p>Welcome to KHISBA GIS! Follow these simple steps:</p>
-        
-        <div style="background: #111111; padding: 15px; border-radius: 8px; margin: 15px 0;">
-        <div style="display: flex; align-items: center; margin-bottom: 10px;">
-            <div style="background: #00ff88; color: #000; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">1</div>
-            <div><strong>Select a Country</strong></div>
-        </div>
-        <p style="margin-left: 34px; margin-bottom: 0;">Choose from the dropdown menu in the left panel</p>
-        </div>
-        
-        <div style="background: #111111; padding: 15px; border-radius: 8px; margin: 15px 0;">
-        <div style="display: flex; align-items: center; margin-bottom: 10px;">
-            <div style="background: #00ff88; color: #000; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">2</div>
-            <div><strong>Narrow Down (Optional)</strong></div>
-        </div>
-        <p style="margin-left: 34px; margin-bottom: 0;">Select state/province and municipality if needed</p>
-        </div>
-        
-        <div style="background: #111111; padding: 15px; border-radius: 8px; margin: 15px 0;">
-        <div style="display: flex; align-items: center; margin-bottom: 10px;">
-            <div style="background: #00ff88; color: #000; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">3</div>
-            <div><strong>Confirm Selection</strong></div>
-        </div>
-        <p style="margin-left: 34px; margin-bottom: 0;">Click "Confirm Selection" to proceed</p>
-        </div>
-        
-        <p style="color: #00ff88; margin-top: 20px;">💡 <strong>Tip:</strong> Start with a country, then refine as needed for more precise analysis.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # World map placeholder
-        st.markdown('<div class="map-container">', unsafe_allow_html=True)
-        st.markdown("""
-        <div class="map-placeholder">
-            <div style="text-align: center;">
-                <div style="font-size: 48px; margin-bottom: 20px;">🌍</div>
-                <div style="color: #666666; font-size: 16px;">Select an area to begin</div>
-                <div style="color: #444444; font-size: 14px; margin-top: 10px;">The map will appear here after selection</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    elif st.session_state.current_step == 2:
-        st.markdown('<div class="card" style="padding: 20px;">', unsafe_allow_html=True)
-        st.markdown('<h3>⚙️ Parameter Guide</h3>', unsafe_allow_html=True)
-        
-        if st.session_state.selected_area_name:
-            st.markdown(f"""
-            <div style="color: #cccccc; line-height: 1.6;">
-            <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #00ff88;">
-                <strong style="color: #00ff88;">Selected Area:</strong> {st.session_state.selected_area_name}
-            </div>
-            
-            <h4 style="color: #00ff88; margin-top: 20px;">Recommended Settings:</h4>
-            
-            <div style="background: #111111; padding: 15px; border-radius: 8px; margin: 10px 0;">
-                <strong>📅 Time Range:</strong> 1 year for best results
-            </div>
-            
-            <div style="background: #111111; padding: 15px; border-radius: 8px; margin: 10px 0;">
-                <strong>🛰️ Satellite Source:</strong>
-                <ul style="margin: 10px 0 0 20px;">
-                    <li><strong>Sentinel-2:</strong> Higher resolution, more frequent updates</li>
-                    <li><strong>Landsat-8:</strong> Historical data, good for long-term analysis</li>
-                </ul>
-            </div>
-            
-            <div style="background: #111111; padding: 15px; border-radius: 8px; margin: 10px 0;">
-                <strong>🌿 Vegetation Indices:</strong>
-                <ul style="margin: 10px 0 0 20px;">
-                    <li><strong>NDVI:</strong> General vegetation health</li>
-                    <li><strong>EVI:</strong> Improved sensitivity in dense vegetation</li>
-                    <li><strong>SAVI:</strong> Better for arid regions</li>
-                    <li><strong>NDWI:</strong> Water content in vegetation</li>
-                </ul>
-            </div>
-            
-            <p style="color: #00ff88; margin-top: 20px;">💡 <strong>Tip:</strong> Start with NDVI and EVI for most analyses.</p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.warning("Please select an area first in Step 1.")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    elif st.session_state.current_step == 3:
-        # Show the map with selected area
+    # Right column - Show map or results based on step
+    if st.session_state.current_step <= 3:
+        # Show 3D Mapbox Globe for steps 1-3
         st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Selected Area Preview</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Interactive 3D Global Map</h3></div>', unsafe_allow_html=True)
+        
+        # Prepare coordinates for the map
+        map_center = [0, 20]
+        map_zoom = 2
+        bounds_data = None
         
         if st.session_state.selected_coordinates:
-            # Generate simple folium map
-            import folium
-            from streamlit_folium import st_folium
-            
-            center = st.session_state.selected_coordinates['center'][::-1]  # Folium expects [lat, lon]
-            
-            m = folium.Map(
-                location=center,
-                zoom_start=st.session_state.selected_coordinates['zoom'],
-                tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                attr='Esri',
-                width='100%',
-                height='100%'
-            )
-            
-            # Add rectangle for selected area
-            if st.session_state.selected_coordinates['bounds']:
-                bounds = st.session_state.selected_coordinates['bounds']
-                folium.Rectangle(
-                    bounds=[[bounds[0][0], bounds[0][1]], [bounds[1][0], bounds[1][1]]],
-                    color='#00ff88',
-                    fill=True,
-                    fill_color='#00ff88',
-                    fill_opacity=0.2,
-                    weight=3,
-                    popup=st.session_state.selected_area_name
-                ).add_to(m)
-            
-            # Add marker at center
-            folium.Marker(
-                location=center,
-                popup=st.session_state.selected_area_name,
-                icon=folium.Icon(color='green', icon='info-sign')
-            ).add_to(m)
-            
-            # Display map
-            st_folium(m, width=700, height=500)
-            
-            # Map instructions
-            st.markdown("""
-            <div style="background: #111111; padding: 15px; border-radius: 8px; margin-top: 10px; font-size: 14px; color: #cccccc;">
-            <strong>🗺️ Map Controls:</strong>
-            <ul style="margin: 5px 0 0 20px;">
-                <li>Drag to move the map</li>
-                <li>Scroll to zoom in/out</li>
-                <li>Click on the green rectangle for area details</li>
-                <li>Green marker shows area center</li>
-            </ul>
+            map_center = st.session_state.selected_coordinates['center']
+            map_zoom = st.session_state.selected_coordinates['zoom']
+            bounds_data = st.session_state.selected_coordinates['bounds']
+        
+        # Generate HTML for Mapbox interactive globe
+        mapbox_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+          <title>KHISBA GIS - 3D Global Map</title>
+          <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+          <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+          <style>
+            body {{ 
+              margin: 0; 
+              padding: 0; 
+              background: #000000;
+            }}
+            #map {{ 
+              position: absolute; 
+              top: 0; 
+              bottom: 0; 
+              width: 100%; 
+              border-radius: 8px;
+            }}
+            .map-overlay {{
+              position: absolute;
+              top: 20px;
+              right: 20px;
+              background: rgba(10, 10, 10, 0.9);
+              color: white;
+              padding: 15px;
+              border-radius: 8px;
+              border: 1px solid #222222;
+              max-width: 250px;
+              z-index: 1000;
+              font-family: 'Inter', sans-serif;
+            }}
+            .overlay-title {{
+              color: #00ff88;
+              font-weight: 600;
+              margin-bottom: 10px;
+              font-size: 14px;
+            }}
+            .overlay-text {{
+              color: #cccccc;
+              font-size: 12px;
+              line-height: 1.4;
+            }}
+            .coordinates-display {{
+              position: absolute;
+              bottom: 20px;
+              left: 20px;
+              background: rgba(10, 10, 10, 0.9);
+              color: white;
+              padding: 10px 15px;
+              border-radius: 6px;
+              border: 1px solid #222222;
+              font-family: monospace;
+              font-size: 12px;
+              z-index: 1000;
+            }}
+            .selected-area {{
+              position: absolute;
+              top: 20px;
+              left: 20px;
+              background: rgba(10, 10, 10, 0.9);
+              color: white;
+              padding: 15px;
+              border-radius: 8px;
+              border: 1px solid #222222;
+              max-width: 300px;
+              z-index: 1000;
+              font-family: 'Inter', sans-serif;
+            }}
+            .area-title {{
+              color: #00ff88;
+              font-weight: 600;
+              margin-bottom: 10px;
+              font-size: 14px;
+            }}
+            .area-details {{
+              color: #cccccc;
+              font-size: 12px;
+              line-height: 1.4;
+            }}
+            .layer-switcher {{
+              position: absolute;
+              top: 20px;
+              right: 20px;
+              background: rgba(10, 10, 10, 0.9);
+              border: 1px solid #222222;
+              border-radius: 8px;
+              overflow: hidden;
+              z-index: 1000;
+            }}
+            .layer-button {{
+              display: block;
+              width: 120px;
+              padding: 10px;
+              background: #0a0a0a;
+              color: #ffffff;
+              border: none;
+              border-bottom: 1px solid #222222;
+              cursor: pointer;
+              font-size: 12px;
+              text-align: left;
+              transition: all 0.2s;
+            }}
+            .layer-button:hover {{
+              background: #111111;
+            }}
+            .layer-button.active {{
+              background: #00ff88;
+              color: #000000;
+              font-weight: bold;
+            }}
+            .layer-button:last-child {{
+              border-bottom: none;
+            }}
+            .mapboxgl-ctrl-group {{
+              background: #0a0a0a !important;
+              border: 1px solid #222222 !important;
+            }}
+            .mapboxgl-ctrl button {{
+              background-color: #0a0a0a !important;
+              color: #ffffff !important;
+            }}
+            .mapboxgl-ctrl button:hover {{
+              background-color: #111111 !important;
+            }}
+          </style>
+        </head>
+        <body>
+          <div id="map"></div>
+          
+          <div class="map-overlay">
+            <div class="overlay-title">🌍 KHISBA GIS</div>
+            <div class="overlay-text">
+              • Drag to rotate the globe<br>
+              • Scroll to zoom in/out<br>
+              • Right-click to pan<br>
+              • Selected area highlighted in green
             </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.warning("No area selected. Please go back to Step 1.")
+          </div>
+          
+          <div class="layer-switcher">
+            <button class="layer-button" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite Streets</button>
+            <button class="layer-button" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
+            <button class="layer-button active" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
+            <button class="layer-button" data-style="mapbox://styles/mapbox/light-v11">Light</button>
+            <button class="layer-button" data-style="mapbox://styles/mapbox/dark-v11">Dark</button>
+          </div>
+          
+          <div class="coordinates-display">
+            <div>Lat: <span id="lat-display">0.00°</span></div>
+            <div>Lon: <span id="lon-display">0.00°</span></div>
+          </div>
+          
+          {f'''
+          <div class="selected-area">
+            <div class="area-title">📍 Selected Area</div>
+            <div class="area-details">
+              <strong>{st.session_state.selected_area_name if hasattr(st.session_state, 'selected_area_name') else 'None'}</strong><br>
+              Level: {st.session_state.selected_area_level if hasattr(st.session_state, 'selected_area_level') else 'None'}<br>
+              Coordinates: {map_center[1]:.4f}°, {map_center[0]:.4f}°<br>
+              Status: <span style="color: #00ff88;">Ready for Analysis</span>
+            </div>
+          </div>
+          ''' if st.session_state.selected_area_name else ''}
+          
+          <script>
+            mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
+
+            // Create a new map instance with OUTDOORS as default
+            const map = new mapboxgl.Map({{
+              container: 'map',
+              style: 'mapbox://styles/mapbox/outdoors-v12',
+              center: {map_center},
+              zoom: {map_zoom},
+              pitch: 45,
+              bearing: 0
+            }});
+
+            // Add navigation controls
+            map.addControl(new mapboxgl.NavigationControl());
+
+            // Add scale control
+            map.addControl(new mapboxgl.ScaleControl({{
+              unit: 'metric'
+            }}));
+
+            // Add fullscreen control
+            map.addControl(new mapboxgl.FullscreenControl());
+
+            // Layer switcher functionality
+            const layerButtons = document.querySelectorAll('.layer-button');
+            layerButtons.forEach(button => {{
+              button.addEventListener('click', () => {{
+                // Update active button
+                layerButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                
+                // Change map style
+                map.setStyle(button.dataset.style);
+                
+                // Re-add selected area after style change
+                setTimeout(() => {{
+                  {f'''
+                  if ({bounds_data}) {{
+                    const bounds = {bounds_data};
+                    
+                    // Remove existing layers if they exist
+                    if (map.getSource('selected-area')) {{
+                      map.removeLayer('selected-area-fill');
+                      map.removeLayer('selected-area-border');
+                      map.removeSource('selected-area');
+                    }}
+                    
+                    // Create a polygon for the selected area
+                    map.addSource('selected-area', {{
+                      'type': 'geojson',
+                      'data': {{
+                        'type': 'Feature',
+                        'geometry': {{
+                          'type': 'Polygon',
+                          'coordinates': [[
+                            [bounds[0][1], bounds[0][0]],
+                            [bounds[1][1], bounds[0][0]],
+                            [bounds[1][1], bounds[1][0]],
+                            [bounds[0][1], bounds[1][0]],
+                            [bounds[0][1], bounds[0][0]]
+                          ]]
+                        }}
+                      }}
+                    }});
+
+                    // Add the polygon layer
+                    map.addLayer({{
+                      'id': 'selected-area-fill',
+                      'type': 'fill',
+                      'source': 'selected-area',
+                      'layout': {{}},
+                      'paint': {{
+                        'fill-color': '#00ff88',
+                        'fill-opacity': 0.2
+                      }}
+                    }});
+
+                    // Add border for the polygon
+                    map.addLayer({{
+                      'id': 'selected-area-border',
+                      'type': 'line',
+                      'source': 'selected-area',
+                      'layout': {{}},
+                      'paint': {{
+                        'line-color': '#00ff88',
+                        'line-width': 3,
+                        'line-opacity': 0.8
+                      }}
+                    }});
+                  }}
+                  ''' if bounds_data else ''}
+                }}, 500);
+              }});
+            }});
+
+            // Wait for map to load
+            map.on('load', () => {{
+              // Add event listener for mouse move to show coordinates
+              map.on('mousemove', (e) => {{
+                document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(2) + '°';
+                document.getElementById('lon-display').textContent = e.lngLat.lng.toFixed(2) + '°';
+              }});
+
+              // Add selected area polygon if bounds are available
+              {f'''
+              if ({bounds_data}) {{
+                const bounds = {bounds_data};
+                
+                // Create a polygon for the selected area
+                map.addSource('selected-area', {{
+                  'type': 'geojson',
+                  'data': {{
+                    'type': 'Feature',
+                    'geometry': {{
+                      'type': 'Polygon',
+                      'coordinates': [[
+                        [bounds[0][1], bounds[0][0]],
+                        [bounds[1][1], bounds[0][0]],
+                        [bounds[1][1], bounds[1][0]],
+                        [bounds[0][1], bounds[1][0]],
+                        [bounds[0][1], bounds[0][0]]
+                      ]]
+                    }}
+                  }}
+                }});
+
+                // Add the polygon layer
+                map.addLayer({{
+                  'id': 'selected-area-fill',
+                  'type': 'fill',
+                  'source': 'selected-area',
+                  'layout': {{}},
+                  'paint': {{
+                    'fill-color': '#00ff88',
+                    'fill-opacity': 0.2
+                  }}
+                }});
+
+                // Add border for the polygon
+                map.addLayer({{
+                  'id': 'selected-area-border',
+                  'type': 'line',
+                  'source': 'selected-area',
+                  'layout': {{}},
+                  'paint': {{
+                    'line-color': '#00ff88',
+                    'line-width': 3,
+                    'line-opacity': 0.8
+                  }}
+                }});
+
+                // Fly to the selected area with animation
+                map.flyTo({{
+                  center: {map_center},
+                  zoom: {map_zoom},
+                  duration: 2000,
+                  essential: true
+                }});
+              }}
+              ''' if bounds_data else ''}
+
+              // Add some sample cities for interaction
+              const cities = [
+                {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital' }},
+                {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical capital' }},
+                {{ name: 'Tokyo', coordinates: [139.6917, 35.6895], country: 'Japan', info: 'Mega metropolis' }},
+                {{ name: 'Sydney', coordinates: [151.2093, -33.8688], country: 'Australia', info: 'Harbor city' }},
+                {{ name: 'Cairo', coordinates: [31.2357, 30.0444], country: 'Egypt', info: 'Nile Delta' }}
+              ];
+
+              // Add city markers
+              cities.forEach(city => {{
+                // Create a custom marker element
+                const el = document.createElement('div');
+                el.className = 'marker';
+                el.style.backgroundColor = '#ffaa00';
+                el.style.width = '15px';
+                el.style.height = '15px';
+                el.style.borderRadius = '50%';
+                el.style.border = '2px solid #ffffff';
+                el.style.boxShadow = '0 0 10px rgba(255, 170, 0, 0.5)';
+                el.style.cursor = 'pointer';
+
+                // Create a popup
+                const popup = new mapboxgl.Popup({{
+                  offset: 25,
+                  closeButton: true,
+                  closeOnClick: false
+                }}).setHTML(
+                  `<h3>${{city.name}}</h3>
+                   <p><strong>Country:</strong> ${{city.country}}</p>
+                   <p>${{city.info}}</p>`
+                );
+
+                // Create marker
+                new mapboxgl.Marker(el)
+                  .setLngLat(city.coordinates)
+                  .setPopup(popup)
+                  .addTo(map);
+              }});
+            }});
+          </script>
+        </body>
+        </html>
+        """
+        
+        # Display the Mapbox HTML
+        st.components.v1.html(mapbox_html, height=550)
         
         st.markdown('</div>', unsafe_allow_html=True)
     
     elif st.session_state.current_step == 4:
-        # Analysis progress visualization
-        st.markdown('<div class="card" style="padding: 20px;">', unsafe_allow_html=True)
-        st.markdown('<h3>🚀 Analysis Progress</h3>', unsafe_allow_html=True)
+        # During analysis, show loading state
+        st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
+        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Analysis in Progress</h3></div>', unsafe_allow_html=True)
         
-        # Animated progress visualization
-        st.markdown("""
-        <div style="text-align: center; padding: 40px 0;">
-            <div style="font-size: 64px; margin-bottom: 20px; animation: spin 2s linear infinite;">🔄</div>
-            <div style="color: #00ff88; font-size: 18px; margin-bottom: 10px;">Processing Your Request</div>
-            <div style="color: #666666; font-size: 14px;">This may take a few moments...</div>
+        # Show loading animation with analysis details
+        st.markdown(f"""
+        <div style="text-align: center; padding: 100px 0;">
+            <div style="font-size: 64px; margin-bottom: 20px; animation: spin 2s linear infinite;">🌱</div>
+            <div style="color: #00ff88; font-size: 18px; margin-bottom: 10px;">Processing Vegetation Data</div>
+            <div style="color: #666666; font-size: 14px;">Analyzing {st.session_state.selected_area_name}</div>
         </div>
         
         <style>
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        @keyframes spin {{
+            0% {{ transform: rotate(0deg); }}
+            100% {{ transform: rotate(360deg); }}
+        }}
         </style>
         """, unsafe_allow_html=True)
-        
-        # What's happening info
-        st.markdown("""
-        <div style="background: #111111; padding: 15px; border-radius: 8px; margin-top: 20px;">
-            <h4 style="color: #00ff88; margin-bottom: 10px;">What's happening:</h4>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                <div style="background: #0a0a0a; padding: 10px; border-radius: 6px;">
-                    <div style="color: #00ff88; font-size: 12px;">📡 Satellite Data</div>
-                    <div style="font-size: 12px; color: #cccccc;">Downloading from {}</div>
-                </div>
-                <div style="background: #0a0a0a; padding: 10px; border-radius: 6px;">
-                    <div style="color: #00ff88; font-size: 12px;">🌿 Vegetation Indices</div>
-                    <div style="font-size: 12px; color: #cccccc;">Calculating {}</div>
-                </div>
-                <div style="background: #0a0a0a; padding: 10px; border-radius: 6px;">
-                    <div style="color: #00ff88; font-size: 12px;">☁️ Cloud Filtering</div>
-                    <div style="font-size: 12px; color: #cccccc;">Removing clouds</div>
-                </div>
-                <div style="background: #0a0a0a; padding: 10px; border-radius: 6px;">
-                    <div style="color: #00ff88; font-size: 12px;">📊 Statistics</div>
-                    <div style="font-size: 12px; color: #cccccc;">Generating reports</div>
-                </div>
-            </div>
-        </div>
-        """.format(
-            st.session_state.analysis_parameters['collection_choice'],
-            ', '.join(st.session_state.analysis_parameters['selected_indices'])
-        ), unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
     
     elif st.session_state.current_step == 5:
         # Show analysis results
         st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">📊 Analysis Results</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">📊 Vegetation Analysis Results</h3></div>', unsafe_allow_html=True)
         
         if st.session_state.analysis_results:
+            # Show selected area info
+            st.markdown(f"""
+            <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin: 10px 20px; border-left: 4px solid #00ff88;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="color: #00ff88; font-weight: 600; font-size: 16px;">{st.session_state.selected_area_name}</div>
+                        <div style="color: #cccccc; font-size: 12px; margin-top: 5px;">
+                            {st.session_state.analysis_parameters['start_date']} to {st.session_state.analysis_parameters['end_date']} • 
+                            {st.session_state.analysis_parameters['collection_choice']} • 
+                            {len(st.session_state.analysis_parameters['selected_indices'])} indices analyzed
+                        </div>
+                    </div>
+                    <div style="background: #00ff88; color: #000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">
+                        ✅ Complete
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
             # Create charts for each index
             for index, data in st.session_state.analysis_results.items():
                 if data['dates'] and data['values']:
@@ -1132,49 +1337,94 @@ with col2:
                         mode='lines+markers',
                         name=index,
                         line=dict(color='#00ff88', width=3),
-                        marker=dict(size=8, color='#ffffff')
+                        marker=dict(size=8, color='#ffffff', line=dict(width=1, color='#00ff88'))
                     ))
                     
+                    # Add trend line
+                    if len(data['values']) > 1:
+                        import numpy as np
+                        x_numeric = list(range(len(data['dates'])))
+                        z = np.polyfit(x_numeric, data['values'], 1)
+                        p = np.poly1d(z)
+                        fig.add_trace(go.Scatter(
+                            x=data['dates'],
+                            y=p(x_numeric),
+                            mode='lines',
+                            name='Trend',
+                            line=dict(color='#ffaa00', width=2, dash='dash')
+                        ))
+                    
                     fig.update_layout(
-                        title=f"{index} - Vegetation Index Over Time",
+                        title=f"<b>{index}</b> - Vegetation Index Over Time",
                         plot_bgcolor='#0a0a0a',
                         paper_bgcolor='#0a0a0a',
                         font=dict(color='#ffffff'),
                         xaxis=dict(
                             title="Date",
                             gridcolor='#222222',
-                            tickcolor='#444444'
+                            tickcolor='#444444',
+                            showgrid=True
                         ),
                         yaxis=dict(
                             title=f"{index} Value",
                             gridcolor='#222222',
-                            tickcolor='#444444'
+                            tickcolor='#444444',
+                            range=[min(data['values'])*0.9, max(data['values'])*1.1],
+                            showgrid=True
                         ),
                         height=300,
-                        margin=dict(l=50, r=50, t=50, b=50)
+                        margin=dict(l=50, r=50, t=50, b=50),
+                        hovermode='x unified',
+                        showlegend=True,
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1
+                        )
                     )
                     
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True, key=f"chart_{index}")
             
-            # Results summary
-            st.markdown("""
-            <div style="background: #111111; padding: 20px; border-radius: 8px; margin-top: 20px;">
-                <h4 style="color: #00ff88; margin-bottom: 15px;">📋 Results Summary</h4>
-                <div style="color: #cccccc; font-size: 14px; line-height: 1.6;">
-                    <p>Your vegetation analysis is complete! The charts above show the temporal patterns of selected vegetation indices.</p>
-                    <p><strong>Next Steps:</strong></p>
-                    <ul style="margin: 10px 0 0 20px;">
-                        <li>Download the CSV for further analysis</li>
-                        <li>Start a new analysis with different parameters</li>
-                        <li>Compare results with different time periods</li>
-                    </ul>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            # Summary statistics
+            st.markdown('<div style="padding: 0 20px;"><h4>📈 Summary Statistics</h4></div>', unsafe_allow_html=True)
+            
+            summary_data = []
+            for index, data in st.session_state.analysis_results.items():
+                if data['values']:
+                    values = data['values']
+                    current = values[-1] if values else 0
+                    previous = values[-2] if len(values) > 1 else current
+                    change = ((current - previous) / previous * 100) if previous != 0 else 0
+                    
+                    summary_data.append({
+                        'Index': index,
+                        'Current': round(current, 4),
+                        'Previous': round(previous, 4),
+                        'Change (%)': f"{change:+.2f}%",
+                        'Min': round(min(values), 4),
+                        'Max': round(max(values), 4),
+                        'Avg': round(sum(values) / len(values), 4)
+                    })
+            
+            if summary_data:
+                df = pd.DataFrame(summary_data)
+                st.dataframe(
+                    df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Change (%)": st.column_config.TextColumn(
+                            "Change",
+                            help="Percentage change from previous period",
+                        )
+                    }
+                )
         else:
             st.markdown("""
-            <div class="results-placeholder">
-                <div class="icon">📊</div>
+            <div style="text-align: center; padding: 100px 0;">
+                <div style="font-size: 64px; margin-bottom: 20px;">📊</div>
                 <div style="color: #666666; font-size: 16px; margin-bottom: 10px;">No Results Available</div>
                 <div style="color: #444444; font-size: 14px;">Please run an analysis to see results</div>
             </div>
@@ -1186,12 +1436,12 @@ with col2:
 st.markdown("""
 <div style="text-align: center; color: #666666; font-size: 12px; padding: 30px 0 20px 0; border-top: 1px solid #222222; margin-top: 20px;">
     <p style="margin: 5px 0;">KHISBA GIS • Interactive 3D Global Vegetation Analytics Platform</p>
-    <p style="margin: 5px 0;">Guided Workflow • Step-by-Step Analysis • User-Friendly Interface</p>
+    <p style="margin: 5px 0;">Auto Results Display • Cool 3D Map • Guided Workflow</p>
     <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">3D Mapbox</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Auto Results</span>
         <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Step-by-Step</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Earth Engine</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">User Guide</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">v2.1</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">v2.2</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
