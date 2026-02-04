@@ -6,347 +6,65 @@ from datetime import datetime
 import ee
 import traceback
 
-# Custom CSS for Mobile Compatibility
+# Custom CSS for Map-Only Interface
 st.markdown("""
 <style>
-    /* Base mobile styling */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    * {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-    
+    /* Hide everything except the map */
     .stApp {
-        background: #000000;
-        color: #ffffff;
         padding: 0 !important;
         margin: 0 !important;
-        overflow-x: hidden;
+        background: #000 !important;
+        overflow: hidden !important;
     }
     
-    /* Remove all Streamlit padding and margins */
     .main .block-container {
         padding-top: 0 !important;
         padding-bottom: 0 !important;
         padding-left: 0 !important;
         padding-right: 0 !important;
         max-width: 100% !important;
-        margin: 0 !important;
-    }
-    
-    /* Mobile viewport */
-    .mobile-viewport {
-        width: 100vw;
-        height: 100vh;
-        position: relative;
-        overflow: hidden;
     }
     
     /* Full-screen map container */
-    .map-container {
-        position: absolute;
+    #map-container {
+        position: fixed;
         top: 0;
         left: 0;
-        width: 100%;
-        height: 100%;
-        z-index: 1;
+        width: 100vw;
+        height: 100vh;
+        z-index: 0;
     }
     
-    /* Floating control panel (Google Earth style) */
-    .floating-panel {
-        position: absolute;
-        bottom: 20px;
-        left: 15px;
-        right: 15px;
-        z-index: 1000;
-        background: rgba(0, 0, 0, 0.85);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 20px;
-        padding: 15px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-        display: none; /* Hidden by default, shown when needed */
-    }
+    /* Hide all Streamlit elements */
+    #MainMenu {visibility: hidden !important;}
+    footer {visibility: hidden !important;}
+    header {visibility: hidden !important;}
+    .stDeployButton {display: none !important;}
+    .stApp > header {display: none !important;}
     
-    .panel-visible {
-        display: block !important;
-        animation: slideUp 0.3s ease-out;
-    }
-    
-    @keyframes slideUp {
-        from {
-            opacity: 0;
-            transform: translateY(50px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    
-    /* Panel header */
-    .panel-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 15px;
-        padding-bottom: 10px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    
-    .panel-title {
-        font-size: 18px;
-        font-weight: 600;
-        color: #00ff88;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    
-    .close-panel {
-        background: none;
-        border: none;
-        color: #ffffff;
-        font-size: 24px;
-        cursor: pointer;
-        padding: 0;
-        width: 30px;
-        height: 30px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 50%;
-        background: rgba(255, 255, 255, 0.1);
-    }
-    
-    /* Tab navigation */
-    .panel-tabs {
-        display: flex;
-        gap: 5px;
-        margin-bottom: 15px;
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 12px;
-        padding: 4px;
-    }
-    
-    .tab-button {
-        flex: 1;
-        padding: 10px;
-        text-align: center;
-        background: none;
-        border: none;
-        color: #999;
-        font-size: 13px;
-        font-weight: 500;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    
-    .tab-button.active {
-        background: linear-gradient(90deg, #00ff88, #00cc6a);
-        color: #000;
-        font-weight: 600;
-    }
-    
-    /* Panel content */
-    .panel-content {
-        max-height: 60vh;
-        overflow-y: auto;
-        padding-right: 5px;
-    }
-    
-    /* Mobile form elements */
-    .mobile-select {
-        width: 100%;
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 10px;
-        padding: 12px 15px;
-        color: white;
-        font-size: 14px;
-        margin-bottom: 10px;
-        -webkit-appearance: none;
-        -moz-appearance: none;
-        appearance: none;
-    }
-    
-    .mobile-select option {
-        background: #000000;
-        color: white;
-    }
-    
-    .mobile-input {
-        width: 100%;
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 10px;
-        padding: 12px 15px;
-        color: white;
-        font-size: 14px;
-        margin-bottom: 10px;
-    }
-    
-    .mobile-button {
-        width: 100%;
-        background: linear-gradient(90deg, #00ff88, #00cc6a);
-        border: none;
-        border-radius: 10px;
-        padding: 15px;
-        color: #000;
-        font-size: 16px;
-        font-weight: 600;
-        cursor: pointer;
-        margin-top: 10px;
-        transition: transform 0.2s;
-    }
-    
-    .mobile-button:active {
-        transform: scale(0.98);
-    }
-    
-    .mobile-button.secondary {
-        background: rgba(255, 255, 255, 0.1);
-        color: white;
-    }
-    
-    /* Mobile slider */
-    .mobile-slider {
-        width: 100%;
-        height: 40px;
-        margin: 10px 0;
-    }
-    
-    /* Checkbox group for indices */
-    .checkbox-group {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 8px;
-        margin: 15px 0;
-    }
-    
-    .checkbox-item {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 13px;
-        padding: 8px;
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 6px;
-    }
-    
-    /* Mobile charts */
-    .mobile-chart {
-        width: 100%;
-        height: 200px;
-        margin: 10px 0;
-    }
-    
-    /* Info chips */
-    .info-chip {
-        display: inline-flex;
-        align-items: center;
-        padding: 6px 12px;
-        background: rgba(0, 255, 136, 0.1);
-        color: #00ff88;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 500;
-        margin: 2px;
-    }
-    
-    /* Top floating buttons */
-    .top-controls {
-        position: absolute;
-        top: 20px;
-        left: 15px;
-        right: 15px;
-        z-index: 1001;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    
-    .app-title {
-        font-size: 20px;
-        font-weight: 700;
-        background: linear-gradient(90deg, #00ff88, #00cc6a);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-    
-    .floating-button {
-        width: 40px;
-        height: 40px;
-        background: rgba(0, 0, 0, 0.7);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-size: 18px;
-        cursor: pointer;
-    }
-    
-    .floating-button.active {
-        background: linear-gradient(90deg, #00ff88, #00cc6a);
-        color: #000;
-    }
-    
-    /* Results panel */
-    .results-panel {
-        position: absolute;
-        top: 80px;
-        left: 15px;
-        right: 15px;
-        z-index: 999;
-        background: rgba(0, 0, 0, 0.9);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 15px;
-        padding: 15px;
-        max-height: 70vh;
-        overflow-y: auto;
-        display: none;
-    }
-    
-    .results-visible {
-        display: block !important;
-        animation: slideDown 0.3s ease-out;
-    }
-    
-    @keyframes slideDown {
-        from {
-            opacity: 0;
-            transform: translateY(-20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
+    /* Make Streamlit widgets invisible but functional */
+    .stSelectbox, .stDateInput, .stSlider, .stButton, .stMultiSelect {
+        opacity: 0;
+        position: fixed;
+        z-index: -9999;
+        pointer-events: none;
     }
     
     /* Loading overlay */
-    .loading-overlay {
+    #loading-overlay {
         position: fixed;
         top: 0;
         left: 0;
         width: 100%;
         height: 100%;
         background: rgba(0, 0, 0, 0.9);
-        z-index: 9999;
+        z-index: 99999;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        display: none;
-    }
-    
-    .loading-overlay.visible {
-        display: flex;
+        color: white;
+        font-family: Arial, sans-serif;
     }
     
     .spinner {
@@ -364,115 +82,32 @@ st.markdown("""
         100% { transform: rotate(360deg); }
     }
     
-    /* Mobile swipe indicator */
-    .swipe-indicator {
-        position: absolute;
-        bottom: 10px;
-        left: 0;
-        right: 0;
-        text-align: center;
-        color: rgba(255, 255, 255, 0.5);
-        font-size: 12px;
-        z-index: 999;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-    }
-    
-    .swipe-arrow {
-        width: 30px;
-        height: 30px;
-        border-radius: 50%;
-        background: rgba(255, 255, 255, 0.1);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 5px;
-        animation: bounce 2s infinite;
-    }
-    
-    @keyframes bounce {
-        0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(-5px); }
-    }
-    
-    /* Hide all Streamlit default elements */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    .stDeployButton {display: none;}
-    
-    /* Touch-friendly scrollbars */
-    .panel-content::-webkit-scrollbar {
-        width: 5px;
-    }
-    
-    .panel-content::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 10px;
-    }
-    
-    .panel-content::-webkit-scrollbar-thumb {
-        background: rgba(0, 255, 136, 0.5);
-        border-radius: 10px;
+    /* Force full viewport */
+    html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
     }
 </style>
 
+<div id="loading-overlay">
+    <div class="spinner"></div>
+    <div>Loading KHISBA GIS...</div>
+</div>
+
 <script>
-// JavaScript for mobile interactions
-document.addEventListener('DOMContentLoaded', function() {
-    // Detect touch device
-    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    
-    if (isTouchDevice) {
-        // Add touch-specific optimizations
-        document.body.classList.add('touch-device');
-        
-        // Prevent zoom on double-tap
-        let lastTouchEnd = 0;
-        document.addEventListener('touchend', function(event) {
-            const now = (new Date()).getTime();
-            if (now - lastTouchEnd <= 300) {
-                event.preventDefault();
-            }
-            lastTouchEnd = now;
-        }, false);
-    }
-    
-    // Handle panel visibility
-    window.togglePanel = function(panelId) {
-        const panel = document.getElementById(panelId);
-        panel.classList.toggle('panel-visible');
-    };
-    
-    // Handle tab switching
-    window.switchTab = function(tabName) {
-        // Update tab buttons
-        document.querySelectorAll('.tab-button').forEach(btn => {
-            btn.classList.remove('active');
-            if (btn.textContent.includes(tabName)) {
-                btn.classList.add('active');
-            }
-        });
-        
-        // Show corresponding content
-        document.querySelectorAll('.tab-content').forEach(content => {
-            content.style.display = 'none';
-        });
-        document.getElementById(tabName + '-content').style.display = 'block';
-    };
-    
-    // Initialize first tab as active
-    setTimeout(() => {
-        if (document.querySelector('.tab-button')) {
-            document.querySelector('.tab-button').click();
-        }
-    }, 100);
+// Hide loading overlay when page loads
+window.addEventListener('load', function() {
+    setTimeout(function() {
+        document.getElementById('loading-overlay').style.display = 'none';
+    }, 1000);
 });
 </script>
 """, unsafe_allow_html=True)
 
-# Earth Engine Auto-Authentication with Service Account
+# Earth Engine Auto-Authentication
 def auto_initialize_earth_engine():
     """Automatically initialize Earth Engine with service account credentials"""
     try:
@@ -525,24 +160,18 @@ e5aU1RW6tlG8nzHHwK2FeyI=
         ee.Initialize(credentials, project='citric-hawk-457513-i6')
         return True
     except Exception as e:
-        st.error(f"Earth Engine auto-initialization failed: {str(e)}")
         return False
 
-# Try to auto-initialize Earth Engine on app start
+# Initialize Earth Engine
 if 'ee_auto_initialized' not in st.session_state:
-    with st.spinner("Initializing Earth Engine..."):
-        if auto_initialize_earth_engine():
-            st.session_state.ee_auto_initialized = True
-            st.session_state.ee_initialized = True
-        else:
-            st.session_state.ee_auto_initialized = False
-            st.session_state.ee_initialized = False
+    if auto_initialize_earth_engine():
+        st.session_state.ee_auto_initialized = True
+        st.session_state.ee_initialized = True
+    else:
+        st.session_state.ee_auto_initialized = False
+        st.session_state.ee_initialized = False
 
 # Initialize session state
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = True
-if 'ee_initialized' not in st.session_state:
-    st.session_state.ee_initialized = False
 if 'selected_geometry' not in st.session_state:
     st.session_state.selected_geometry = None
 if 'analysis_results' not in st.session_state:
@@ -551,20 +180,30 @@ if 'selected_coordinates' not in st.session_state:
     st.session_state.selected_coordinates = None
 if 'selected_area_name' not in st.session_state:
     st.session_state.selected_area_name = None
-if 'current_panel' not in st.session_state:
-    st.session_state.current_panel = None
-if 'current_tab' not in st.session_state:
-    st.session_state.current_tab = 'select'
+if 'countries' not in st.session_state:
+    st.session_state.countries = []
+if 'admin1' not in st.session_state:
+    st.session_state.admin1 = []
+if 'admin2' not in st.session_state:
+    st.session_state.admin2 = []
+if 'analysis_params' not in st.session_state:
+    st.session_state.analysis_params = {
+        'start_date': '2023-01-01',
+        'end_date': '2023-12-31',
+        'satellite': 'Sentinel-2',
+        'cloud_cover': 20,
+        'indices': ['NDVI', 'EVI']
+    }
 
 # Page configuration
 st.set_page_config(
-    page_title="Khisba GIS",
+    page_title="KHISBA GIS",
     page_icon="🌍",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Helper Functions for Earth Engine
+# Helper Functions
 def get_admin_boundaries(level, country_code=None, admin1_code=None):
     """Get administrative boundaries from Earth Engine"""
     try:
@@ -583,7 +222,6 @@ def get_admin_boundaries(level, country_code=None, admin1_code=None):
                 return admin2.filter(ee.Filter.eq('ADM0_CODE', country_code))
             return admin2
     except Exception as e:
-        st.error(f"Error loading boundaries: {str(e)}")
         return None
 
 def get_boundary_names(feature_collection, level):
@@ -602,692 +240,1560 @@ def get_boundary_names(feature_collection, level):
         if names_list:
             return sorted(names_list)
         return []
-        
     except Exception as e:
-        st.error(f"Error extracting names: {str(e)}")
         return []
 
-def get_geometry_coordinates(geometry):
-    """Get center coordinates and bounds from geometry"""
-    try:
-        bounds = geometry.geometry().bounds().getInfo()
-        coords = bounds['coordinates'][0]
-        lats = [coord[1] for coord in coords]
-        lons = [coord[0] for coord in coords]
-        center_lat = sum(lats) / len(lats)
-        center_lon = sum(lons) / len(lons)
-        
-        min_lat = min(lats)
-        max_lat = max(lats)
-        min_lon = min(lons)
-        max_lon = max(lons)
-        
-        return {
-            'center': [center_lon, center_lat],
-            'bounds': [[min_lat, min_lon], [max_lat, max_lon]],
-            'zoom': 6
-        }
-    except Exception as e:
-        st.error(f"Error getting coordinates: {str(e)}")
-        return {'center': [0, 20], 'bounds': None, 'zoom': 2}
-
-# Main Mobile Interface
-st.markdown("""
-<div class="mobile-viewport">
-    <!-- Top Controls -->
-    <div class="top-controls">
-        <div class="app-title">🌍 KHISBA GIS</div>
-        <div style="display: flex; gap: 8px;">
-            <button class="floating-button" onclick="togglePanel('main-panel')">
-                📍
-            </button>
-            <button class="floating-button" onclick="togglePanel('results-panel')">
-                📊
-            </button>
-        </div>
-    </div>
-    
-    <!-- Main Map -->
-    <div class="map-container" id="map-container">
-""", unsafe_allow_html=True)
-
-# Generate Mapbox HTML for Mobile
-if st.session_state.selected_coordinates:
-    map_center = st.session_state.selected_coordinates['center']
-    map_zoom = st.session_state.selected_coordinates['zoom']
-    bounds_data = st.session_state.selected_coordinates['bounds']
-else:
-    map_center = [0, 20]
-    map_zoom = 2
-    bounds_data = None
-
-mapbox_html = f"""
+# Create HTML/JavaScript interface that runs INSIDE Mapbox
+mapbox_html = """
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>KHISBA GIS Mobile</title>
+    <title>KHISBA GIS - All-in-One Map</title>
     <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
     <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
     <style>
-        #mobile-map {{
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        body, html {
             width: 100%;
             height: 100%;
+            overflow: hidden;
+        }
+        
+        #map {
             position: absolute;
             top: 0;
             left: 0;
-        }}
-        .mapboxgl-popup {{
-            max-width: 250px;
-        }}
-        .mapboxgl-popup-content {{
+            width: 100%;
+            height: 100%;
+        }
+        
+        /* KHISBA Header */
+        #khisba-header {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 15px;
+            padding: 15px;
+            max-width: 280px;
+        }
+        
+        .app-title {
+            font-size: 22px;
+            font-weight: 700;
+            background: linear-gradient(90deg, #00ff88, #00cc6a);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 5px;
+        }
+        
+        .app-subtitle {
+            font-size: 12px;
+            color: #999;
+        }
+        
+        /* Control Panel - Hidden by default */
+        #control-panel {
+            position: absolute;
+            top: 100px;
+            left: 20px;
+            z-index: 1000;
             background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 15px;
+            padding: 20px;
+            width: 320px;
+            max-height: 80vh;
+            overflow-y: auto;
+            display: none;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+        
+        .panel-title {
+            color: #00ff88;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .panel-title .icon {
+            width: 30px;
+            height: 30px;
+            background: rgba(0, 255, 136, 0.1);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* Tabs */
+        .panel-tabs {
+            display: flex;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 4px;
+            margin-bottom: 20px;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            background: none;
+            border: none;
+            color: #999;
+            font-size: 13px;
+            font-weight: 500;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .tab.active {
+            background: linear-gradient(90deg, #00ff88, #00cc6a);
+            color: #000;
+            font-weight: 600;
+        }
+        
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-label {
+            display: block;
+            color: #00ff88;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .form-select {
+            width: 100%;
+            padding: 12px 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
             color: white;
+            font-size: 14px;
+            outline: none;
+            cursor: pointer;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3e%3cpath d='M7 10l5 5 5-5z'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            background-size: 20px;
+        }
+        
+        .form-select option {
+            background: #000;
+            color: white;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 12px 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            outline: none;
+        }
+        
+        .form-input:focus {
+            border-color: #00ff88;
+            box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.2);
+        }
+        
+        .date-row {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .date-row .form-group {
+            flex: 1;
+        }
+        
+        /* Slider */
+        .slider-container {
+            padding: 10px 0;
+        }
+        
+        .slider-value {
+            color: #00ff88;
+            font-weight: 600;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+        
+        /* Checkbox Grid */
+        .checkbox-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .checkbox-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .checkbox-item.selected {
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+        }
+        
+        .checkbox-input {
+            display: none;
+        }
+        
+        .checkbox-label {
+            color: white;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            flex: 1;
+        }
+        
+        /* Buttons */
+        .btn-primary {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(90deg, #00ff88, #00cc6a);
+            border: none;
+            border-radius: 10px;
+            color: #000;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin-top: 10px;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+        
+        .btn-secondary {
+            width: 100%;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        
+        /* Selected Area Info */
+        #selected-area-info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 15px;
+            padding: 15px;
+            max-width: 300px;
+            display: none;
+        }
+        
+        .area-title {
+            color: #00ff88;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .area-name {
+            color: white;
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+        
+        .area-details {
+            color: #999;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        
+        /* Results Panel */
+        #results-panel {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 15px;
+            padding: 20px;
+            width: 350px;
+            max-height: 70vh;
+            overflow-y: auto;
+            display: none;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+        
+        .chart-container {
+            width: 100%;
+            height: 200px;
+            margin: 15px 0;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .stat-label {
+            color: #999;
+            font-size: 12px;
+        }
+        
+        .stat-value {
+            color: #00ff88;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        /* Control Buttons */
+        .control-buttons {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .control-btn {
+            width: 45px;
+            height: 45px;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .control-btn:hover {
+            background: rgba(0, 255, 136, 0.1);
+            transform: scale(1.1);
+        }
+        
+        .control-btn.active {
+            background: linear-gradient(90deg, #00ff88, #00cc6a);
+            color: #000;
+        }
+        
+        /* Loading Overlay */
+        #map-loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        
+        .map-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #00ff88;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        /* Notification */
+        #notification {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(10px);
             border: 1px solid #00ff88;
             border-radius: 10px;
             padding: 15px;
-        }}
-        .mapboxgl-popup-content h3 {{
+            max-width: 300px;
+            display: none;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(100px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        .notification-success {
+            border-color: #00ff88;
+        }
+        
+        .notification-error {
+            border-color: #ff4444;
+        }
+        
+        .notification-warning {
+            border-color: #ffaa00;
+        }
+        
+        .notification-title {
             color: #00ff88;
-            margin: 0 0 10px 0;
-            font-size: 16px;
-        }}
-        .mapboxgl-popup-content p {{
-            margin: 0;
-            color: #cccccc;
-            font-size: 14px;
-        }}
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        
+        /* Analysis Progress */
+        #analysis-progress {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            width: 300px;
+            display: none;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88, #00cc6a);
+            width: 0%;
+            transition: width 0.3s;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            #control-panel, #results-panel {
+                width: 90%;
+                left: 5%;
+                right: 5%;
+            }
+            
+            #khisba-header {
+                width: 90%;
+                left: 5%;
+            }
+            
+            .control-buttons {
+                top: 90px;
+                right: 5%;
+            }
+        }
     </style>
 </head>
 <body>
-    <div id="mobile-map"></div>
+    <!-- Loading Screen -->
+    <div id="map-loading">
+        <div class="map-spinner"></div>
+        <div>Initializing KHISBA GIS...</div>
+    </div>
     
+    <!-- Map Container -->
+    <div id="map"></div>
+    
+    <!-- Main Header -->
+    <div id="khisba-header">
+        <div class="app-title">🌍 KHISBA GIS</div>
+        <div class="app-subtitle">Interactive Vegetation Analysis Platform</div>
+        <div style="display: flex; gap: 5px; margin-top: 10px;">
+            <span style="background: rgba(0, 255, 136, 0.1); color: #00ff88; padding: 4px 8px; border-radius: 12px; font-size: 10px; font-weight: 500;">3D Mapbox</span>
+            <span style="background: rgba(0, 255, 136, 0.1); color: #00ff88; padding: 4px 8px; border-radius: 12px; font-size: 10px; font-weight: 500;">Earth Engine</span>
+            <span style="background: rgba(0, 255, 136, 0.1); color: #00ff88; padding: 4px 8px; border-radius: 12px; font-size: 10px; font-weight: 500;">Streamlit</span>
+        </div>
+    </div>
+    
+    <!-- Control Buttons -->
+    <div class="control-buttons">
+        <button class="control-btn" onclick="togglePanel('control')" title="Control Panel">⚙️</button>
+        <button class="control-btn" onclick="togglePanel('results')" title="Results">📊</button>
+        <button class="control-btn" onclick="togglePanel('layers')" title="Layers">🌿</button>
+        <button class="control-btn" onclick="resetView()" title="Reset View">🏠</button>
+    </div>
+    
+    <!-- Control Panel -->
+    <div id="control-panel">
+        <div class="panel-title">
+            <div class="icon">📍</div>
+            Area Selection & Analysis
+        </div>
+        
+        <!-- Tabs -->
+        <div class="panel-tabs">
+            <button class="tab active" onclick="switchTab('select')">Select Area</button>
+            <button class="tab" onclick="switchTab('analyze')">Analysis</button>
+            <button class="tab" onclick="switchTab('export')">Export</button>
+        </div>
+        
+        <!-- Tab Content: Select Area -->
+        <div id="select-content" class="tab-content">
+            <div class="form-group">
+                <label class="form-label">Country</label>
+                <select class="form-select" id="country-select" onchange="loadAdmin1(this.value)">
+                    <option value="">Select a country</option>
+                    <!-- Countries will be loaded here -->
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">State/Province</label>
+                <select class="form-select" id="admin1-select" onchange="loadAdmin2(this.value)" disabled>
+                    <option value="">Select state/province</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Municipality</label>
+                <select class="form-select" id="admin2-select" onchange="selectArea(this.value)" disabled>
+                    <option value="">Select municipality</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Or draw on map</label>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn-secondary" onclick="startDrawing('polygon')">📐 Draw Polygon</button>
+                    <button class="btn-secondary" onclick="startDrawing('rectangle')">⬜ Draw Rectangle</button>
+                </div>
+            </div>
+            
+            <div id="selected-area-preview" style="display: none;">
+                <div style="color: #00ff88; font-size: 12px; margin: 10px 0;">Selected Area:</div>
+                <div id="area-preview-name" style="color: white; font-weight: 500; margin-bottom: 10px;"></div>
+            </div>
+        </div>
+        
+        <!-- Tab Content: Analysis -->
+        <div id="analyze-content" class="tab-content" style="display: none;">
+            <div class="form-group">
+                <label class="form-label">Time Period</label>
+                <div class="date-row">
+                    <div class="form-group">
+                        <input type="date" class="form-input" id="start-date" value="2023-01-01">
+                    </div>
+                    <div class="form-group">
+                        <input type="date" class="form-input" id="end-date" value="2023-12-31">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Satellite Source</label>
+                <select class="form-select" id="satellite-select">
+                    <option value="sentinel2">Sentinel-2</option>
+                    <option value="landsat8">Landsat-8</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Max Cloud Cover <span id="cloud-value" class="slider-value">20%</span></label>
+                <div class="slider-container">
+                    <input type="range" min="0" max="100" value="20" class="form-input" id="cloud-slider" 
+                           style="width: 100%;" oninput="updateCloudValue(this.value)">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Vegetation Indices</label>
+                <div class="checkbox-grid" id="indices-grid">
+                    <!-- Indices will be loaded here -->
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <button class="btn-secondary" onclick="selectAllIndices()">Select All</button>
+                    <button class="btn-secondary" onclick="clearAllIndices()">Clear All</button>
+                </div>
+            </div>
+            
+            <button class="btn-primary" onclick="runAnalysis()">🚀 Run Analysis</button>
+        </div>
+        
+        <!-- Tab Content: Export -->
+        <div id="export-content" class="tab-content" style="display: none;">
+            <div style="color: #999; font-size: 13px; margin-bottom: 15px;">
+                Export analysis results in various formats
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Export Format</label>
+                <select class="form-select" id="export-format">
+                    <option value="csv">CSV Data</option>
+                    <option value="geojson">GeoJSON</option>
+                    <option value="png">Chart Image</option>
+                    <option value="pdf">PDF Report</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Data Range</label>
+                <select class="form-select" id="export-range">
+                    <option value="full">Full Time Series</option>
+                    <option value="monthly">Monthly Averages</option>
+                    <option value="seasonal">Seasonal Summary</option>
+                </select>
+            </div>
+            
+            <button class="btn-primary" onclick="exportData()">📥 Download Data</button>
+            <button class="btn-secondary" onclick="shareAnalysis()">🔗 Share Analysis</button>
+        </div>
+    </div>
+    
+    <!-- Selected Area Info -->
+    <div id="selected-area-info">
+        <div class="area-title">📍 Selected Area</div>
+        <div class="area-name" id="selected-area-name">No area selected</div>
+        <div class="area-details">
+            <div id="selected-area-coords">Click on map or select from panel</div>
+            <div id="selected-area-status" style="color: #00ff88; margin-top: 5px;">Ready for analysis</div>
+        </div>
+    </div>
+    
+    <!-- Results Panel -->
+    <div id="results-panel">
+        <div class="panel-title">
+            <div class="icon">📊</div>
+            Analysis Results
+        </div>
+        
+        <div id="results-content">
+            <div style="color: #999; font-size: 13px; margin-bottom: 15px;" id="results-message">
+                Run analysis to see results
+            </div>
+            
+            <div id="results-charts">
+                <!-- Charts will be inserted here -->
+            </div>
+            
+            <div id="results-stats">
+                <!-- Statistics will be inserted here -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Notification -->
+    <div id="notification">
+        <div class="notification-title" id="notification-title">Notification</div>
+        <div id="notification-message">Message goes here</div>
+    </div>
+    
+    <!-- Analysis Progress -->
+    <div id="analysis-progress">
+        <div style="color: white; font-weight: 500; margin-bottom: 5px;">Analyzing Vegetation...</div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <div style="color: #999; font-size: 12px; text-align: center;" id="progress-text">Initializing...</div>
+    </div>
+
     <script>
+        // Mapbox access token
         mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
         
-        // Mobile-optimized map with touch gestures
-        const map = new mapboxgl.Map({{
-            container: 'mobile-map',
-            style: 'mapbox://styles/mapbox/satellite-streets-v12',
-            center: {map_center},
-            zoom: {map_zoom},
-            pitch: 45,
-            bearing: 0,
-            interactive: true,
-            touchZoomRotate: true,
-            dragPan: true,
-            scrollZoom: true,
-            doubleClickZoom: true,
-            keyboard: false,
-            boxZoom: false
-        }});
+        // Global variables
+        let map;
+        let selectedArea = null;
+        let selectedGeometry = null;
+        let analysisResults = null;
+        let drawControl = null;
         
-        // Disable rotation on mobile for better UX
-        map.touchZoomRotate.disableRotation();
-        
-        // Add minimal controls
-        map.addControl(new mapboxgl.NavigationControl({{
-            showCompass: false,
-            showZoom: true
-        }}), 'top-right');
-        
-        map.on('load', () => {{
-            // Add selected area if available
-            {f'''
-            if ({bounds_data}) {{
-                const bounds = {bounds_data};
-                
-                map.addSource('selected-area', {{
-                    'type': 'geojson',
-                    'data': {{
-                        'type': 'Feature',
-                        'geometry': {{
-                            'type': 'Polygon',
-                            'coordinates': [[
-                                [bounds[0][1], bounds[0][0]],
-                                [bounds[1][1], bounds[0][0]],
-                                [bounds[1][1], bounds[1][0]],
-                                [bounds[0][1], bounds[1][0]],
-                                [bounds[0][1], bounds[0][0]]
-                            ]]
-                        }}
-                    }}
-                }});
-                
-                map.addLayer({{
-                    'id': 'selected-area-fill',
-                    'type': 'fill',
-                    'source': 'selected-area',
-                    'paint': {{
-                        'fill-color': '#00ff88',
-                        'fill-opacity': 0.2
-                    }}
-                }});
-                
-                map.addLayer({{
-                    'id': 'selected-area-border',
-                    'type': 'line',
-                    'source': 'selected-area',
-                    'paint': {{
-                        'line-color': '#00ff88',
-                        'line-width': 3,
-                        'line-opacity': 0.8
-                    }}
-                }});
-                
-                // Fly to area
-                map.flyTo({{
-                    center: {map_center},
-                    zoom: {map_zoom},
-                    duration: 1500
-                }});
-            }}
-            ''' if bounds_data else ''}
+        // Initialize map
+        function initMap() {
+            map = new mapboxgl.Map({
+                container: 'map',
+                style: 'mapbox://styles/mapbox/satellite-streets-v12',
+                center: [0, 20],
+                zoom: 2,
+                pitch: 45,
+                bearing: 0,
+                antialias: true
+            });
             
-            // Add tap interaction
-            map.on('click', (e) => {{
-                // Send coordinates to Streamlit
-                if (window.parent) {{
-                    window.parent.postMessage({{
-                        type: 'map_click',
-                        coordinates: e.lngLat.toArray()
-                    }}, '*');
-                }}
-            }});
-        }});
+            // Add navigation controls
+            map.addControl(new mapboxgl.NavigationControl({
+                showCompass: true,
+                showZoom: true
+            }), 'top-right');
+            
+            map.addControl(new mapboxgl.ScaleControl({
+                unit: 'metric'
+            }));
+            
+            // Add fullscreen control
+            map.addControl(new mapboxgl.FullscreenControl());
+            
+            // Wait for map to load
+            map.on('load', () => {
+                // Hide loading screen
+                document.getElementById('map-loading').style.display = 'none';
+                
+                // Show notification
+                showNotification('KHISBA GIS loaded!', 'success');
+                
+                // Load countries
+                loadCountries();
+                
+                // Load vegetation indices
+                loadIndices();
+            });
+            
+            // Handle map clicks
+            map.on('click', (e) => {
+                // If we're in drawing mode, add point
+                if (window.drawingMode) {
+                    if (!window.drawnPoints) window.drawnPoints = [];
+                    window.drawnPoints.push([e.lngLat.lng, e.lngLat.lat]);
+                    
+                    // If we have enough points for polygon (3+), draw it
+                    if (window.drawnPoints.length >= 3 && window.drawingMode === 'polygon') {
+                        completeDrawing();
+                    }
+                } else {
+                    // Regular map click - show coordinates
+                    updateSelectedAreaInfo('Map Click', `Lat: ${e.lngLat.lat.toFixed(4)}°, Lon: ${e.lngLat.lng.toFixed(4)}°`);
+                }
+            });
+            
+            // Handle map double click for rectangle drawing
+            map.on('dblclick', (e) => {
+                if (window.drawingMode === 'rectangle' && window.startPoint) {
+                    const endPoint = [e.lngLat.lng, e.lngLat.lat];
+                    selectRectangle(window.startPoint, endPoint);
+                }
+            });
+        }
         
-        // Handle window resize for mobile
-        window.addEventListener('resize', () => {{
-            map.resize();
-        }});
+        // Load countries from Earth Engine via Streamlit
+        function loadCountries() {
+            // Send message to Streamlit to load countries
+            window.parent.postMessage({
+                type: 'load_countries'
+            }, '*');
+            
+            // Show loading in country select
+            const countrySelect = document.getElementById('country-select');
+            countrySelect.innerHTML = '<option value="">Loading countries...</option>';
+        }
+        
+        // Load admin1 regions
+        function loadAdmin1(countryName) {
+            if (!countryName) return;
+            
+            const admin1Select = document.getElementById('admin1-select');
+            admin1Select.disabled = true;
+            admin1Select.innerHTML = '<option value="">Loading...</option>';
+            
+            // Send to Streamlit
+            window.parent.postMessage({
+                type: 'load_admin1',
+                country: countryName
+            }, '*');
+        }
+        
+        // Load admin2 regions
+        function loadAdmin2(admin1Name) {
+            if (!admin1Name) return;
+            
+            const admin2Select = document.getElementById('admin2-select');
+            admin2Select.disabled = true;
+            admin2Select.innerHTML = '<option value="">Loading...</option>';
+            
+            // Send to Streamlit
+            window.parent.postMessage({
+                type: 'load_admin2',
+                admin1: admin1Name,
+                country: document.getElementById('country-select').value
+            }, '*');
+        }
+        
+        // Select area
+        function selectArea(areaName) {
+            if (!areaName) return;
+            
+            const country = document.getElementById('country-select').value;
+            const admin1 = document.getElementById('admin1-select').value;
+            
+            let fullName = areaName;
+            if (admin1) fullName = `${areaName}, ${admin1}`;
+            if (country) fullName = `${fullName}, ${country}`;
+            
+            // Send to Streamlit to get geometry
+            window.parent.postMessage({
+                type: 'select_area',
+                areaName: fullName,
+                level: areaName === admin1 ? 'admin1' : 'admin2'
+            }, '*');
+            
+            // Update UI
+            updateSelectedAreaInfo(fullName, 'Loading geometry...');
+            showSelectedAreaPreview(fullName);
+        }
+        
+        // Start drawing on map
+        function startDrawing(mode) {
+            window.drawingMode = mode;
+            window.drawnPoints = [];
+            window.startPoint = null;
+            
+            showNotification(`Click on map to draw ${mode === 'polygon' ? 'polygon points' : 'rectangle corners'}`, 'warning');
+            
+            if (mode === 'rectangle') {
+                map.once('click', (e) => {
+                    window.startPoint = [e.lngLat.lng, e.lngLat.lat];
+                    showNotification('Click second corner to complete rectangle', 'warning');
+                });
+            }
+        }
+        
+        // Complete drawing
+        function completeDrawing() {
+            if (window.drawingMode === 'polygon' && window.drawnPoints.length >= 3) {
+                // Close the polygon
+                window.drawnPoints.push(window.drawnPoints[0]);
+                
+                // Send to Streamlit
+                window.parent.postMessage({
+                    type: 'select_custom_area',
+                    coordinates: window.drawnPoints,
+                    type: 'polygon'
+                }, '*');
+                
+                updateSelectedAreaInfo('Custom Polygon', `${window.drawnPoints.length - 1} points`);
+            }
+            
+            // Reset drawing
+            window.drawingMode = null;
+            window.drawnPoints = null;
+        }
+        
+        // Select rectangle
+        function selectRectangle(startPoint, endPoint) {
+            const coordinates = [
+                startPoint,
+                [endPoint[0], startPoint[1]],
+                endPoint,
+                [startPoint[0], endPoint[1]],
+                startPoint // Close the polygon
+            ];
+            
+            // Send to Streamlit
+            window.parent.postMessage({
+                type: 'select_custom_area',
+                coordinates: coordinates,
+                type: 'rectangle'
+            }, '*');
+            
+            updateSelectedAreaInfo('Custom Rectangle', 'Drawn on map');
+            
+            // Reset drawing
+            window.drawingMode = null;
+            window.startPoint = null;
+        }
+        
+        // Load vegetation indices
+        function loadIndices() {
+            const indices = [
+                'NDVI', 'EVI', 'SAVI', 'NDWI', 'GNDVI', 'MSAVI', 
+                'ARVI', 'VARI', 'OSAVI', 'DVI', 'RVI', 'MSI'
+            ];
+            
+            const grid = document.getElementById('indices-grid');
+            grid.innerHTML = '';
+            
+            indices.forEach(index => {
+                const div = document.createElement('div');
+                div.className = 'checkbox-item';
+                div.innerHTML = `
+                    <input type="checkbox" class="checkbox-input" id="index-${index}" value="${index}">
+                    <label class="checkbox-label" for="index-${index}">${index}</label>
+                `;
+                grid.appendChild(div);
+                
+                // Add click handler
+                div.addEventListener('click', function() {
+                    const checkbox = this.querySelector('input');
+                    checkbox.checked = !checkbox.checked;
+                    this.classList.toggle('selected', checkbox.checked);
+                });
+                
+                // Default select NDVI and EVI
+                if (index === 'NDVI' || index === 'EVI') {
+                    div.querySelector('input').checked = true;
+                    div.classList.add('selected');
+                }
+            });
+        }
+        
+        // Select all indices
+        function selectAllIndices() {
+            document.querySelectorAll('#indices-grid .checkbox-input').forEach(cb => {
+                cb.checked = true;
+                cb.parentElement.classList.add('selected');
+            });
+        }
+        
+        // Clear all indices
+        function clearAllIndices() {
+            document.querySelectorAll('#indices-grid .checkbox-input').forEach(cb => {
+                cb.checked = false;
+                cb.parentElement.classList.remove('selected');
+            });
+        }
+        
+        // Run analysis
+        function runAnalysis() {
+            // Get selected indices
+            const selectedIndices = [];
+            document.querySelectorAll('#indices-grid .checkbox-input:checked').forEach(cb => {
+                selectedIndices.push(cb.value);
+            });
+            
+            if (selectedIndices.length === 0) {
+                showNotification('Please select at least one vegetation index', 'error');
+                return;
+            }
+            
+            if (!selectedArea) {
+                showNotification('Please select an area first', 'error');
+                return;
+            }
+            
+            // Get analysis parameters
+            const params = {
+                startDate: document.getElementById('start-date').value,
+                endDate: document.getElementById('end-date').value,
+                satellite: document.getElementById('satellite-select').value,
+                cloudCover: document.getElementById('cloud-slider').value,
+                indices: selectedIndices
+            };
+            
+            // Show progress
+            showAnalysisProgress();
+            
+            // Send to Streamlit
+            window.parent.postMessage({
+                type: 'run_analysis',
+                params: params
+            }, '*');
+        }
+        
+        // Export data
+        function exportData() {
+            if (!analysisResults) {
+                showNotification('No analysis results to export', 'error');
+                return;
+            }
+            
+            const format = document.getElementById('export-format').value;
+            
+            // Send to Streamlit
+            window.parent.postMessage({
+                type: 'export_data',
+                format: format
+            }, '*');
+            
+            showNotification(`Exporting as ${format.toUpperCase()}...`, 'success');
+        }
+        
+        // Share analysis
+        function shareAnalysis() {
+            if (!analysisResults) {
+                showNotification('No analysis to share', 'error');
+                return;
+            }
+            
+            showNotification('Share feature coming soon!', 'warning');
+        }
+        
+        // Update cloud cover value display
+        function updateCloudValue(value) {
+            document.getElementById('cloud-value').textContent = value + '%';
+        }
+        
+        // Switch tabs
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+                if (tab.textContent.includes(tabName.charAt(0).toUpperCase() + tabName.slice(1))) {
+                    tab.classList.add('active');
+                }
+            });
+            
+            // Show corresponding content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.style.display = 'none';
+            });
+            document.getElementById(tabName + '-content').style.display = 'block';
+        }
+        
+        // Toggle panels
+        function togglePanel(panelName) {
+            const panels = ['control-panel', 'results-panel'];
+            const buttons = document.querySelectorAll('.control-btn');
+            
+            panels.forEach(panelId => {
+                const panel = document.getElementById(panelId);
+                const btn = buttons[Array.from(buttons).findIndex(b => b.onclick.toString().includes(panelName))];
+                
+                if (panelId === panelName + '-panel') {
+                    if (panel.style.display === 'block') {
+                        panel.style.display = 'none';
+                        if (btn) btn.classList.remove('active');
+                    } else {
+                        panel.style.display = 'block';
+                        if (btn) btn.classList.add('active');
+                        // Hide other panels
+                        panels.filter(p => p !== panelId).forEach(p => {
+                            document.getElementById(p).style.display = 'none';
+                            const otherBtn = buttons[Array.from(buttons).findIndex(b => b.onclick.toString().includes(p.replace('-panel', '')))];
+                            if (otherBtn) otherBtn.classList.remove('active');
+                        });
+                    }
+                }
+            });
+            
+            // Always show selected area info
+            if (selectedArea) {
+                document.getElementById('selected-area-info').style.display = 'block';
+            }
+        }
+        
+        // Reset view
+        function resetView() {
+            map.flyTo({
+                center: [0, 20],
+                zoom: 2,
+                pitch: 45,
+                bearing: 0,
+                duration: 1500
+            });
+        }
+        
+        // Update selected area info
+        function updateSelectedAreaInfo(name, details) {
+            selectedArea = name;
+            document.getElementById('selected-area-name').textContent = name;
+            document.getElementById('selected-area-coords').textContent = details;
+            document.getElementById('selected-area-info').style.display = 'block';
+        }
+        
+        // Show selected area preview
+        function showSelectedAreaPreview(name) {
+            const preview = document.getElementById('selected-area-preview');
+            const previewName = document.getElementById('area-preview-name');
+            
+            previewName.textContent = name;
+            preview.style.display = 'block';
+        }
+        
+        // Show notification
+        function showNotification(message, type = 'info') {
+            const notification = document.getElementById('notification');
+            const title = document.getElementById('notification-title');
+            const msg = document.getElementById('notification-message');
+            
+            notification.className = '';
+            notification.classList.add('notification-' + type);
+            
+            title.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+            msg.textContent = message;
+            
+            notification.style.display = 'block';
+            
+            // Auto hide after 3 seconds
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 3000);
+        }
+        
+        // Show analysis progress
+        function showAnalysisProgress() {
+            const progress = document.getElementById('analysis-progress');
+            const fill = document.getElementById('progress-fill');
+            const text = document.getElementById('progress-text');
+            
+            progress.style.display = 'block';
+            fill.style.width = '0%';
+            text.textContent = 'Initializing...';
+            
+            // Simulate progress
+            let progressValue = 0;
+            const interval = setInterval(() => {
+                progressValue += Math.random() * 10;
+                if (progressValue > 90) progressValue = 90;
+                fill.style.width = progressValue + '%';
+                
+                if (progressValue < 30) text.textContent = 'Downloading satellite data...';
+                else if (progressValue < 60) text.textContent = 'Calculating indices...';
+                else text.textContent = 'Processing results...';
+                
+                if (progressValue >= 90) {
+                    clearInterval(interval);
+                    text.textContent = 'Finishing up...';
+                }
+            }, 500);
+        }
+        
+        // Hide analysis progress
+        function hideAnalysisProgress() {
+            document.getElementById('analysis-progress').style.display = 'none';
+        }
+        
+        // Display results
+        function displayResults(results) {
+            const message = document.getElementById('results-message');
+            const charts = document.getElementById('results-charts');
+            const stats = document.getElementById('results-stats');
+            
+            // Update message
+            message.innerHTML = `Analysis complete for <span style="color: #00ff88;">${selectedArea}</span>`;
+            
+            // Clear previous results
+            charts.innerHTML = '';
+            stats.innerHTML = '';
+            
+            // Create charts for each index
+            Object.keys(results).forEach(index => {
+                const data = results[index];
+                
+                if (data.dates && data.values && data.dates.length > 0) {
+                    // Create chart container
+                    const chartDiv = document.createElement('div');
+                    chartDiv.className = 'chart-container';
+                    chartDiv.innerHTML = `
+                        <div style="color: white; font-weight: 500; margin-bottom: 5px;">${index}</div>
+                        <canvas id="chart-${index}" width="300" height="150"></canvas>
+                    `;
+                    charts.appendChild(chartDiv);
+                    
+                    // Create simple chart
+                    setTimeout(() => {
+                        createMiniChart(`chart-${index}`, data.dates, data.values, index);
+                    }, 100);
+                    
+                    // Add stats
+                    const values = data.values.filter(v => v !== null);
+                    if (values.length > 0) {
+                        const avg = values.reduce((a, b) => a + b) / values.length;
+                        const max = Math.max(...values);
+                        const min = Math.min(...values);
+                        
+                        const statDiv = document.createElement('div');
+                        statDiv.className = 'stat-item';
+                        statDiv.innerHTML = `
+                            <span class="stat-label">${index}</span>
+                            <span class="stat-value">${avg.toFixed(4)}</span>
+                        `;
+                        stats.appendChild(statDiv);
+                    }
+                }
+            });
+            
+            // Show results panel
+            togglePanel('results');
+        }
+        
+        // Create mini chart
+        function createMiniChart(canvasId, dates, values, title) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, width, height);
+            
+            // Draw chart
+            if (values.length < 2) return;
+            
+            // Find min and max
+            const minVal = Math.min(...values);
+            const maxVal = Math.max(...values);
+            const range = maxVal - minVal || 1;
+            
+            // Draw grid
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.lineWidth = 1;
+            
+            // Draw data line
+            ctx.beginPath();
+            ctx.strokeStyle = '#00ff88';
+            ctx.lineWidth = 2;
+            ctx.lineJoin = 'round';
+            
+            values.forEach((val, i) => {
+                const x = (i / (values.length - 1)) * width;
+                const y = height - ((val - minVal) / range) * height * 0.8 - height * 0.1;
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            });
+            
+            ctx.stroke();
+            
+            // Draw points
+            ctx.fillStyle = '#00ff88';
+            values.forEach((val, i) => {
+                if (i % 2 === 0) { // Show every other point
+                    const x = (i / (values.length - 1)) * width;
+                    const y = height - ((val - minVal) / range) * height * 0.8 - height * 0.1;
+                    
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        }
+        
+        // Handle messages from Streamlit
+        window.addEventListener('message', function(event) {
+            const data = event.data;
+            
+            switch(data.type) {
+                case 'countries_loaded':
+                    updateCountrySelect(data.countries);
+                    break;
+                    
+                case 'admin1_loaded':
+                    updateAdmin1Select(data.admin1);
+                    break;
+                    
+                case 'admin2_loaded':
+                    updateAdmin2Select(data.admin2);
+                    break;
+                    
+                case 'area_selected':
+                    showAreaOnMap(data.geometry);
+                    break;
+                    
+                case 'analysis_complete':
+                    hideAnalysisProgress();
+                    analysisResults = data.results;
+                    displayResults(data.results);
+                    showNotification('Analysis completed successfully!', 'success');
+                    break;
+                    
+                case 'analysis_error':
+                    hideAnalysisProgress();
+                    showNotification(data.message, 'error');
+                    break;
+                    
+                case 'export_ready':
+                    showNotification('Export ready for download', 'success');
+                    break;
+            }
+        });
+        
+        // Update country select
+        function updateCountrySelect(countries) {
+            const select = document.getElementById('country-select');
+            select.innerHTML = '<option value="">Select a country</option>';
+            
+            countries.forEach(country => {
+                const option = document.createElement('option');
+                option.value = country;
+                option.textContent = country;
+                select.appendChild(option);
+            });
+        }
+        
+        // Update admin1 select
+        function updateAdmin1Select(admin1List) {
+            const select = document.getElementById('admin1-select');
+            select.disabled = false;
+            select.innerHTML = '<option value="">Select state/province</option>';
+            
+            if (admin1List && admin1List.length > 0) {
+                admin1List.forEach(admin1 => {
+                    const option = document.createElement('option');
+                    option.value = admin1;
+                    option.textContent = admin1;
+                    select.appendChild(option);
+                });
+            }
+        }
+        
+        // Update admin2 select
+        function updateAdmin2Select(admin2List) {
+            const select = document.getElementById('admin2-select');
+            select.disabled = false;
+            select.innerHTML = '<option value="">Select municipality</option>';
+            
+            if (admin2List && admin2List.length > 0) {
+                admin2List.forEach(admin2 => {
+                    const option = document.createElement('option');
+                    option.value = admin2;
+                    option.textContent = admin2;
+                    select.appendChild(option);
+                });
+            }
+        }
+        
+        // Show area on map
+        function showAreaOnMap(geometry) {
+            // Remove existing area if any
+            if (map.getSource('selected-area')) {
+                map.removeLayer('selected-area-fill');
+                map.removeLayer('selected-area-border');
+                map.removeSource('selected-area');
+            }
+            
+            // Add new area
+            map.addSource('selected-area', {
+                'type': 'geojson',
+                'data': geometry
+            });
+            
+            map.addLayer({
+                'id': 'selected-area-fill',
+                'type': 'fill',
+                'source': 'selected-area',
+                'paint': {
+                    'fill-color': '#00ff88',
+                    'fill-opacity': 0.2
+                }
+            });
+            
+            map.addLayer({
+                'id': 'selected-area-border',
+                'type': 'line',
+                'source': 'selected-area',
+                'paint': {
+                    'line-color': '#00ff88',
+                    'line-width': 3,
+                    'line-opacity': 0.8
+                }
+            });
+            
+            // Fly to area
+            const bounds = new mapboxgl.LngLatBounds();
+            geometry.geometry.coordinates[0].forEach(coord => {
+                bounds.extend(coord);
+            });
+            
+            map.fitBounds(bounds, {
+                padding: 50,
+                duration: 1500
+            });
+        }
+        
+        // Initialize map when page loads
+        window.onload = initMap;
     </script>
 </body>
 </html>
 """
 
-st.components.v1.html(mapbox_html, height=600)
+# Display the map interface
+st.components.v1.html(mapbox_html, height=800, scrolling=False)
 
-st.markdown("""
-    </div>
-    
-    <!-- Loading Overlay -->
-    <div class="loading-overlay" id="loading-overlay">
-        <div class="spinner"></div>
-        <div id="loading-text">Initializing...</div>
-    </div>
-    
-    <!-- Main Control Panel -->
-    <div class="floating-panel" id="main-panel">
-        <div class="panel-header">
-            <div class="panel-title">📍 Area Selection</div>
-            <button class="close-panel" onclick="togglePanel('main-panel')">×</button>
-        </div>
-        
-        <div class="panel-tabs">
-            <button class="tab-button active" onclick="switchTab('select')">Select Area</button>
-            <button class="tab-button" onclick="switchTab('analyze')">Analysis</button>
-            <button class="tab-button" onclick="switchTab('settings')">Settings</button>
-        </div>
-        
-        <div class="panel-content">
-""", unsafe_allow_html=True)
+# Hidden Streamlit widgets for data processing
+st.markdown('<div style="display: none;">', unsafe_allow_html=True)
 
-# TAB 1: Area Selection
-st.markdown('<div id="select-content" class="tab-content">', unsafe_allow_html=True)
+# Create widgets for data exchange with JavaScript
+if 'countries' not in st.session_state:
+    st.session_state.countries = []
 
 if st.session_state.ee_initialized:
     try:
-        # Get countries
         countries_fc = get_admin_boundaries(0)
         if countries_fc:
-            country_names = get_boundary_names(countries_fc, 0)
-            
-            # Country selection
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                selected_country = st.selectbox(
-                    "Country",
-                    options=["Select a country"] + country_names,
-                    index=0,
-                    help="Choose a country for analysis",
-                    key="mobile_country_select"
-                )
-            
-            with col2:
-                if selected_country != "Select a country":
-                    st.markdown(f'<div class="info-chip">✓</div>', unsafe_allow_html=True)
-            
-            if selected_country and selected_country != "Select a country":
-                # Get country code
-                country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
-                
-                # Get admin1 regions
-                admin1_fc = get_admin_boundaries(1, country_feature.get('ADM0_CODE').getInfo())
-                if admin1_fc:
-                    admin1_names = get_boundary_names(admin1_fc, 1)
-                    
-                    # Admin1 selection
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        selected_admin1 = st.selectbox(
-                            "State/Province",
-                            options=["Select state/province"] + admin1_names,
-                            index=0,
-                            help="Choose a state or province",
-                            key="mobile_admin1_select"
-                        )
-                    
-                    with col2:
-                        if selected_admin1 != "Select state/province":
-                            st.markdown(f'<div class="info-chip">✓</div>', unsafe_allow_html=True)
-                    
-                    if selected_admin1 and selected_admin1 != "Select state/province":
-                        # Get admin1 code
-                        admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
-                        
-                        # Get admin2 regions
-                        admin2_fc = get_admin_boundaries(2, None, admin1_feature.get('ADM1_CODE').getInfo())
-                        if admin2_fc:
-                            admin2_names = get_boundary_names(admin2_fc, 2)
-                            
-                            # Admin2 selection
-                            selected_admin2 = st.selectbox(
-                                "Municipality",
-                                options=["Select municipality"] + admin2_names,
-                                index=0,
-                                help="Choose a municipality",
-                                key="mobile_admin2_select"
-                            )
-                            
-                            # Update selected area
-                            if selected_admin2 and selected_admin2 != "Select municipality":
-                                geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
-                                area_name = f"{selected_admin2}, {selected_admin1}"
-                                area_level = "Municipality"
-                            else:
-                                geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
-                                area_name = f"{selected_admin1}"
-                                area_level = "State/Province"
-                        else:
-                            geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
-                            area_name = f"{selected_admin1}"
-                            area_level = "State/Province"
-                    else:
-                        geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
-                        area_name = selected_country
-                        area_level = "Country"
-                else:
-                    geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
-                    area_name = selected_country
-                    area_level = "Country"
-                
-                # Store in session state
-                coords_info = get_geometry_coordinates(geometry)
-                st.session_state.selected_geometry = geometry
-                st.session_state.selected_coordinates = coords_info
-                st.session_state.selected_area_name = area_name
-                st.session_state.selected_area_level = area_level
-                
-                # Show selected area info
-                st.markdown(f"""
-                <div style="background: rgba(0, 255, 136, 0.1); padding: 10px; border-radius: 10px; margin: 10px 0;">
-                    <div style="color: #00ff88; font-weight: 600; font-size: 14px;">Selected Area</div>
-                    <div style="color: white; font-size: 13px;">{area_name}</div>
-                    <div style="color: #999; font-size: 12px;">Level: {area_level}</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Quick action button
-                if st.button("✅ Use This Area", type="primary", use_container_width=True):
-                    st.success(f"Area selected: {area_name}")
-                    st.rerun()
-    except Exception as e:
-        st.error(f"Error loading boundaries: {str(e)}")
-else:
-    st.warning("Earth Engine not initialized. Please check connection.")
+            st.session_state.countries = get_boundary_names(countries_fc, 0)
+    except:
+        st.session_state.countries = []
 
-st.markdown('</div>', unsafe_allow_html=True)
-
-# TAB 2: Analysis Settings
-st.markdown('<div id="analyze-content" class="tab-content" style="display: none;">', unsafe_allow_html=True)
-
-if st.session_state.selected_area_name:
-    st.markdown(f"""
-    <div style="background: rgba(0, 255, 136, 0.1); padding: 10px; border-radius: 10px; margin-bottom: 15px;">
-        <div style="color: #00ff88; font-weight: 600; font-size: 13px;">📍 Analyzing:</div>
-        <div style="color: white; font-size: 14px; font-weight: 500;">{st.session_state.selected_area_name}</div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Date range
-    col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input(
-            "Start Date",
-            value=datetime(2023, 1, 1),
-            help="Start date for analysis",
-            key="mobile_start_date"
-        )
-    with col2:
-        end_date = st.date_input(
-            "End Date",
-            value=datetime(2023, 12, 31),
-            help="End date for analysis",
-            key="mobile_end_date"
-        )
-    
-    # Satellite source
-    collection_choice = st.selectbox(
-        "Satellite Source",
-        options=["Sentinel-2", "Landsat-8"],
-        help="Choose satellite collection",
-        key="mobile_satellite_select"
-    )
-    
-    # Cloud cover
-    cloud_cover = st.slider(
-        "Max Cloud Cover (%)",
-        min_value=0,
-        max_value=100,
-        value=20,
-        help="Maximum cloud cover percentage",
-        key="mobile_cloud_slider"
-    )
-    
-    # Vegetation indices
-    st.markdown('<div style="margin: 15px 0 10px 0; color: #00ff88; font-weight: 600; font-size: 14px;">Vegetation Indices</div>', unsafe_allow_html=True)
-    
-    # Popular indices for mobile
-    popular_indices = ['NDVI', 'EVI', 'SAVI', 'NDWI', 'GNDVI', 'MSAVI', 'ARVI', 'VARI']
-    
-    selected_indices = st.multiselect(
-        "Select indices (tap to select)",
-        options=popular_indices,
-        default=['NDVI', 'EVI'],
-        help="Choose vegetation indices to analyze",
-        key="mobile_indices_select"
-    )
-    
-    # Run analysis button
-    if st.button("🚀 Run Analysis", type="primary", use_container_width=True, key="mobile_run_analysis"):
-        if not selected_indices:
-            st.error("Please select at least one vegetation index")
-        else:
-            # Show loading
-            st.markdown("""
-            <script>
-                document.getElementById('loading-overlay').classList.add('visible');
-                document.getElementById('loading-text').textContent = 'Running analysis...';
-            </script>
-            """, unsafe_allow_html=True)
-            
-            # Run analysis
-            with st.spinner("Analyzing vegetation indices..."):
-                try:
-                    # Simplified analysis (same as before but adapted for mobile)
-                    if collection_choice == "Sentinel-2":
-                        collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-                    else:
-                        collection = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
-                    
-                    filtered_collection = (collection
-                        .filterDate(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
-                        .filterBounds(st.session_state.selected_geometry.geometry())
-                        .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
-                    )
-                    
-                    # Calculate indices
-                    results = {}
-                    for index in selected_indices:
-                        # Simplified calculation
-                        def calculate_index(image):
-                            if index == 'NDVI':
-                                nir = image.select('B8' if collection_choice == 'Sentinel-2' else 'B5')
-                                red = image.select('B4' if collection_choice == 'Sentinel-2' else 'B4')
-                                return nir.subtract(red).divide(nir.add(red))
-                            elif index == 'EVI':
-                                nir = image.select('B8' if collection_choice == 'Sentinel-2' else 'B5')
-                                red = image.select('B4' if collection_choice == 'Sentinel-2' else 'B4')
-                                blue = image.select('B2' if collection_choice == 'Sentinel-2' else 'B2')
-                                return nir.subtract(red).multiply(2.5).divide(
-                                    nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1)
-                                )
-                            # Add other indices as needed
-                            return None
-                        
-                        time_series = filtered_collection.map(lambda img: ee.Feature(None, {
-                            'date': img.date().format(),
-                            'value': calculate_index(img)
-                        }))
-                        
-                        time_series_list = time_series.getInfo()
-                        
-                        dates = []
-                        values = []
-                        
-                        if 'features' in time_series_list:
-                            for feature in time_series_list['features']:
-                                props = feature['properties']
-                                if 'value' in props and props['value'] is not None and 'date' in props:
-                                    dates.append(props['date'])
-                                    values.append(props['value'])
-                        
-                        results[index] = {'dates': dates, 'values': values}
-                    
-                    st.session_state.analysis_results = results
-                    
-                    # Hide loading and show results
-                    st.markdown("""
-                    <script>
-                        document.getElementById('loading-overlay').classList.remove('visible');
-                        togglePanel('results-panel');
-                    </script>
-                    """, unsafe_allow_html=True)
-                    
-                    st.success("Analysis completed! View results in the Results panel.")
-                    
-                except Exception as e:
-                    st.error(f"Analysis failed: {str(e)}")
-                    st.markdown("""
-                    <script>
-                        document.getElementById('loading-overlay').classList.remove('visible');
-                    </script>
-                    """, unsafe_allow_html=True)
-else:
-    st.info("Please select an area first in the 'Select Area' tab.")
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-# TAB 3: Settings
-st.markdown('<div id="settings-content" class="tab-content" style="display: none;">', unsafe_allow_html=True)
-
-st.markdown('<div style="color: #00ff88; font-weight: 600; margin-bottom: 15px;">App Settings</div>', unsafe_allow_html=True)
-
-# Map style
-map_style = st.selectbox(
-    "Map Style",
-    options=["Satellite", "Street", "Outdoors", "Dark", "Light"],
-    index=0,
-    key="mobile_map_style"
-)
-
-# Analysis parameters
-st.markdown('<div style="margin-top: 20px; color: #00ff88; font-weight: 600;">Analysis Parameters</div>', unsafe_allow_html=True)
-
-analysis_scale = st.slider(
-    "Analysis Scale (meters)",
-    min_value=10,
-    max_value=1000,
-    value=30,
-    step=10,
-    key="mobile_analysis_scale"
-)
-
-cache_results = st.checkbox("Cache analysis results", value=True, key="mobile_cache")
-
-# App info
-st.markdown("""
-<div style="margin-top: 20px; padding: 15px; background: rgba(255, 255, 255, 0.05); border-radius: 10px;">
-    <div style="color: #00ff88; font-weight: 600; margin-bottom: 10px;">App Information</div>
-    <div style="color: #999; font-size: 12px; line-height: 1.5;">
-        <strong>KHISBA GIS Mobile v2.0</strong><br>
-        Interactive Vegetation Analysis<br>
-        Earth Engine + Mapbox + Streamlit<br>
-        Optimized for mobile devices
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-if st.button("Clear Cache & Reset", type="secondary", use_container_width=True):
-    st.session_state.analysis_results = None
-    st.session_state.selected_geometry = None
-    st.success("Cache cleared!")
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-st.markdown("""
-        </div>
-    </div>
-    
-    <!-- Results Panel -->
-    <div class="results-panel" id="results-panel">
-        <div class="panel-header">
-            <div class="panel-title">📊 Analysis Results</div>
-            <button class="close-panel" onclick="togglePanel('results-panel')">×</button>
-        </div>
-        
-        <div class="panel-content" id="results-content">
-""", unsafe_allow_html=True)
-
-# Display Results
-if st.session_state.analysis_results:
-    results = st.session_state.analysis_results
-    
-    # Summary
-    st.markdown(f"""
-    <div style="background: rgba(0, 255, 136, 0.1); padding: 10px; border-radius: 10px; margin-bottom: 15px;">
-        <div style="color: #00ff88; font-weight: 600; font-size: 13px;">📈 Analysis Complete</div>
-        <div style="color: white; font-size: 14px;">{st.session_state.selected_area_name}</div>
-        <div style="color: #999; font-size: 12px;">{len(results)} indices analyzed</div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Charts
-    for index, data in results.items():
-        if data['dates'] and data['values']:
-            try:
-                # Create mini chart for mobile
-                dates = data['dates'][:10]  # Limit for mobile
-                values = data['values'][:10]
-                
-                if dates and values:
-                    # Simple text-based chart
-                    avg_value = sum(values) / len(values) if values else 0
-                    max_value = max(values) if values else 0
-                    min_value = min(values) if values else 0
-                    
-                    st.markdown(f"""
-                    <div style="background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 10px; margin-bottom: 10px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <div style="color: #00ff88; font-weight: 600; font-size: 14px;">{index}</div>
-                            <div style="color: white; font-weight: 600; font-size: 16px;">{avg_value:.4f}</div>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; color: #999; font-size: 11px;">
-                            <div>Min: {min_value:.4f}</div>
-                            <div>Max: {max_value:.4f}</div>
-                            <div>Points: {len(values)}</div>
-                        </div>
-                        <div style="margin-top: 10px;">
-                            <div style="background: rgba(255, 255, 255, 0.1); height: 4px; border-radius: 2px;">
-                                <div style="background: #00ff88; height: 100%; width: 50%; border-radius: 2px;"></div>
-                            </div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            except:
-                pass
-    
-    # Export options
-    st.markdown("""
-    <div style="margin-top: 20px;">
-        <div style="color: #00ff88; font-weight: 600; margin-bottom: 10px; font-size: 14px;">Export Results</div>
-        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-            <button class="mobile-button secondary" onclick="alert('CSV export coming soon!')">📥 CSV</button>
-            <button class="mobile-button secondary" onclick="alert('Chart export coming soon!')">📈 Chart</button>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-else:
-    st.info("No analysis results yet. Run an analysis first!")
-
-st.markdown("""
-        </div>
-    </div>
-    
-    <!-- Swipe Indicator -->
-    <div class="swipe-indicator" id="swipe-indicator">
-        <div class="swipe-arrow">↑</div>
-        <div>Swipe up for controls</div>
-    </div>
-</div>
-
+# Listen for JavaScript messages
+js_code = """
 <script>
-// Show swipe indicator on first load
-setTimeout(() => {
-    if (!localStorage.getItem('khisba_mobile_shown')) {
-        document.getElementById('swipe-indicator').style.display = 'flex';
-        localStorage.setItem('khisba_mobile_shown', 'true');
-        setTimeout(() => {
-            document.getElementById('swipe-indicator').style.opacity = '0';
-            setTimeout(() => {
-                document.getElementById('swipe-indicator').style.display = 'none';
-            }, 1000);
-        }, 3000);
+// Send initial countries to JavaScript
+window.addEventListener('load', function() {
+    // Get countries from Streamlit
+    const countries = %s;
+    
+    if (countries && countries.length > 0) {
+        window.parent.postMessage({
+            type: 'countries_loaded',
+            countries: countries
+        }, '*');
     }
-}, 1000);
+});
+</script>
+""" % json.dumps(st.session_state.countries)
 
-// Handle tab switching
-function switchTab(tabName) {
-    // Hide all tab contents
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.style.display = 'none';
-    });
-    
-    // Show selected tab content
-    document.getElementById(tabName + '-content').style.display = 'block';
-    
-    // Update tab buttons
-    document.querySelectorAll('.tab-button').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    
-    // Activate corresponding button
-    document.querySelectorAll('.tab-button').forEach(btn => {
-        if (btn.textContent.includes(tabName.charAt(0).toUpperCase() + tabName.slice(1))) {
-            btn.classList.add('active');
-        }
-    });
-}
+st.components.v1.html(js_code, height=0)
 
-// Handle panel toggling
-function togglePanel(panelId) {
-    const panel = document.getElementById(panelId);
-    panel.classList.toggle('panel-visible');
+# Handle JavaScript messages through Streamlit components
+if st.button("Force Refresh", key="refresh_button"):
+    st.rerun()
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+# JavaScript to Streamlit communication handler
+js_to_python = """
+<script>
+// Function to send data to Streamlit
+function sendToStreamlit(type, data) {
+    // Create a hidden input and trigger Streamlit
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.id = 'js-data';
+    input.value = JSON.stringify({type: type, data: data});
+    document.body.appendChild(input);
     
-    // Hide other panels
-    if (panelId === 'main-panel') {
-        document.getElementById('results-panel').classList.remove('panel-visible');
-    } else if (panelId === 'results-panel') {
-        document.getElementById('main-panel').classList.remove('panel-visible');
-    }
+    // Trigger change event
+    const event = new Event('change');
+    input.dispatchEvent(event);
 }
 </script>
-""", unsafe_allow_html=True)
+"""
 
-# Footer
-st.markdown("""
-<div style="position: fixed; bottom: 5px; left: 0; right: 0; text-align: center; color: #666; font-size: 10px; z-index: 1000;">
-    KHISBA GIS Mobile • Touch-optimized • v2.0
-</div>
-""", unsafe_allow_html=True)
+st.components.v1.html(js_to_python, height=0)
+
+# Create a hidden text input to receive JavaScript data
+js_data = st.text_input("JavaScript Data", key="js_data_input", label_visibility="collapsed")
+
+if js_data:
+    try:
+        data = json.loads(js_data)
+        st.write(f"Received from JavaScript: {data}")
+        
+        # Handle different message types
+        if data.get('type') == 'load_countries':
+            # Countries are already loaded
+            pass
+            
+        elif data.get('type') == 'load_admin1':
+            country = data.get('data', {}).get('country')
+            if country:
+                try:
+                    countries_fc = get_admin_boundaries(0)
+                    country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', country)).first()
+                    admin1_fc = get_admin_boundaries(1, country_feature.get('ADM0_CODE').getInfo())
+                    admin1_names = get_boundary_names(admin1_fc, 1)
+                    
+                    # Send back to JavaScript
+                    return_js = f"""
+                    <script>
+                    window.parent.postMessage({{
+                        type: 'admin1_loaded',
+                        admin1: {json.dumps(admin1_names)}
+                    }}, '*');
+                    </script>
+                    """
+                    st.components.v1.html(return_js, height=0)
+                    
+                except Exception as e:
+                    st.error(f"Error loading admin1: {e}")
+                    
+        elif data.get('type') == 'load_admin2':
+            admin1 = data.get('data', {}).get('admin1')
+            country = data.get('data', {}).get('country')
+            
+            if admin1 and country:
+                try:
+                    countries_fc = get_admin_boundaries(0)
+                    country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', country)).first()
+                    admin1_fc = get_admin_boundaries(1, country_feature.get('ADM0_CODE').getInfo())
+                    admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', admin1)).first()
+                    admin2_fc = get_admin_boundaries(2, None, admin1_feature.get('ADM1_CODE').getInfo())
+                    admin2_names = get_boundary_names(admin2_fc, 2)
+                    
+                    return_js = f"""
+                    <script>
+                    window.parent.postMessage({{
+                        type: 'admin2_loaded',
+                        admin2: {json.dumps(admin2_names)}
+                    }}, '*');
+                    </script>
+                    """
+                    st.components.v1.html(return_js, height=0)
+                    
+                except Exception as e:
+                    st.error(f"Error loading admin2: {e}")
+                    
+    except json.JSONDecodeError:
+        pass
+
+# Footer (hidden but keeps Streamlit running)
+st.markdown('<div style="height: 0; overflow: hidden;">Keeping Streamlit alive...</div>', unsafe_allow_html=True)
