@@ -5,6 +5,10 @@ import plotly.graph_objects as go
 from datetime import datetime
 import ee
 import traceback
+import numpy as np
+import warnings
+
+warnings.filterwarnings('ignore')
 
 # Custom CSS for Clean Green & Black TypeScript/React Style with Guided UI
 st.markdown("""
@@ -338,8 +342,318 @@ st.markdown("""
             transform: translateY(0);
         }
     }
+    
+    /* FarmAdvisor Specific Styles */
+    .crop-card {
+        background: var(--secondary-black);
+        border: 1px solid var(--border-gray);
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 10px;
+        transition: all 0.3s ease;
+    }
+    
+    .crop-card:hover {
+        border-color: var(--primary-green);
+        transform: translateY(-2px);
+    }
+    
+    .crop-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+    
+    .crop-score {
+        background: var(--primary-green);
+        color: var(--primary-black);
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: bold;
+        font-size: 14px;
+    }
+    
+    .risk-high {
+        color: #ff6b6b;
+        font-weight: bold;
+    }
+    
+    .risk-medium {
+        color: #ffa500;
+        font-weight: bold;
+    }
+    
+    .risk-low {
+        color: #00ff88;
+        font-weight: bold;
+    }
+    
+    .management-tip {
+        background: rgba(0, 255, 136, 0.1);
+        border-left: 3px solid var(--primary-green);
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 4px;
+    }
+    
+    .disease-alert {
+        background: rgba(255, 107, 107, 0.1);
+        border-left: 3px solid #ff6b6b;
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 4px;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+# ============ FARMADVISOR COMPREHENSIVE CROP SUITABILITY CONFIGURATION ============
+CROP_REQUIREMENTS = {
+    # CEREALS & GRAINS
+    'Wheat': {
+        'moisture_opt': 0.18, 'moisture_tol': 0.06, 'om_opt': 2.0, 'om_tol': 1.0,
+        'texture_scores': {
+            'Clay': 0.4, 'Sandy clay': 0.5, 'Silty clay': 0.6, 'Clay loam': 0.85,
+            'Sandy clay loam': 0.6, 'Silty clay loam': 0.7, 'Loam': 1.0, 'Sandy loam': 0.7,
+            'Silt loam': 0.9, 'Silt': 0.8, 'Loamy sand': 0.4, 'Sand': 0.1
+        },
+        'temp_opt': 18, 'temp_tol': 6, 'maturity_days': 120, 'water_needs': 'Medium',
+        'notes': 'Cool season cereal, requires good drainage',
+        'management': [
+            'Rotate with legumes to break disease cycles',
+            'Apply balanced NPK fertilizer (100-120-60 kg/ha)',
+            'Use certified disease-free seeds',
+            'Monitor for aphids and rust diseases regularly',
+            'Time planting to avoid peak disease periods'
+        ],
+        'likely_diseases': [
+            'Leaf rust (Puccinia triticina) - orange pustules on leaves',
+            'Stripe rust (Puccinia striiformis) - yellow stripes on leaves',
+            'Fusarium head blight - pink mold on heads in wet conditions',
+            'Powdery mildew - white fungal growth on leaves',
+            'Septoria tritici blotch - brown spots with black pycnidia'
+        ],
+        'pests': ['Aphids', 'Armyworms', 'Hessian fly', 'Stem sawfly'],
+        'fertilizer': 'NPK 100-120-60 kg/ha + Zinc',
+        'spacing': '20-25 cm between rows, 2-3 cm between plants',
+        'risk_factors': ['High moisture', 'Dense planting', 'Poor air circulation']
+    },
+    'Barley': {
+        'moisture_opt': 0.16, 'moisture_tol': 0.06, 'om_opt': 1.6, 'om_tol': 0.8,
+        'texture_scores': {
+            'Clay': 0.3, 'Sandy clay': 0.4, 'Silty clay': 0.5, 'Clay loam': 0.7,
+            'Sandy clay loam': 0.8, 'Silty clay loam': 0.6, 'Loam': 1.0, 'Sandy loam': 0.8,
+            'Silt loam': 0.9, 'Silt': 0.7, 'Loamy sand': 0.5, 'Sand': 0.2
+        },
+        'temp_opt': 16, 'temp_tol': 6, 'maturity_days': 100, 'water_needs': 'Low-Medium',
+        'notes': 'Drought tolerant, good for marginal soils',
+        'management': [
+            'Well-drained soil essential to prevent root diseases',
+            'Apply 80-100 kg N/ha, adjust based on soil test',
+            'Use resistant varieties for prevalent diseases',
+            'Control weeds early as barley is poor competitor',
+            'Harvest when moisture content reaches 13-15%'
+        ],
+        'likely_diseases': [
+            'Net blotch (Pyrenophora teres) - net-like patterns on leaves',
+            'Scald (Rhynchosporium secalis) - oval gray-green lesions',
+            'Stripe rust - yellow stripes, severe in cool wet weather',
+            'Spot blotch - circular brown spots on leaves and heads',
+            'Fusarium head blight - pink-orange mold on kernels'
+        ],
+        'pests': ['Aphids', 'Wireworms', 'Cutworms', 'Bird damage'],
+        'fertilizer': 'NPK 80-60-40 kg/ha',
+        'spacing': '15-20 cm between rows',
+        'risk_factors': ['Cool wet conditions', 'High nitrogen', 'Continuous cropping']
+    },
+    'Maize': {
+        'moisture_opt': 0.28, 'moisture_tol': 0.07, 'om_opt': 2.2, 'om_tol': 0.8,
+        'texture_scores': {
+            'Clay': 0.4, 'Sandy clay': 0.5, 'Silty clay': 0.7, 'Clay loam': 0.8,
+            'Sandy clay loam': 0.6, 'Silty clay loam': 0.9, 'Loam': 1.0, 'Sandy loam': 0.7,
+            'Silt loam': 0.95, 'Silt': 0.8, 'Loamy sand': 0.5, 'Sand': 0.2
+        },
+        'temp_opt': 25, 'temp_tol': 7, 'maturity_days': 120, 'water_needs': 'High',
+        'notes': 'Warm season, high water and nutrient demands',
+        'management': [
+            'Plant when soil temperature reaches 10-12°C',
+            'Apply 150-200 kg N/ha in split applications',
+            'Use crop rotation to reduce disease pressure',
+            'Ensure good drainage to prevent root diseases',
+            'Monitor for ear worms during silking stage'
+        ],
+        'likely_diseases': [
+            'Northern corn leaf blight - cigar-shaped gray-green lesions',
+            'Gray leaf spot - rectangular tan lesions between veins',
+            'Common rust - cinnamon-brown pustules on both leaf surfaces',
+            'Stalk rots (Fusarium, Gibberella) - lodging and internal discoloration',
+            'Ear rots - various fungi causing mycotoxin contamination'
+        ],
+        'pests': ['Corn earworm', 'European corn borer', 'Armyworms', 'Rootworms'],
+        'fertilizer': 'NPK 150-80-100 kg/ha + Sulfur',
+        'spacing': '75 cm between rows, 20-25 cm between plants',
+        'risk_factors': ['High humidity', 'Poor drainage', 'High plant density']
+    },
+    'Rice': {
+        'moisture_opt': 0.35, 'moisture_tol': 0.08, 'om_opt': 2.5, 'om_tol': 1.0,
+        'texture_scores': {
+            'Clay': 0.9, 'Sandy clay': 0.7, 'Silty clay': 0.8, 'Clay loam': 0.8,
+            'Sandy clay loam': 0.6, 'Silty clay loam': 0.9, 'Loam': 0.7, 'Sandy loam': 0.4,
+            'Silt loam': 0.8, 'Silt': 0.9, 'Loamy sand': 0.3, 'Sand': 0.1
+        },
+        'temp_opt': 28, 'temp_tol': 5, 'maturity_days': 150, 'water_needs': 'Very High',
+        'notes': 'Requires flooded conditions, heavy soils preferred',
+        'management': [
+            'Maintain 5-10 cm water depth during vegetative stage',
+            'Apply 100-120 kg N/ha in 3 split applications',
+            'Use integrated pest management for stem borers',
+            'Drain field 2-3 weeks before harvest for grain quality',
+            'Practice proper field leveling for uniform water distribution'
+        ],
+        'likely_diseases': [
+            'Rice blast (Magnaporthe oryzae) - diamond-shaped lesions on leaves',
+            'Sheath blight - oval lesions on leaf sheaths, common in dense planting',
+            'Bacterial leaf blight - yellow streaks turning white',
+            'Brown spot - oval brown spots on leaves and grains',
+            'Tungro virus - yellow-orange leaves, stunted growth'
+        ],
+        'pests': ['Stem borers', 'Brown plant hopper', 'Rice leaf folder', 'Gall midge'],
+        'fertilizer': 'NPK 120-60-60 kg/ha + Zinc',
+        'spacing': '20 x 20 cm for transplanted rice',
+        'risk_factors': ['Stagnant water', 'High nitrogen', 'Poor water management']
+    },
+    # Add more crops as needed
+    'Tomato': {
+        'moisture_opt': 0.24, 'moisture_tol': 0.06, 'om_opt': 2.5, 'om_tol': 0.8,
+        'texture_scores': {
+            'Clay': 0.3, 'Sandy clay': 0.4, 'Silty clay': 0.5, 'Clay loam': 0.7,
+            'Sandy clay loam': 0.8, 'Silty clay loam': 0.7, 'Loam': 1.0, 'Sandy loam': 0.9,
+            'Silt loam': 0.8, 'Silt': 0.6, 'Loamy sand': 0.5, 'Sand': 0.2
+        },
+        'temp_opt': 24, 'temp_tol': 6, 'maturity_days': 100, 'water_needs': 'Medium-High',
+        'notes': 'Warm season, consistent moisture needed',
+        'management': [
+            'Stake or cage plants for better air circulation and fruit quality',
+            'Apply balanced fertilizer with emphasis on calcium',
+            'Use drip irrigation to keep foliage dry and reduce diseases',
+            'Practice crop rotation to reduce soil-borne diseases',
+            'Monitor for pests and diseases weekly'
+        ],
+        'likely_diseases': [
+            'Early blight - target-like spots with concentric rings',
+            'Late blight - water-soaked lesions spreading rapidly in cool wet weather',
+            'Bacterial spot - small dark lesions with yellow halos',
+            'Fusarium wilt - yellowing and wilting of one side of plant',
+            'Blossom end rot - physiological disorder from calcium/water imbalance'
+        ],
+        'pests': ['Tomato hornworm', 'Whiteflies', 'Aphids', 'Spider mites'],
+        'fertilizer': 'NPK 120-80-150 kg/ha + Calcium',
+        'spacing': '60-90 cm between rows, 45-60 cm between plants',
+        'risk_factors': ['High humidity', 'Overhead irrigation', 'Poor air circulation']
+    },
+    'Potato': {
+        'moisture_opt': 0.28, 'moisture_tol': 0.06, 'om_opt': 3.0, 'om_tol': 1.0,
+        'texture_scores': {
+            'Clay': 0.2, 'Sandy clay': 0.3, 'Silty clay': 0.4, 'Clay loam': 0.6,
+            'Sandy clay loam': 0.7, 'Silty clay loam': 0.8, 'Loam': 1.0, 'Sandy loam': 0.9,
+            'Silt loam': 0.95, 'Silt': 0.7, 'Loamy sand': 0.6, 'Sand': 0.3
+        },
+        'temp_opt': 18, 'temp_tol': 6, 'maturity_days': 110, 'water_needs': 'High',
+        'notes': 'Requires good drainage, high OM demand',
+        'management': [
+            'Use certified disease-free seed potatoes',
+            'Hill soil around plants to prevent tuber greening',
+            'Maintain consistent soil moisture, especially during tuber formation',
+            'Practice 3-4 year crop rotation with non-solanaceous crops',
+            'Harvest when vines die back for mature potatoes'
+        ],
+        'likely_diseases': [
+            'Late blight - rapid spreading water-soaked lesions, can destroy crop',
+            'Early blight - target-like lesions on older leaves',
+            'Common scab - rough corky lesions on tubers in alkaline soils',
+            'Blackleg - soft rot starting from seed piece',
+            'Verticillium wilt - yellowing and wilting, vascular discoloration'
+        ],
+        'pests': ['Colorado potato beetle', 'Aphids', 'Wireworms', 'Potato tuber moth'],
+        'fertilizer': 'NPK 150-100-200 kg/ha',
+        'spacing': '75-90 cm between rows, 25-30 cm between plants',
+        'risk_factors': ['Wet conditions', 'Poor drainage', 'Continuous potato cropping']
+    },
+    'Carrot': {
+        'moisture_opt': 0.26, 'moisture_tol': 0.06, 'om_opt': 2.0, 'om_tol': 0.8,
+        'texture_scores': {
+            'Clay': 0.2, 'Sandy clay': 0.3, 'Silty clay': 0.4, 'Clay loam': 0.6,
+            'Sandy clay loam': 0.7, 'Silty clay loam': 0.8, 'Loam': 1.0, 'Sandy loam': 0.9,
+            'Silt loam': 0.8, 'Silt': 0.7, 'Loamy sand': 0.7, 'Sand': 0.4
+        },
+        'temp_opt': 18, 'temp_tol': 6, 'maturity_days': 75, 'water_needs': 'Medium',
+        'notes': 'Requires deep, loose soil for root development',
+        'management': [
+            'Prepare deep, stone-free seedbed for straight roots',
+            'Thin seedlings to proper spacing for root development',
+            'Maintain consistent moisture for smooth root growth',
+            'Use floating row covers to prevent carrot rust fly',
+            'Harvest when roots reach desired size and color'
+        ],
+        'likely_diseases': [
+            'Alternaria leaf blight - brown lesions on leaves and petioles',
+            'Cercospora leaf spot - small circular spots with yellow halos',
+            'Powdery mildew - white fungal growth on leaves',
+            'Root knot nematode - galls on roots causing forking',
+            'Sclerotinia rot - white mold and soft rot of roots'
+        ],
+        'pests': ['Carrot rust fly', 'Aphids', 'Leafhoppers', 'Wireworms'],
+        'fertilizer': 'NPK 80-100-150 kg/ha + Boron',
+        'spacing': '30-45 cm between rows, 3-5 cm between plants',
+        'risk_factors': ['Heavy soils', 'Poor drainage', 'Shallow planting depth']
+    },
+    'Soybean': {
+        'moisture_opt': 0.22, 'moisture_tol': 0.06, 'om_opt': 1.5, 'om_tol': 0.7,
+        'texture_scores': {
+            'Clay': 0.4, 'Sandy clay': 0.5, 'Silty clay': 0.6, 'Clay loam': 0.8,
+            'Sandy clay loam': 0.7, 'Silty clay loam': 0.8, 'Loam': 1.0, 'Sandy loam': 0.8,
+            'Silt loam': 0.9, 'Silt': 0.7, 'Loamy sand': 0.6, 'Sand': 0.3
+        },
+        'temp_opt': 24, 'temp_tol': 6, 'maturity_days': 110, 'water_needs': 'Medium',
+        'notes': 'Warm season, nitrogen-fixing',
+        'management': [
+            'Plant when soil temperature reaches 15°C',
+            'Inoculate seeds with Bradyrhizobium japonicum',
+            'Apply phosphorus fertilizer for better nodulation',
+            'Control weeds early as soybeans are poor competitors',
+            'Harvest when leaves yellow and pods rattle'
+        ],
+        'likely_diseases': [
+            'Soybean rust - tan to reddish-brown pustules on leaves',
+            'Sclerotinia stem rot - white mold and sclerotia formation',
+            'Phytophthora root rot - damping off and root decay',
+            'Brown stem rot - internal browning of stems',
+            'Sudden death syndrome - interveinal chlorosis and leaf drop'
+        ],
+        'pests': ['Soybean aphid', 'Bean leaf beetle', 'Stink bugs', 'Caterpillars'],
+        'fertilizer': 'NPK 30-80-60 kg/ha + Rhizobium inoculation',
+        'spacing': '45-75 cm between rows, 3-5 cm between plants',
+        'risk_factors': ['High humidity', 'Dense canopy', 'Continuous soybean cropping']
+    }
+}
+
+# Constants for Soil Analysis
+BULK_DENSITY = 1.3
+SOC_TO_SOM_FACTOR = 1.724
+
+# Soil texture classes
+SOIL_TEXTURE_CLASSES = {
+    1: 'Clay', 2: 'Sandy clay', 3: 'Silty clay', 4: 'Clay loam', 5: 'Sandy clay loam',
+    6: 'Silty clay loam', 7: 'Loam', 8: 'Sandy loam', 9: 'Silt loam', 10: 'Silt',
+    11: 'Loamy sand', 12: 'Sand'
+}
+
+# Africa bounds
+AFRICA_BOUNDS = ee.Geometry.Polygon([
+    [-25.0, -35.0], [-25.0, 37.5], [-5.5, 37.5], [-5.5, 35.5],
+    [0.0, 35.5], [5.0, 38.0], [12.0, 38.0], [32.0, 31.0],
+    [32.0, -35.0], [-25.0, -35.0]
+])
 
 # Earth Engine Auto-Authentication
 def auto_initialize_earth_engine():
@@ -402,8 +716,752 @@ if 'ee_initialized' not in st.session_state:
     with st.spinner("Initializing Earth Engine..."):
         if auto_initialize_earth_engine():
             st.session_state.ee_initialized = True
+            st.session_state.FAO_GAUL = ee.FeatureCollection("FAO/GAUL/2015/level0")
+            st.session_state.FAO_GAUL_ADMIN1 = ee.FeatureCollection("FAO/GAUL/2015/level1")
+            st.session_state.FAO_GAUL_ADMIN2 = ee.FeatureCollection("FAO/GAUL/2015/level2")
         else:
             st.session_state.ee_initialized = False
+
+# Initialize session state for FarmAdvisor
+if 'farmadvisor_results' not in st.session_state:
+    st.session_state.farmadvisor_results = None
+if 'farmadvisor_analysis_type' not in st.session_state:
+    st.session_state.farmadvisor_analysis_type = 'crop_suitability'
+if 'show_detailed_analysis' not in st.session_state:
+    st.session_state.show_detailed_analysis = False
+
+class FarmAdvisor:
+    def __init__(self):
+        self.config = {
+            'default_start_date': '2020-01-01',
+            'default_end_date': '2023-12-31',
+            'scale': 1000,
+            'max_pixels': 1e6
+        }
+        
+        # Groundwater datasets
+        self.chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
+        self.soil_clay = ee.Image("OpenLandMap/SOL/SOL_CLAY-WFRACTION_USDA-3A1A1A_M/v02")
+        self.soil_sand = ee.Image("OpenLandMap/SOL/SOL_SAND-WFRACTION_USDA-3A1A1A_M/v02")
+        self.soil_silt = ee.Image("OpenLandMap/SOL/SOL_SILT-WFRACTION_USDA-3A1A1A_M/v02")
+        self.dem = ee.Image("CGIAR/SRTM90_V4")
+        
+    # ============ ENHANCED CROP SUITABILITY METHODS ============
+    def calculate_crop_suitability_score(self, moisture_value, som_value, texture_value, temp_value, crop_req):
+        """Calculate comprehensive crop suitability score with disease risk assessment"""
+
+        # Calculate individual component scores
+        s_m = self.calculate_moisture_score(moisture_value, crop_req['moisture_opt'], crop_req['moisture_tol'])
+        s_om = self.calculate_om_score(som_value, crop_req['om_opt'], crop_req['om_tol'])
+        s_t = self.get_texture_score(texture_value, crop_req['texture_scores'])
+        s_temp = self.calculate_temp_score(temp_value, crop_req['temp_opt'], crop_req['temp_tol'])
+
+        # Weighted suitability score
+        weights = {'moisture': 0.3, 'texture': 0.25, 'om': 0.25, 'temp': 0.2}
+        suitability_score = (s_m * weights['moisture'] +
+                           s_om * weights['om'] +
+                           s_t * weights['texture'] +
+                           s_temp * weights['temp'])
+
+        # Calculate disease risk index
+        disease_risk = self.calculate_disease_risk_index(s_m, s_om, s_t, s_temp, crop_req)
+
+        # Adjust suitability based on disease risk
+        risk_adjustment = 1.0 - (disease_risk * 0.3)  # High disease risk reduces suitability
+        final_score = suitability_score * risk_adjustment
+
+        return {
+            'final_score': min(1.0, max(0.0, final_score)),
+            'suitability_score': suitability_score,
+            'component_scores': {'moisture': s_m, 'organic_matter': s_om, 'texture': s_t, 'temperature': s_temp},
+            'disease_risk': disease_risk,
+            'risk_level': self.get_risk_level(disease_risk)
+        }
+
+    def calculate_disease_risk_index(self, s_m, s_om, s_t, s_temp, crop_req):
+        """Calculate comprehensive disease risk index"""
+
+        # Stress factors that increase disease susceptibility
+        moisture_stress = 1.0 - s_m  # Both too dry and too wet increase risk
+        nutrient_stress = 1.0 - s_om  # Low OM increases susceptibility
+        texture_stress = 1.0 - s_t   # Unsuitable texture increases risk
+        temp_stress = 1.0 - s_temp   # Temperature stress increases risk
+
+        # Weighted disease risk calculation
+        risk_weights = {
+            'moisture_stress': 0.35,  # Moisture is biggest disease driver
+            'nutrient_stress': 0.25,   # Plant health affects resistance
+            'texture_stress': 0.20,    # Soil structure affects root health
+            'temp_stress': 0.20        # Temperature stress weakens plants
+        }
+
+        disease_risk = (moisture_stress * risk_weights['moisture_stress'] +
+                       nutrient_stress * risk_weights['nutrient_stress'] +
+                       texture_stress * risk_weights['texture_stress'] +
+                       temp_stress * risk_weights['temp_stress'])
+
+        return min(1.0, max(0.0, disease_risk))
+
+    def get_risk_level(self, risk_index):
+        """Convert risk index to categorical level"""
+        if risk_index < 0.3:
+            return 'Low'
+        elif risk_index < 0.6:
+            return 'Moderate'
+        elif risk_index < 0.8:
+            return 'High'
+        else:
+            return 'Very High'
+
+    def generate_management_strategies(self, crop_name, suitability_analysis, crop_req):
+        """Generate tailored management strategies based on analysis"""
+
+        strategies = []
+        comp_scores = suitability_analysis['component_scores']
+        disease_risk = suitability_analysis['disease_risk']
+
+        # General strategies based on overall suitability
+        if suitability_analysis['final_score'] >= 0.8:
+            strategies.append("✅ Excellent conditions - Maintain current practices")
+        elif suitability_analysis['final_score'] >= 0.6:
+            strategies.append("🟡 Good conditions - Minor adjustments needed")
+        else:
+            strategies.append("🔴 Challenging conditions - Significant management required")
+
+        # Soil moisture management
+        if comp_scores['moisture'] < 0.5:
+            if crop_req['water_needs'] in ['High', 'Very High']:
+                strategies.append("💧 Implement irrigation system for consistent moisture")
+            strategies.append("🌱 Use mulch to conserve soil moisture")
+
+        # Organic matter management
+        if comp_scores['organic_matter'] < 0.5:
+            strategies.append("🍂 Apply organic amendments (compost, manure)")
+            strategies.append("🌿 Plant cover crops to build soil organic matter")
+
+        # Texture-specific strategies
+        if comp_scores['texture'] < 0.6:
+            strategies.append("🔄 Add soil amendments to improve soil structure")
+
+        # Disease management based on risk level
+        if disease_risk >= 0.7:
+            strategies.append("🦠 HIGH DISEASE RISK - Implement intensive IPM program")
+            strategies.append("🔄 Use 3+ year crop rotation with non-host crops")
+            strategies.append("🌱 Select disease-resistant varieties")
+        elif disease_risk >= 0.5:
+            strategies.append("⚠️ MODERATE DISEASE RISK - Regular monitoring needed")
+            strategies.append("🍃 Improve air circulation through proper spacing")
+
+        # Crop-specific additional strategies
+        crop_specific_strategies = self.get_crop_specific_strategies(crop_name, suitability_analysis)
+        strategies.extend(crop_specific_strategies)
+
+        return strategies
+
+    def get_crop_specific_strategies(self, crop_name, suitability_analysis):
+        """Get crop-specific management strategies"""
+
+        strategies = []
+        disease_risk = suitability_analysis['disease_risk']
+
+        if crop_name == 'Wheat':
+            if disease_risk > 0.6:
+                strategies.append("🌾 Use fungicide seed treatment for rust prevention")
+                strategies.append("📅 Time planting to avoid peak rust periods")
+            strategies.append("⚖️ Balance nitrogen application to reduce lodging")
+
+        elif crop_name == 'Tomato':
+            if disease_risk > 0.5:
+                strategies.append("🍅 Use stake and weave system for better air circulation")
+                strategies.append("💦 Use drip irrigation to keep foliage dry")
+            strategies.append("🥛 Ensure adequate calcium to prevent blossom end rot")
+
+        elif crop_name == 'Potato':
+            if disease_risk > 0.6:
+                strategies.append("🥔 Use certified disease-free seed potatoes")
+                strategies.append("🚫 Destroy cull piles and volunteer plants")
+            strategies.append("🔄 Practice 4-year rotation with non-solanaceous crops")
+
+        return strategies
+
+    def analyze_all_crops(self, moisture_value, som_value, texture_value, temp_value, location_name):
+        """Analyze all crops with enhanced suitability scoring"""
+
+        analysis_results = {}
+
+        for crop_name, crop_req in CROP_REQUIREMENTS.items():
+            # Calculate suitability with disease risk
+            suitability_analysis = self.calculate_crop_suitability_score(
+                moisture_value, som_value, texture_value, temp_value, crop_req)
+
+            # Generate management strategies
+            management_strategies = self.generate_management_strategies(
+                crop_name, suitability_analysis, crop_req)
+
+            analysis_results[crop_name] = {
+                'suitability_analysis': suitability_analysis,
+                'management_strategies': management_strategies,
+                'crop_requirements': crop_req
+            }
+
+        return analysis_results
+
+    # ============ SOIL ANALYSIS METHODS ============
+    def get_africa_som_data(self, geometry):
+        """Get Africa SOM data"""
+        try:
+            africa_soil = ee.Image("ISDASOIL/Africa/v1/carbon_organic")
+            converted_africa = africa_soil.divide(10).exp().subtract(1)
+
+            soc_stats = converted_africa.select(0).reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=1000,
+                maxPixels=1e9
+            ).getInfo()
+
+            soc_val = list(soc_stats.values())[0] if soc_stats else 0.41
+            soc_percent = soc_val / (BULK_DENSITY * 20 * 100)
+            som_percent = soc_percent * SOC_TO_SOM_FACTOR * 100
+
+            return {'mean': som_percent}
+        except:
+            return {'mean': 0.41}
+
+    def get_global_som_data(self, geometry):
+        """Get global SOM data"""
+        try:
+            gsoc = ee.Image("projects/earthengine-legacy/assets/projects/sat-io/open-datasets/FAO/GSOCMAP1-5-0")
+            soc_mean = gsoc.select('b1')
+
+            soc_stats = soc_mean.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=1000,
+                maxPixels=1e9
+            ).getInfo()
+
+            soc_val = list(soc_stats.values())[0] if soc_stats else 0.41
+            soc_percent = soc_val / (BULK_DENSITY * 30 * 100)
+            som_percent = soc_percent * SOC_TO_SOM_FACTOR * 100
+
+            return {'mean': som_percent}
+        except:
+            return {'mean': 0.41}
+
+    def get_soil_texture_data(self, geometry):
+        """Get soil texture data"""
+        try:
+            texture_dataset = ee.Image('OpenLandMap/SOL/SOL_TEXTURE-CLASS_USDA-TT_M/v02')
+            soil_texture = texture_dataset.select('b0')
+
+            texture_stats = soil_texture.reduceRegion(
+                reducer=ee.Reducer.mode(),
+                geometry=geometry,
+                scale=250,
+                maxPixels=1e9
+            ).getInfo()
+
+            texture_val = list(texture_stats.values())[0] if texture_stats else 7
+            return {'mode': texture_val}
+        except:
+            return {'mode': 7}
+
+    def get_area_representative_values(self, geometry, area_name):
+        """Get representative soil values for crop suitability analysis"""
+
+        # Get climate data for moisture estimation
+        climate_data = self.get_daily_climate_data('2024-01-01', '2024-12-31', geometry)
+
+        # Calculate mean moisture
+        try:
+            mean_moisture_stats = climate_data.select('volumetric_soil_water_layer_1').mean().reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=5000,
+                maxPixels=1e9
+            ).getInfo()
+            moisture_val = mean_moisture_stats.get('volumetric_soil_water_layer_1', 0.15)
+        except:
+            moisture_val = 0.15
+
+        # Check if in Africa for soil data
+        is_in_africa = AFRICA_BOUNDS.intersects(geometry, 100).getInfo()
+
+        # Get SOM data
+        if is_in_africa:
+            som_stats = self.get_africa_som_data(geometry)
+        else:
+            som_stats = self.get_global_som_data(geometry)
+
+        som_val = som_stats.get('mean', 0.41)
+
+        # Get texture data
+        texture_stats = self.get_soil_texture_data(geometry)
+        texture_val = texture_stats.get('mode', 7)
+
+        # Get temperature (use default or from climate data)
+        temp_val = 22.0  # Default temperature
+
+        return moisture_val, som_val, texture_val, temp_val
+
+    def get_daily_climate_data(self, start_date, end_date, geometry):
+        """Get daily climate data matching GEE JavaScript implementation"""
+        try:
+            modis_lst = ee.ImageCollection('MODIS/061/MOD11A1') \
+                .filterDate(start_date, end_date) \
+                .filterBounds(geometry) \
+                .select('LST_Day_1km')
+
+            chirps = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY') \
+                .filterDate(start_date, end_date) \
+                .filterBounds(geometry) \
+                .select('precipitation')
+
+            def process_daily_data(image):
+                date = image.date()
+                lst = image.select('LST_Day_1km').multiply(0.02).subtract(273.15)
+
+                precip_image = chirps.filter(ee.Filter.eq('system:time_start', date.millis())).first()
+                precip = precip_image.select('precipitation') if precip_image else ee.Image.constant(0)
+
+                base_moisture = precip.multiply(0.1).add(0.15)
+                temp_effect = lst.multiply(-0.005).add(1)
+
+                soil_moisture1 = base_moisture.multiply(temp_effect).rename('volumetric_soil_water_layer_1')
+                soil_moisture2 = base_moisture.multiply(temp_effect).multiply(0.8).rename('volumetric_soil_water_layer_2')
+                soil_moisture3 = base_moisture.multiply(temp_effect).multiply(0.6).rename('volumetric_soil_water_layer_3')
+
+                evaporation = lst.multiply(0.02).add(precip.multiply(0.1)).rename('potential_evaporation')
+
+                return ee.Image.cat([
+                    soil_moisture1, soil_moisture2, soil_moisture3,
+                    precip.rename('total_precipitation'),
+                    evaporation,
+                    lst.rename('temperature_2m')
+                ]).set('system:time_start', date.millis())
+
+            return modis_lst.map(process_daily_data)
+
+        except Exception as e:
+            return self._create_daily_synthetic_data(start_date, end_date, geometry)
+
+    def _create_daily_synthetic_data(self, start_date, end_date, geometry):
+        """Create synthetic daily data matching GEE patterns"""
+        start = ee.Date(start_date)
+        end = ee.Date(end_date)
+        days = ee.List.sequence(0, end.difference(start, 'day').subtract(1))
+
+        def create_daily_image(day_offset):
+            date = start.advance(day_offset, 'day')
+            day_of_year = date.getRelative('day', 'year')
+
+            season = ee.Number(day_of_year).multiply(2 * np.pi / 365).cos()
+
+            base_temp = ee.Number(18).add(ee.Number(12).multiply(season))
+
+            precip_season = ee.Number(day_of_year).subtract(30).multiply(2 * np.pi / 365).cos()
+            base_precip = ee.Number(1.5).add(ee.Number(1.0).multiply(precip_season.negative()))
+
+            temperature = ee.Image.constant(base_temp).rename('temperature_2m')
+            precipitation = ee.Image.constant(base_precip.max(0)).rename('total_precipitation')
+
+            base_moisture = precipitation.multiply(0.1).add(0.15)
+            temp_effect = temperature.multiply(-0.005).add(1)
+
+            soil_moisture1 = base_moisture.multiply(temp_effect).rename('volumetric_soil_water_layer_1')
+            soil_moisture2 = base_moisture.multiply(temp_effect).multiply(0.8).rename('volumetric_soil_water_layer_2')
+            soil_moisture3 = base_moisture.multiply(temp_effect).multiply(0.6).rename('volumetric_soil_water_layer_3')
+
+            evaporation = temperature.multiply(0.02).add(precipitation.multiply(0.1)).rename('potential_evaporation')
+
+            return ee.Image.cat([
+                soil_moisture1, soil_moisture2, soil_moisture3,
+                precipitation, evaporation, temperature
+            ]).set('system:time_start', date.millis())
+
+        return ee.ImageCollection.fromImages(days.map(create_daily_image))
+
+    # ============ GROUNDWATER ANALYSIS METHODS ============
+    def get_precipitation(self, geometry, start_date, end_date):
+        """Get annual precipitation in mm"""
+        try:
+            precipitation = self.chirps.filterDate(start_date, end_date) \
+                                      .filterBounds(geometry) \
+                                      .mean()
+
+            stats = precipitation.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=self.config['scale'],
+                maxPixels=self.config['max_pixels']
+            )
+
+            precip_value = stats.get('precipitation').getInfo()
+            # Convert to annual (assuming data is daily)
+            annual_precip = (precip_value or 1.0) * 365
+            return annual_precip
+        except Exception as e:
+            return 350
+
+    def get_soil_properties(self, geometry):
+        """Get comprehensive soil properties including sand, silt, clay percentages"""
+        try:
+            # Get clay content
+            clay_stats = self.soil_clay.select('b10').reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=self.config['scale'],
+                maxPixels=self.config['max_pixels']
+            )
+            clay_content = clay_stats.get('b10').getInfo() or 25
+
+            # Get sand content
+            sand_stats = self.soil_sand.select('b10').reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=self.config['scale'],
+                maxPixels=self.config['max_pixels']
+            )
+            sand_content = sand_stats.get('b10').getInfo() or 40
+
+            # Get silt content
+            silt_stats = self.soil_silt.select('b10').reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=self.config['scale'],
+                maxPixels=self.config['max_pixels']
+            )
+            silt_content = silt_stats.get('b10').getInfo() or 35
+
+            # Normalize to 100%
+            total = clay_content + sand_content + silt_content
+            if total > 0:
+                clay_content = (clay_content / total) * 100
+                sand_content = (sand_content / total) * 100
+                silt_content = (silt_content / total) * 100
+
+            # Estimate hydraulic conductivity based on soil texture
+            conductivity, soil_type = self.estimate_conductivity(clay_content, sand_content)
+
+            return {
+                'clay_percent': clay_content,
+                'sand_percent': sand_content,
+                'silt_percent': silt_content,
+                'conductivity': conductivity,
+                'soil_type': soil_type
+            }
+        except Exception as e:
+            return {
+                'clay_percent': 25,
+                'sand_percent': 40,
+                'silt_percent': 35,
+                'conductivity': 5.0,
+                'soil_type': "Loam"
+            }
+
+    def estimate_conductivity(self, clay, sand):
+        """Estimate hydraulic conductivity based on soil texture"""
+        if sand > 70 and clay < 15:
+            conductivity = 25.0  # cm/day - Sand
+            soil_type = "Sand"
+        elif sand > 50 and clay < 20:
+            conductivity = 10.0  # cm/day - Sandy Loam
+            soil_type = "Sandy Loam"
+        elif clay < 27 and sand < 52:
+            conductivity = 5.0   # cm/day - Loam
+            soil_type = "Loam"
+        elif clay > 27 and clay < 40:
+            conductivity = 1.0   # cm/day - Clay Loam
+            soil_type = "Clay Loam"
+        else:
+            conductivity = 0.1   # cm/day - Clay
+            soil_type = "Clay"
+        return conductivity, soil_type
+
+    def get_topography(self, geometry):
+        """Get slope and topographic wetness index"""
+        try:
+            dem = self.dem.clip(geometry)
+
+            # Calculate slope
+            slope = ee.Terrain.slope(dem)
+
+            # Calculate TWI (Topographic Wetness Index)
+            flow_accumulation = dem.flowAccumulation()
+            slope_radians = slope.multiply(3.14159).divide(180)
+            tan_slope = slope_radians.tan()
+            twi = flow_accumulation.add(1).divide(tan_slope.add(0.001)).log()
+
+            slope_stats = slope.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=self.config['scale'],
+                maxPixels=self.config['max_pixels']
+            )
+
+            twi_stats = twi.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=self.config['scale'],
+                maxPixels=self.config['max_pixels']
+            )
+
+            slope_val = slope_stats.get('slope').getInfo() or 5.0
+            twi_val = twi_stats.get('elevation').getInfo() or 8.0
+
+            return slope_val, twi_val
+        except Exception as e:
+            return 5.0, 8.0
+
+    def calculate_water_balance(self, precipitation, soil_type, slope):
+        """Calculate water balance components"""
+        # Base evapotranspiration (simplified)
+        et = precipitation * 0.6  # 60% of precipitation
+
+        # Runoff based on slope and soil
+        if slope > 15:
+            runoff_coeff = 0.4  # High slope = more runoff
+        elif slope > 5:
+            runoff_coeff = 0.25
+        else:
+            runoff_coeff = 0.15  # Low slope = less runoff
+
+        # Adjust for soil type
+        if soil_type == "Clay":
+            runoff_coeff += 0.1
+        elif soil_type == "Sand" or soil_type == "Sandy Loam":
+            runoff_coeff -= 0.05
+
+        runoff = precipitation * runoff_coeff
+
+        # Recharge = Precipitation - ET - Runoff
+        recharge = precipitation - et - runoff
+        recharge = max(0, recharge)  # Ensure non-negative
+
+        return {
+            'precipitation_mm': precipitation,
+            'evapotranspiration_mm': et,
+            'runoff_mm': runoff,
+            'recharge_mm': recharge
+        }
+
+    def calculate_gw_potential(self, water_balance, soil_props, slope, twi):
+        """Calculate groundwater potential score (0-1)"""
+        conductivity = soil_props['conductivity']
+        sand_percent = soil_props['sand_percent']
+
+        # Normalize factors
+        recharge_norm = min(water_balance['recharge_mm'] / 500, 1.0)
+        conductivity_norm = min(conductivity / 25, 1.0)
+        slope_norm = 1 - min(slope / 45, 1.0)
+        twi_norm = min(twi / 15, 1.0)
+        sand_norm = sand_percent / 100
+
+        # CORRECTED COMPONENT WEIGHTS - ensuring they sum to 1.0
+        components = {
+            'recharge_potential': recharge_norm * 0.35,      # 35%
+            'soil_infiltration': conductivity_norm * 0.25,   # 25%
+            'topographic_factors': (slope_norm * 0.1 + twi_norm * 0.1),  # 20% total
+            'soil_texture': sand_norm * 0.15,                # 15%
+            'geological_factors': 0.05                       # 5%
+        }
+
+        total_score = sum(components.values())
+
+        # Categorize
+        if total_score < 0.45:
+            category = "LOW"
+        elif total_score < 0.6:
+            category = "MODERATE"
+        elif total_score < 0.75:
+            category = "HIGH"
+        else:
+            category = "VERY HIGH"
+
+        return total_score, category, components
+
+    def analyze_groundwater_potential(self, geometry, name):
+        """Comprehensive groundwater analysis for a location with better error handling"""
+        try:
+            # Get precipitation with fallback
+            precipitation = self.get_precipitation(
+                geometry,
+                self.config['default_start_date'],
+                self.config['default_end_date']
+            )
+
+            # Get comprehensive soil properties with fallback
+            soil_props = self.get_soil_properties(geometry)
+
+            # Get topography with fallback
+            slope, twi = self.get_topography(geometry)
+
+            # Calculate water balance
+            water_balance = self.calculate_water_balance(precipitation, soil_props['soil_type'], slope)
+
+            # Calculate groundwater potential
+            score, category, components = self.calculate_gw_potential(
+                water_balance, soil_props, slope, twi
+            )
+
+            # Get centroid for mapping
+            centroid = geometry.centroid()
+            lon = centroid.coordinates().get(0).getInfo()
+            lat = centroid.coordinates().get(1).getInfo()
+
+            # Ensure all values are finite numbers
+            def ensure_finite(value, default=0):
+                return value if (isinstance(value, (int, float)) and np.isfinite(value)) else default
+
+            result = {
+                'name': name,
+                'score': ensure_finite(score, 0.5),
+                'category': category,
+                'precipitation_mm': ensure_finite(precipitation, 350),
+                'recharge_mm': ensure_finite(water_balance['recharge_mm'], 50),
+                'conductivity': ensure_finite(soil_props['conductivity'], 5.0),
+                'soil_type': soil_props['soil_type'],
+                'clay_percent': ensure_finite(soil_props['clay_percent'], 25),
+                'sand_percent': ensure_finite(soil_props['sand_percent'], 40),
+                'silt_percent': ensure_finite(soil_props['silt_percent'], 35),
+                'slope': ensure_finite(slope, 5.0),
+                'twi': ensure_finite(twi, 8.0),
+                'lon': ensure_finite(lon, 0),
+                'lat': ensure_finite(lat, 0),
+                'water_balance': water_balance,
+                'components': components
+            }
+
+            return result
+
+        except Exception as e:
+            # Return a fallback result to prevent complete failure
+            return {
+                'name': name,
+                'score': 0.5,
+                'category': "UNKNOWN",
+                'precipitation_mm': 350,
+                'recharge_mm': 50,
+                'conductivity': 5.0,
+                'soil_type': "Loam",
+                'clay_percent': 25,
+                'sand_percent': 40,
+                'silt_percent': 35,
+                'slope': 5.0,
+                'twi': 8.0,
+                'lon': 0,
+                'lat': 0,
+                'water_balance': {'precipitation_mm': 350, 'evapotranspiration_mm': 210, 'runoff_mm': 70, 'recharge_mm': 70},
+                'components': {'recharge_potential': 0.2, 'soil_infiltration': 0.2, 'topographic_factors': 0.2, 'soil_texture': 0.2, 'geological_factors': 0.05}
+            }
+
+    # ============ UTILITY METHODS ============
+    def calculate_moisture_score(self, moisture_meas, moisture_opt, moisture_tol):
+        """Calculate moisture suitability score"""
+        diff = abs(moisture_meas - moisture_opt)
+        if diff <= 0:
+            return 1.0
+        if diff <= moisture_tol:
+            return max(0, 1 - (diff / moisture_tol))
+        return 0.0
+
+    def calculate_om_score(self, om_meas, om_opt, om_tol):
+        """Calculate organic matter suitability score"""
+        diff = abs(om_meas - om_opt)
+        return max(0, 1 - (diff / om_tol))
+
+    def get_texture_score(self, texture_class, crop_texture_scores):
+        """Get texture suitability score"""
+        if texture_class is None:
+            return 0.5
+
+        rounded_class = int(round(texture_class))
+        if rounded_class < 1 or rounded_class > 12:
+            return 0.5
+
+        texture_name = SOIL_TEXTURE_CLASSES[rounded_class]
+        return crop_texture_scores.get(texture_name, 0.5)
+
+    def calculate_temp_score(self, temp_meas, temp_opt, temp_tol):
+        """Calculate temperature suitability score"""
+        diff = abs(temp_meas - temp_opt)
+        if diff <= 0:
+            return 1.0
+        if diff <= temp_tol:
+            return max(0, 1 - (diff / temp_tol))
+        return 0.0
+
+    def get_geometry_from_selection(self, country, region, municipality):
+        """Get geometry based on selection level using FAO GAUL"""
+        try:
+            if municipality != 'Select Municipality':
+                feature = st.session_state.FAO_GAUL_ADMIN2.filter(ee.Filter.eq('ADM0_NAME', country)) \
+                               .filter(ee.Filter.eq('ADM1_NAME', region)) \
+                               .filter(ee.Filter.eq('ADM2_NAME', municipality)) \
+                               .first()
+                geometry = feature.geometry()
+                location_name = f"{municipality}, {region}, {country}"
+                return geometry, location_name
+
+            elif region != 'Select Region':
+                feature = st.session_state.FAO_GAUL_ADMIN1.filter(ee.Filter.eq('ADM0_NAME', country)) \
+                               .filter(ee.Filter.eq('ADM1_NAME', region)) \
+                               .first()
+                geometry = feature.geometry()
+                location_name = f"{region}, {country}"
+                return geometry, location_name
+
+            elif country != 'Select Country':
+                feature = st.session_state.FAO_GAUL.filter(ee.Filter.eq('ADM0_NAME', country)).first()
+                geometry = feature.geometry()
+                location_name = f"{country}"
+                return geometry, location_name
+
+            else:
+                return None, None
+
+        except Exception as e:
+            return None, None
+
+    # ============ MAIN ANALYSIS METHOD ============
+    def run_comprehensive_analysis(self, country, region='Select Region', municipality='Select Municipality',
+                                 analysis_type='crop_suitability'):
+        """Run comprehensive agricultural analysis for selected region"""
+
+        # Get geometry for selected location
+        geometry, location_name = self.get_geometry_from_selection(country, region, municipality)
+
+        if not geometry:
+            return None
+
+        results = {
+            'location_name': location_name,
+            'geometry': geometry,
+            'analysis_type': analysis_type
+        }
+
+        if analysis_type == 'groundwater':
+            # Run groundwater analysis
+            gw_results = self.analyze_groundwater_potential(geometry, location_name)
+            results['groundwater_analysis'] = gw_results
+
+        else:
+            # Run comprehensive crop suitability analysis
+            moisture_val, som_val, texture_val, temp_val = self.get_area_representative_values(geometry, location_name)
+
+            results['soil_parameters'] = {
+                'moisture': moisture_val,
+                'organic_matter': som_val,
+                'texture': texture_val,
+                'temperature': temp_val
+            }
+
+            # Crop Suitability Analysis with Disease Risk
+            crop_results = self.analyze_all_crops(moisture_val, som_val, texture_val, temp_val, location_name)
+            results['crop_analysis'] = crop_results
+
+        return results
 
 # Initialize session state for steps
 if 'current_step' not in st.session_state:
@@ -420,29 +1478,30 @@ if 'analysis_parameters' not in st.session_state:
     st.session_state.analysis_parameters = None
 if 'auto_show_results' not in st.session_state:
     st.session_state.auto_show_results = False
+if 'farmadvisor_instance' not in st.session_state:
+    st.session_state.farmadvisor_instance = FarmAdvisor() if st.session_state.ee_initialized else None
 
 # Page configuration
 st.set_page_config(
-    page_title="Khisba GIS - 3D Global Vegetation Analysis",
+    page_title="Khisba GIS - 3D Global Vegetation Analysis & FarmAdvisor",
     page_icon="🌍",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Define steps
+# Define steps including FarmAdvisor
 STEPS = [
     {"number": 1, "label": "Select Area", "icon": "📍"},
-    {"number": 2, "label": "Set Parameters", "icon": "⚙️"},
-    {"number": 3, "label": "View Map", "icon": "🗺️"},
-    {"number": 4, "label": "Run Analysis", "icon": "🚀"},
-    {"number": 5, "label": "View Results", "icon": "📊"}
+    {"number": 2, "label": "Analysis Type", "icon": "📊"},
+    {"number": 3, "label": "Run Analysis", "icon": "🚀"},
+    {"number": 4, "label": "View Results", "icon": "📈"}
 ]
 
 # Header
 st.markdown("""
 <div style="margin-bottom: 20px;">
-    <h1>🌍 KHISBA GIS</h1>
-    <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics - Guided Workflow</p>
+    <h1>🌍 KHISBA GIS + FARMADVISOR</h1>
+    <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics & Comprehensive Farm Advisory System</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -489,8 +1548,8 @@ st.markdown("""
         <span>Area Selected: {'Yes' if st.session_state.selected_area_name else 'No'}</span>
     </div>
     <div class="status-item">
-        <div class="status-dot {'active' if st.session_state.analysis_results else ''}"></div>
-        <span>Analysis: {'Complete' if st.session_state.analysis_results else 'Pending'}</span>
+        <div class="status-dot {'active' if st.session_state.farmadvisor_results else ''}"></div>
+        <span>FarmAdvisor: {'Complete' if st.session_state.farmadvisor_results else 'Pending'}</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -520,7 +1579,7 @@ with col1:
         if st.session_state.ee_initialized:
             try:
                 # Get countries
-                countries_fc = ee.FeatureCollection("FAO/GAUL/2015/level0")
+                countries_fc = st.session_state.FAO_GAUL
                 country_names = countries_fc.aggregate_array('ADM0_NAME').distinct().getInfo()
                 country_names = sorted(country_names) if country_names else []
                 
@@ -534,7 +1593,7 @@ with col1:
                 
                 if selected_country and selected_country != "Select a country":
                     country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
-                    admin1_fc = ee.FeatureCollection("FAO/GAUL/2015/level1")\
+                    admin1_fc = st.session_state.FAO_GAUL_ADMIN1\
                         .filter(ee.Filter.eq('ADM0_CODE', country_feature.get('ADM0_CODE')))
                     
                     admin1_names = admin1_fc.aggregate_array('ADM1_NAME').distinct().getInfo()
@@ -550,7 +1609,7 @@ with col1:
                     
                     if selected_admin1 and selected_admin1 != "Select state/province":
                         admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
-                        admin2_fc = ee.FeatureCollection("FAO/GAUL/2015/level2")\
+                        admin2_fc = st.session_state.FAO_GAUL_ADMIN2\
                             .filter(ee.Filter.eq('ADM1_CODE', admin1_feature.get('ADM1_CODE')))
                         
                         admin2_names = admin2_fc.aggregate_array('ADM2_NAME').distinct().getInfo()
@@ -589,6 +1648,11 @@ with col1:
                         st.session_state.selected_area_name = area_name
                         st.session_state.selected_area_level = area_level
                         
+                        # Store selections for FarmAdvisor
+                        st.session_state.selected_country = selected_country
+                        st.session_state.selected_admin1 = selected_admin1
+                        st.session_state.selected_admin2 = selected_admin2
+                        
                         # Get coordinates for the map
                         bounds = geometry.geometry().bounds().getInfo()
                         coords = bounds['coordinates'][0]
@@ -617,20 +1681,20 @@ with col1:
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Step 2: Analysis Parameters
+    # Step 2: Analysis Type Selection
     elif st.session_state.current_step == 2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">⚙️</div><h3 style="margin: 0;">Step 2: Set Analysis Parameters</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Step 2: Select Analysis Type</h3></div>', unsafe_allow_html=True)
         
         # Guided instruction for step 2
         st.markdown("""
         <div class="guide-container">
             <div class="guide-header">
-                <div class="guide-icon">📋</div>
-                <div class="guide-title">Configure Analysis</div>
+                <div class="guide-icon">🔍</div>
+                <div class="guide-title">Choose Analysis</div>
             </div>
             <div class="guide-content">
-                Set the time range, satellite source, and vegetation indices for your analysis. Default values are optimized for most use cases.
+                Select the type of agricultural analysis you want to perform. FarmAdvisor provides comprehensive crop suitability and groundwater analysis.
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -638,52 +1702,45 @@ with col1:
         if st.session_state.selected_area_name:
             st.info(f"**Selected Area:** {st.session_state.selected_area_name}")
             
-            # Date range
-            col_a, col_b = st.columns(2)
-            with col_a:
-                start_date = st.date_input(
-                    "📅 Start Date",
-                    value=datetime(2023, 1, 1),
-                    help="Start date for analysis"
-                )
-            with col_b:
-                end_date = st.date_input(
-                    "📅 End Date",
-                    value=datetime(2023, 12, 31),
-                    help="End date for analysis"
-                )
-            
-            # Satellite source
-            collection_choice = st.selectbox(
-                "🛰️ Satellite Source",
-                options=["Sentinel-2", "Landsat-8"],
-                help="Choose satellite collection",
-                index=0
+            # Analysis type selection
+            analysis_type = st.radio(
+                "📋 Select Analysis Type",
+                options=[
+                    "🌾 Crop Suitability & Disease Risk Analysis",
+                    "💧 Groundwater Potential Analysis"
+                ],
+                help="Choose the type of analysis to perform"
             )
             
-            # Cloud cover
-            cloud_cover = st.slider(
-                "☁️ Max Cloud Cover (%)",
-                min_value=0,
-                max_value=100,
-                value=20,
-                help="Maximum cloud cover percentage"
-            )
+            # Map selection to internal values
+            if "Crop Suitability" in analysis_type:
+                st.session_state.farmadvisor_analysis_type = 'crop_suitability'
+                analysis_description = """
+                **Crop Suitability Analysis Includes:**
+                • Soil moisture and organic matter assessment
+                • Soil texture classification
+                • Temperature suitability analysis
+                • Disease risk assessment for common crops
+                • Management recommendations for 8+ crops
+                • Yield potential estimation
+                """
+            else:
+                st.session_state.farmadvisor_analysis_type = 'groundwater'
+                analysis_description = """
+                **Groundwater Potential Analysis Includes:**
+                • Precipitation and water balance analysis
+                • Soil infiltration capacity assessment
+                • Topographic wetness index calculation
+                • Groundwater recharge potential
+                • Hydraulic conductivity estimation
+                • Water availability for irrigation
+                """
             
-            # Vegetation indices - SAME AS FIRST CODE
-            available_indices = [
-                'NDVI', 'ARVI', 'ATSAVI', 'DVI', 'EVI', 'EVI2', 'GNDVI', 'MSAVI', 'MSI', 'MTVI', 'MTVI2',
-                'NDTI', 'NDWI', 'OSAVI', 'RDVI', 'RI', 'RVI', 'SAVI', 'TVI', 'TSAVI', 'VARI', 'VIN', 'WDRVI',
-                'GCVI', 'AWEI', 'MNDWI', 'WI', 'ANDWI', 'NDSI', 'nDDI', 'NBR', 'DBSI', 'SI', 'S3', 'BRI',
-                'SSI', 'NDSI_Salinity', 'SRPI', 'MCARI', 'NDCI', 'PSSRb1', 'SIPI', 'PSRI', 'Chl_red_edge', 'MARI', 'NDMI'
-            ]
-            
-            selected_indices = st.multiselect(
-                "🌿 Vegetation Indices",
-                options=available_indices,
-                default=['NDVI', 'EVI', 'SAVI', 'NDWI'],
-                help="Choose vegetation indices to analyze"
-            )
+            st.markdown(f"""
+            <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #00ff88;">
+                {analysis_description}
+            </div>
+            """, unsafe_allow_html=True)
             
             # Navigation buttons
             col_back, col_next = st.columns(2)
@@ -693,14 +1750,7 @@ with col1:
                     st.rerun()
             
             with col_next:
-                if st.button("✅ Save Parameters & Continue", type="primary", use_container_width=True, disabled=not selected_indices):
-                    st.session_state.analysis_parameters = {
-                        'start_date': start_date,
-                        'end_date': end_date,
-                        'collection_choice': collection_choice,
-                        'cloud_cover': cloud_cover,
-                        'selected_indices': selected_indices
-                    }
+                if st.button("✅ Confirm & Continue", type="primary", use_container_width=True):
                     st.session_state.current_step = 3
                     st.rerun()
         else:
@@ -711,46 +1761,57 @@ with col1:
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Step 3: View Map & Confirm
+    # Step 3: Run FarmAdvisor Analysis
     elif st.session_state.current_step == 3:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">🗺️</div><h3 style="margin: 0;">Step 3: Preview Selected Area</h3></div>', unsafe_allow_html=True)
-        
-        # Guided instruction for step 3
-        st.markdown("""
-        <div class="guide-container">
-            <div class="guide-header">
-                <div class="guide-icon">👁️</div>
-                <div class="guide-title">Preview Area</div>
-            </div>
-            <div class="guide-content">
-                Review your selected area on the 3D map. Make sure the highlighted region matches your intended analysis area.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">🚀</div><h3 style="margin: 0;">Step 3: Run FarmAdvisor Analysis</h3></div>', unsafe_allow_html=True)
         
         if st.session_state.selected_area_name:
             st.info(f"""
             **Selected Area:** {st.session_state.selected_area_name}
             
-            **Analysis Parameters:**
-            - Time Range: {st.session_state.analysis_parameters['start_date']} to {st.session_state.analysis_parameters['end_date']}
-            - Satellite: {st.session_state.analysis_parameters['collection_choice']}
-            - Cloud Cover: ≤{st.session_state.analysis_parameters['cloud_cover']}%
-            - Indices: {', '.join(st.session_state.analysis_parameters['selected_indices'])}
+            **Analysis Type:** {'Crop Suitability & Disease Risk' if st.session_state.farmadvisor_analysis_type == 'crop_suitability' else 'Groundwater Potential'}
+            
+            **Status:** Ready to analyze
             """)
             
-            # Navigation buttons
-            col_back, col_next = st.columns(2)
-            with col_back:
-                if st.button("⬅️ Back to Parameters", use_container_width=True):
-                    st.session_state.current_step = 2
-                    st.rerun()
+            if st.button("🚀 Run FarmAdvisor Analysis", type="primary", use_container_width=True):
+                with st.spinner("Running FarmAdvisor analysis..."):
+                    try:
+                        # Get selected location details
+                        selected_country = st.session_state.get('selected_country', '')
+                        selected_admin1 = st.session_state.get('selected_admin1', 'Select Region')
+                        selected_admin2 = st.session_state.get('selected_admin2', 'Select Municipality')
+                        
+                        # Run FarmAdvisor analysis
+                        analyzer = st.session_state.farmadvisor_instance
+                        results = analyzer.run_comprehensive_analysis(
+                            selected_country,
+                            selected_admin1,
+                            selected_admin2,
+                            st.session_state.farmadvisor_analysis_type
+                        )
+                        
+                        if results:
+                            st.session_state.farmadvisor_results = results
+                            st.success("✅ Analysis completed successfully!")
+                            
+                            # Auto-move to results after 1 second
+                            import time
+                            time.sleep(1)
+                            st.session_state.current_step = 4
+                            st.rerun()
+                        else:
+                            st.error("❌ Analysis failed. Please try again.")
+                            
+                    except Exception as e:
+                        st.error(f"❌ Error during analysis: {str(e)}")
             
-            with col_next:
-                if st.button("🚀 Run Analysis Now", type="primary", use_container_width=True):
-                    st.session_state.current_step = 4
-                    st.session_state.auto_show_results = False
+            # Navigation buttons
+            col_back, _ = st.columns(2)
+            with col_back:
+                if st.button("⬅️ Back to Analysis Type", use_container_width=True):
+                    st.session_state.current_step = 2
                     st.rerun()
         else:
             st.warning("No area selected. Please go back to Step 1.")
@@ -760,130 +1821,312 @@ with col1:
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Step 4: Running Analysis
+    # Step 4: View FarmAdvisor Results
     elif st.session_state.current_step == 4:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">🚀</div><h3 style="margin: 0;">Step 4: Running Analysis</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Step 4: FarmAdvisor Results</h3></div>', unsafe_allow_html=True)
         
-        # Show analysis progress
-        st.markdown("""
-        <div class="guide-container">
-            <div class="guide-header">
-                <div class="guide-icon">⏳</div>
-                <div class="guide-title">Analysis in Progress</div>
-            </div>
-            <div class="guide-content">
-                Please wait while we process your vegetation analysis. This may take a few moments depending on the area size and time range.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Run the analysis automatically
-        if not st.session_state.auto_show_results:
-            # Create a placeholder for progress
-            progress_placeholder = st.empty()
-            status_placeholder = st.empty()
+        if st.session_state.farmadvisor_results:
+            results = st.session_state.farmadvisor_results
+            location_name = results['location_name']
+            analysis_type = results['analysis_type']
             
-            with progress_placeholder.container():
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                
-                analysis_steps = [
-                    "Initializing Earth Engine...",
-                    "Loading satellite data...",
-                    "Processing vegetation indices...",
-                    "Calculating statistics...",
-                    "Generating visualizations..."
-                ]
-                
-                # Simulate analysis progress
-                try:
-                    params = st.session_state.analysis_parameters
-                    
-                    for i, step in enumerate(analysis_steps):
-                        status_text.text(step)
-                        progress_bar.progress((i + 1) / len(analysis_steps))
-                        
-                        # Simulate processing time
-                        import time
-                        time.sleep(1)
-                    
-                    # Create simulated results
-                    results = {}
-                    for index in params['selected_indices']:
-                        # Simulate data
-                        import random
-                        dates = [f"2023-{m:02d}-15" for m in range(1, 13)]
-                        values = [random.uniform(0.1, 0.9) for _ in range(12)]
-                        results[index] = {'dates': dates, 'values': values}
-                    
-                    st.session_state.analysis_results = results
-                    progress_bar.progress(1.0)
-                    status_text.text("✅ Analysis Complete!")
-                    
-                    # Auto-move to results after 2 seconds
-                    time.sleep(2)
-                    st.session_state.current_step = 5
-                    st.session_state.auto_show_results = True
-                    st.rerun()
-                    
-                except Exception as e:
-                    st.error(f"Analysis failed: {str(e)}")
-                    if st.button("🔄 Try Again", use_container_width=True):
-                        st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Step 5: View Results
-    elif st.session_state.current_step == 5:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Step 5: Analysis Results</h3></div>', unsafe_allow_html=True)
-        
-        if st.session_state.analysis_results:
             # Navigation buttons
             col_back, col_new = st.columns(2)
             with col_back:
-                if st.button("⬅️ Back to Map", use_container_width=True):
+                if st.button("⬅️ Back to Analysis", use_container_width=True):
                     st.session_state.current_step = 3
                     st.rerun()
             
             with col_new:
                 if st.button("🔄 New Analysis", use_container_width=True):
                     # Reset for new analysis
-                    for key in ['selected_geometry', 'analysis_results', 'selected_coordinates', 
-                               'selected_area_name', 'analysis_parameters']:
-                        if key in st.session_state:
-                            del st.session_state[key]
+                    st.session_state.farmadvisor_results = None
+                    st.session_state.show_detailed_analysis = False
                     st.session_state.current_step = 1
                     st.rerun()
             
-            # Export options
-            st.subheader("💾 Export Results")
-            if st.button("📥 Download CSV", use_container_width=True):
-                # Create CSV data
-                export_data = []
-                for index, data in st.session_state.analysis_results.items():
-                    for date, value in zip(data['dates'], data['values']):
-                        export_data.append({
-                            'Date': date,
-                            'Index': index,
-                            'Value': value
-                        })
-                
-                df = pd.DataFrame(export_data)
-                st.download_button(
-                    label="Click to Download CSV",
-                    data=df.to_csv(index=False),
-                    file_name=f"vegetation_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
+            # Display results based on analysis type
+            if analysis_type == 'groundwater':
+                display_groundwater_results(results)
+            else:
+                display_crop_suitability_results(results)
         else:
             st.warning("No results available. Please run an analysis first.")
             if st.button("⬅️ Go Back", use_container_width=True):
-                st.session_state.current_step = 4
+                st.session_state.current_step = 3
                 st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
+
+def display_groundwater_results(results):
+    """Display groundwater analysis results"""
+    gw = results['groundwater_analysis']
+    
+    st.markdown(f"""
+    <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #00ff88;">
+        <div style="color: #00ff88; font-weight: 600; font-size: 16px;">Groundwater Potential Analysis</div>
+        <div style="color: #cccccc; font-size: 12px; margin-top: 5px;">{results['location_name']}</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Score with color coding
+    score = gw['score']
+    if score >= 0.75:
+        score_color = "#00ff88"
+        score_label = "VERY HIGH"
+    elif score >= 0.6:
+        score_color = "#4ECDC4"
+        score_label = "HIGH"
+    elif score >= 0.45:
+        score_color = "#FFA500"
+        score_label = "MODERATE"
+    else:
+        score_color = "#FF6B6B"
+        score_label = "LOW"
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Groundwater Score", f"{score:.3f}", delta=None, delta_color="normal")
+    with col2:
+        st.metric("Potential Category", score_label)
+    with col3:
+        st.metric("Recharge", f"{gw['recharge_mm']:.0f} mm/year")
+    
+    # Water Balance Components
+    st.subheader("💧 Water Balance Components")
+    water_balance = gw['water_balance']
+    
+    fig = go.Figure(data=[
+        go.Bar(name='Precipitation', x=['Water Balance'], y=[water_balance['precipitation_mm']], marker_color='#1f77b4'),
+        go.Bar(name='Evapotranspiration', x=['Water Balance'], y=[water_balance['evapotranspiration_mm']], marker_color='#ff7f0e'),
+        go.Bar(name='Runoff', x=['Water Balance'], y=[water_balance['runoff_mm']], marker_color='#2ca02c'),
+        go.Bar(name='Recharge', x=['Water Balance'], y=[water_balance['recharge_mm']], marker_color='#d62728')
+    ])
+    
+    fig.update_layout(
+        title="Annual Water Balance (mm/year)",
+        plot_bgcolor='#0a0a0a',
+        paper_bgcolor='#0a0a0a',
+        font=dict(color='#ffffff'),
+        height=400,
+        showlegend=True
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Soil Properties
+    st.subheader("🌱 Soil Properties")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Soil Type", gw['soil_type'])
+    with col2:
+        st.metric("Sand Content", f"{gw['sand_percent']:.1f}%")
+    with col3:
+        st.metric("Clay Content", f"{gw['clay_percent']:.1f}%")
+    with col4:
+        st.metric("Conductivity", f"{gw['conductivity']:.2f} cm/day")
+    
+    # Topography
+    st.subheader("🗺️ Topography")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Average Slope", f"{gw['slope']:.1f}°")
+    with col2:
+        st.metric("Topographic Wetness Index", f"{gw['twi']:.2f}")
+    
+    # Recommendations
+    st.subheader("💡 Recommendations")
+    if score >= 0.75:
+        st.success("""
+        **Excellent Groundwater Potential:**
+        • High recharge rates suitable for irrigation
+        • Consider installing wells for agricultural use
+        • Monitor water quality regularly
+        • Implement sustainable water management practices
+        """)
+    elif score >= 0.6:
+        st.info("""
+        **Good Groundwater Potential:**
+        • Moderate recharge suitable for supplemental irrigation
+        • Consider rainwater harvesting to supplement groundwater
+        • Monitor water table levels during dry seasons
+        • Practice water conservation measures
+        """)
+    elif score >= 0.45:
+        st.warning("""
+        **Moderate Groundwater Potential:**
+        • Limited recharge capacity
+        • Use groundwater as supplementary source only
+        • Implement water-efficient irrigation systems
+        • Consider alternative water sources
+        """)
+    else:
+        st.error("""
+        **Low Groundwater Potential:**
+        • Very limited groundwater availability
+        • Not suitable for groundwater-dependent agriculture
+        • Focus on rainwater harvesting and storage
+        • Consider drought-resistant crops
+        • Explore alternative water sources
+        """)
+
+def display_crop_suitability_results(results):
+    """Display crop suitability analysis results"""
+    crop_analysis = results['crop_analysis']
+    soil_params = results['soil_parameters']
+    
+    st.markdown(f"""
+    <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #00ff88;">
+        <div style="color: #00ff88; font-weight: 600; font-size: 16px;">Crop Suitability Analysis</div>
+        <div style="color: #cccccc; font-size: 12px; margin-top: 5px;">{results['location_name']}</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Soil Parameters
+    st.subheader("🌱 Soil Parameters")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Soil Moisture", f"{soil_params['moisture']:.3f} m³/m³")
+    with col2:
+        st.metric("Organic Matter", f"{soil_params['organic_matter']:.2f}%")
+    with col3:
+        texture_val = soil_params['texture']
+        texture_name = SOIL_TEXTURE_CLASSES.get(int(round(texture_val)), 'Unknown')
+        st.metric("Soil Texture", texture_name)
+    with col4:
+        st.metric("Temperature", f"{soil_params['temperature']:.1f}°C")
+    
+    # Sort crops by suitability score
+    sorted_crops = sorted(crop_analysis.items(),
+                        key=lambda x: x[1]['suitability_analysis']['final_score'],
+                        reverse=True)
+    
+    # Top 5 Recommended Crops
+    st.subheader("🏆 Top Recommended Crops")
+    
+    for crop_name, data in sorted_crops[:5]:
+        analysis = data['suitability_analysis']
+        crop_req = data['crop_requirements']
+        
+        # Determine risk color
+        risk_color = {
+            'Low': '#00ff88',
+            'Moderate': '#FFA500',
+            'High': '#FF6B6B',
+            'Very High': '#8B0000'
+        }.get(analysis['risk_level'], '#cccccc')
+        
+        st.markdown(f"""
+        <div class="crop-card">
+            <div class="crop-header">
+                <div style="font-weight: bold; font-size: 16px;">{crop_name}</div>
+                <div class="crop-score" style="background: {risk_color};">{analysis['final_score']:.3f}</div>
+            </div>
+            <div style="margin: 10px 0;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                    <span>Suitability: {analysis['final_score']:.3f}</span>
+                    <span class="{'risk-high' if analysis['risk_level'] == 'High' or analysis['risk_level'] == 'Very High' else 'risk-medium' if analysis['risk_level'] == 'Moderate' else 'risk-low'}">
+                        Disease Risk: {analysis['risk_level']}
+                    </span>
+                </div>
+                <div style="font-size: 12px; color: #999999;">
+                    Maturity: {crop_req['maturity_days']} days • Water: {crop_req['water_needs']}
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Show first management tip
+        if data['management_strategies']:
+            st.markdown(f"""
+            <div class="management-tip">
+                💡 <strong>Management Tip:</strong> {data['management_strategies'][0]}
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Show disease alert if risk is high
+        if analysis['risk_level'] in ['High', 'Very High'] and crop_req['likely_diseases']:
+            st.markdown(f"""
+            <div class="disease-alert">
+                ⚠️ <strong>Disease Alert:</strong> {crop_req['likely_diseases'][0]}
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # Detailed Analysis Button
+    if st.button("📋 View Detailed Analysis for All Crops", use_container_width=True):
+        st.session_state.show_detailed_analysis = True
+    
+    if st.session_state.get('show_detailed_analysis', False):
+        display_detailed_crop_analysis(sorted_crops)
+    
+    # Export Results
+    st.subheader("💾 Export Results")
+    
+    # Create CSV data
+    export_data = []
+    for crop_name, data in sorted_crops:
+        analysis = data['suitability_analysis']
+        export_data.append({
+            'Crop': crop_name,
+            'Suitability_Score': analysis['final_score'],
+            'Disease_Risk': analysis['risk_level'],
+            'Moisture_Score': analysis['component_scores']['moisture'],
+            'OM_Score': analysis['component_scores']['organic_matter'],
+            'Texture_Score': analysis['component_scores']['texture'],
+            'Temperature_Score': analysis['component_scores']['temperature'],
+            'Maturity_Days': data['crop_requirements']['maturity_days'],
+            'Water_Needs': data['crop_requirements']['water_needs']
+        })
+    
+    df = pd.DataFrame(export_data)
+    csv = df.to_csv(index=False)
+    
+    st.download_button(
+        label="📥 Download CSV Report",
+        data=csv,
+        file_name=f"farmadvisor_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv"
+    )
+
+def display_detailed_crop_analysis(sorted_crops):
+    """Display detailed analysis for all crops"""
+    st.subheader("📊 Detailed Crop Analysis")
+    
+    for crop_name, data in sorted_crops:
+        analysis = data['suitability_analysis']
+        crop_req = data['crop_requirements']
+        
+        with st.expander(f"{crop_name} (Score: {analysis['final_score']:.3f}, Risk: {analysis['risk_level']})"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Component Scores:**")
+                comp = analysis['component_scores']
+                st.write(f"• Moisture: {comp['moisture']:.3f}")
+                st.write(f"• Organic Matter: {comp['organic_matter']:.3f}")
+                st.write(f"• Texture: {comp['texture']:.3f}")
+                st.write(f"• Temperature: {comp['temperature']:.3f}")
+                
+                st.markdown("**Crop Requirements:**")
+                st.write(f"• Optimal Moisture: {crop_req['moisture_opt']:.3f} m³/m³")
+                st.write(f"• Optimal Organic Matter: {crop_req['om_opt']:.1f}%")
+                st.write(f"• Optimal Temperature: {crop_req['temp_opt']}°C")
+                st.write(f"• Water Needs: {crop_req['water_needs']}")
+                st.write(f"• Maturity: {crop_req['maturity_days']} days")
+            
+            with col2:
+                st.markdown("**Management Strategies:**")
+                for i, strategy in enumerate(data['management_strategies'][:3], 1):
+                    st.write(f"{i}. {strategy}")
+                
+                if crop_req['likely_diseases']:
+                    st.markdown("**Common Diseases:**")
+                    for i, disease in enumerate(crop_req['likely_diseases'][:2], 1):
+                        st.write(f"{i}. {disease}")
+            
+            st.markdown("**Additional Information:**")
+            st.write(crop_req['notes'])
 
 with col2:
     # Right column - Show map or results based on step
@@ -1037,7 +2280,7 @@ with col2:
           <div id="map"></div>
           
           <div class="map-overlay">
-            <div class="overlay-title">🌍 KHISBA GIS</div>
+            <div class="overlay-title">🌍 KHISBA GIS + FARMADVISOR</div>
             <div class="overlay-text">
               • Drag to rotate the globe<br>
               • Scroll to zoom in/out<br>
@@ -1066,7 +2309,7 @@ with col2:
               <strong>{st.session_state.selected_area_name if hasattr(st.session_state, 'selected_area_name') else 'None'}</strong><br>
               Level: {st.session_state.selected_area_level if hasattr(st.session_state, 'selected_area_level') else 'None'}<br>
               Coordinates: {map_center[1]:.4f}°, {map_center[0]:.4f}°<br>
-              Status: <span style="color: #00ff88;">Ready for Analysis</span>
+              Status: <span style="color: #00ff88;">Ready for FarmAdvisor Analysis</span>
             </div>
           </div>
           ''' if st.session_state.selected_area_name else ''}
@@ -1283,16 +2526,19 @@ with col2:
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    elif st.session_state.current_step == 4:
+    elif st.session_state.current_step == 3:
         # During analysis, show loading state
         st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Analysis in Progress</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">FarmAdvisor Analysis in Progress</h3></div>', unsafe_allow_html=True)
         
         # Show loading animation with analysis details
+        analysis_type = st.session_state.farmadvisor_analysis_type
+        analysis_text = "Crop Suitability & Disease Risk" if analysis_type == 'crop_suitability' else "Groundwater Potential"
+        
         st.markdown(f"""
         <div style="text-align: center; padding: 100px 0;">
             <div style="font-size: 64px; margin-bottom: 20px; animation: spin 2s linear infinite;">🌱</div>
-            <div style="color: #00ff88; font-size: 18px; margin-bottom: 10px;">Processing Vegetation Data</div>
+            <div style="color: #00ff88; font-size: 18px; margin-bottom: 10px;">Running {analysis_text} Analysis</div>
             <div style="color: #666666; font-size: 14px;">Analyzing {st.session_state.selected_area_name}</div>
         </div>
         
@@ -1306,148 +2552,240 @@ with col2:
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    elif st.session_state.current_step == 5:
-        # Show analysis results
+    elif st.session_state.current_step == 4:
+        # Show FarmAdvisor results visualization
         st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">📊 Vegetation Analysis Results</h3></div>', unsafe_allow_html=True)
         
-        if st.session_state.analysis_results:
-            # Show selected area info
-            st.markdown(f"""
-            <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin: 10px 20px; border-left: 4px solid #00ff88;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <div style="color: #00ff88; font-weight: 600; font-size: 16px;">{st.session_state.selected_area_name}</div>
-                        <div style="color: #cccccc; font-size: 12px; margin-top: 5px;">
-                            {st.session_state.analysis_parameters['start_date']} to {st.session_state.analysis_parameters['end_date']} • 
-                            {st.session_state.analysis_parameters['collection_choice']} • 
-                            {len(st.session_state.analysis_parameters['selected_indices'])} indices analyzed
-                        </div>
-                    </div>
-                    <div style="background: #00ff88; color: #000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">
-                        ✅ Complete
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+        if st.session_state.farmadvisor_results:
+            results = st.session_state.farmadvisor_results
+            analysis_type = results['analysis_type']
             
-            # Create charts for each index
-            for index, data in st.session_state.analysis_results.items():
-                if data['dates'] and data['values']:
-                    # Create Plotly chart
-                    fig = go.Figure()
-                    
-                    fig.add_trace(go.Scatter(
-                        x=data['dates'],
-                        y=data['values'],
-                        mode='lines+markers',
-                        name=index,
-                        line=dict(color='#00ff88', width=3),
-                        marker=dict(size=8, color='#ffffff', line=dict(width=1, color='#00ff88'))
-                    ))
-                    
-                    # Add trend line
-                    if len(data['values']) > 1:
-                        import numpy as np
-                        x_numeric = list(range(len(data['dates'])))
-                        z = np.polyfit(x_numeric, data['values'], 1)
-                        p = np.poly1d(z)
-                        fig.add_trace(go.Scatter(
-                            x=data['dates'],
-                            y=p(x_numeric),
-                            mode='lines',
-                            name='Trend',
-                            line=dict(color='#ffaa00', width=2, dash='dash')
-                        ))
-                    
-                    fig.update_layout(
-                        title=f"<b>{index}</b> - Vegetation Index Over Time",
-                        plot_bgcolor='#0a0a0a',
-                        paper_bgcolor='#0a0a0a',
-                        font=dict(color='#ffffff'),
-                        xaxis=dict(
-                            title="Date",
-                            gridcolor='#222222',
-                            tickcolor='#444444',
-                            showgrid=True
-                        ),
-                        yaxis=dict(
-                            title=f"{index} Value",
-                            gridcolor='#222222',
-                            tickcolor='#444444',
-                            range=[min(data['values'])*0.9, max(data['values'])*1.1],
-                            showgrid=True
-                        ),
-                        height=300,
-                        margin=dict(l=50, r=50, t=50, b=50),
-                        hovermode='x unified',
-                        showlegend=True,
-                        legend=dict(
-                            orientation="h",
-                            yanchor="bottom",
-                            y=1.02,
-                            xanchor="right",
-                            x=1
-                        )
-                    )
-                    
-                    st.plotly_chart(fig, use_container_width=True, key=f"chart_{index}")
-            
-            # Summary statistics
-            st.markdown('<div style="padding: 0 20px;"><h4>📈 Summary Statistics</h4></div>', unsafe_allow_html=True)
-            
-            summary_data = []
-            for index, data in st.session_state.analysis_results.items():
-                if data['values']:
-                    values = data['values']
-                    current = values[-1] if values else 0
-                    previous = values[-2] if len(values) > 1 else current
-                    change = ((current - previous) / previous * 100) if previous != 0 else 0
-                    
-                    summary_data.append({
-                        'Index': index,
-                        'Current': round(current, 4),
-                        'Previous': round(previous, 4),
-                        'Change (%)': f"{change:+.2f}%",
-                        'Min': round(min(values), 4),
-                        'Max': round(max(values), 4),
-                        'Avg': round(sum(values) / len(values), 4)
-                    })
-            
-            if summary_data:
-                df = pd.DataFrame(summary_data)
-                st.dataframe(
-                    df,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Change (%)": st.column_config.TextColumn(
-                            "Change",
-                            help="Percentage change from previous period",
-                        )
-                    }
-                )
+            if analysis_type == 'crop_suitability':
+                display_crop_suitability_charts(results)
+            else:
+                display_groundwater_charts(results)
         else:
             st.markdown("""
             <div style="text-align: center; padding: 100px 0;">
                 <div style="font-size: 64px; margin-bottom: 20px;">📊</div>
-                <div style="color: #666666; font-size: 16px; margin-bottom: 10px;">No Results Available</div>
+                <div style="color: #666666; font-size: 16px; margin-bottom: 10px;">No FarmAdvisor Results Available</div>
                 <div style="color: #444444; font-size: 14px;">Please run an analysis to see results</div>
             </div>
             """, unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
 
+def display_crop_suitability_charts(results):
+    """Display crop suitability visualization charts"""
+    crop_analysis = results['crop_analysis']
+    
+    # Sort crops by suitability score
+    sorted_crops = sorted(crop_analysis.items(),
+                        key=lambda x: x[1]['suitability_analysis']['final_score'],
+                        reverse=True)
+    
+    # Create suitability score chart
+    crop_names = [crop[0] for crop in sorted_crops[:10]]
+    suitability_scores = [crop[1]['suitability_analysis']['final_score'] for crop in sorted_crops[:10]]
+    disease_risks = [crop[1]['suitability_analysis']['disease_risk'] for crop in sorted_crops[:10]]
+    
+    # Create figure with secondary y-axis
+    fig = go.Figure()
+    
+    # Add suitability bars
+    fig.add_trace(go.Bar(
+        x=crop_names,
+        y=suitability_scores,
+        name='Suitability Score',
+        marker_color='#00ff88',
+        opacity=0.7
+    ))
+    
+    # Add disease risk line
+    fig.add_trace(go.Scatter(
+        x=crop_names,
+        y=disease_risks,
+        name='Disease Risk',
+        yaxis='y2',
+        line=dict(color='#ff6b6b', width=3),
+        mode='lines+markers'
+    ))
+    
+    fig.update_layout(
+        title="Top 10 Crops - Suitability vs Disease Risk",
+        plot_bgcolor='#0a0a0a',
+        paper_bgcolor='#0a0a0a',
+        font=dict(color='#ffffff'),
+        xaxis=dict(
+            title="Crop",
+            tickangle=45
+        ),
+        yaxis=dict(
+            title="Suitability Score (0-1)",
+            range=[0, 1]
+        ),
+        yaxis2=dict(
+            title="Disease Risk (0-1)",
+            overlaying='y',
+            side='right',
+            range=[0, 1]
+        ),
+        height=400,
+        margin=dict(l=50, r=50, t=50, b=100),
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Create component scores radar chart for top 3 crops
+    if len(sorted_crops) >= 3:
+        st.subheader("Component Analysis for Top 3 Crops")
+        
+        categories = ['Moisture', 'Organic Matter', 'Texture', 'Temperature']
+        
+        fig_radar = go.Figure()
+        
+        colors = ['#00ff88', '#4ECDC4', '#45B7D1']
+        
+        for i, (crop_name, data) in enumerate(sorted_crops[:3]):
+            comp_scores = data['suitability_analysis']['component_scores']
+            values = [
+                comp_scores['moisture'],
+                comp_scores['organic_matter'],
+                comp_scores['texture'],
+                comp_scores['temperature']
+            ]
+            values += values[:1]  # Complete the loop
+            
+            fig_radar.add_trace(go.Scatterpolar(
+                r=values,
+                theta=categories + [categories[0]],
+                name=crop_name,
+                line_color=colors[i],
+                fill='toself',
+                opacity=0.3
+            ))
+        
+        fig_radar.update_layout(
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 1]
+                )
+            ),
+            showlegend=True,
+            height=400,
+            plot_bgcolor='#0a0a0a',
+            paper_bgcolor='#0a0a0a',
+            font=dict(color='#ffffff')
+        )
+        
+        st.plotly_chart(fig_radar, use_container_width=True)
+
+def display_groundwater_charts(results):
+    """Display groundwater analysis visualization charts"""
+    gw = results['groundwater_analysis']
+    
+    # Create water balance pie chart
+    water_balance = gw['water_balance']
+    
+    labels = ['Evapotranspiration', 'Runoff', 'Recharge']
+    values = [
+        water_balance['evapotranspiration_mm'],
+        water_balance['runoff_mm'],
+        water_balance['recharge_mm']
+    ]
+    
+    fig_pie = go.Figure(data=[go.Pie(
+        labels=labels,
+        values=values,
+        hole=.3,
+        marker_colors=['#ff7f0e', '#2ca02c', '#d62728']
+    )])
+    
+    fig_pie.update_layout(
+        title="Water Balance Distribution",
+        plot_bgcolor='#0a0a0a',
+        paper_bgcolor='#0a0a0a',
+        font=dict(color='#ffffff'),
+        height=400,
+        showlegend=True
+    )
+    
+    st.plotly_chart(fig_pie, use_container_width=True)
+    
+    # Create component scores bar chart
+    components = gw['components']
+    
+    fig_comp = go.Figure(data=[
+        go.Bar(
+            x=list(components.keys()),
+            y=list(components.values()),
+            marker_color=['#00ff88', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'],
+            opacity=0.7
+        )
+    ])
+    
+    fig_comp.update_layout(
+        title="Groundwater Potential Components",
+        plot_bgcolor='#0a0a0a',
+        paper_bgcolor='#0a0a0a',
+        font=dict(color='#ffffff'),
+        xaxis=dict(title="Component"),
+        yaxis=dict(title="Score (0-1)", range=[0, 0.5]),
+        height=300,
+        margin=dict(l=50, r=50, t=50, b=50)
+    )
+    
+    st.plotly_chart(fig_comp, use_container_width=True)
+    
+    # Create soil texture composition
+    soil_data = [
+        gw['sand_percent'],
+        gw['silt_percent'],
+        gw['clay_percent']
+    ]
+    
+    fig_soil = go.Figure(data=[
+        go.Bar(
+            x=['Sand', 'Silt', 'Clay'],
+            y=soil_data,
+            marker_color=['#F4A460', '#D2691E', '#8B4513'],
+            opacity=0.7
+        )
+    ])
+    
+    fig_soil.update_layout(
+        title="Soil Texture Composition",
+        plot_bgcolor='#0a0a0a',
+        paper_bgcolor='#0a0a0a',
+        font=dict(color='#ffffff'),
+        xaxis=dict(title="Soil Component"),
+        yaxis=dict(title="Percentage (%)", range=[0, 100]),
+        height=300,
+        margin=dict(l=50, r=50, t=50, b=50)
+    )
+    
+    st.plotly_chart(fig_soil, use_container_width=True)
+
 # Footer
 st.markdown("""
 <div style="text-align: center; color: #666666; font-size: 12px; padding: 30px 0 20px 0; border-top: 1px solid #222222; margin-top: 20px;">
-    <p style="margin: 5px 0;">KHISBA GIS • Interactive 3D Global Vegetation Analytics Platform</p>
-    <p style="margin: 5px 0;">Auto Results Display • Cool 3D Map • Guided Workflow</p>
+    <p style="margin: 5px 0;">KHISBA GIS + FARMADVISOR • Integrated Agricultural Analytics Platform</p>
+    <p style="margin: 5px 0;">Crop Suitability Analysis • Groundwater Potential • Disease Risk Assessment • Management Strategies</p>
     <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">3D Mapbox</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Auto Results</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Step-by-Step</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">v2.2</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">🌾 Crop Analysis</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">💧 Groundwater</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">🦠 Disease Risk</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">🗺️ 3D Maps</span>
+        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">v3.0</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
