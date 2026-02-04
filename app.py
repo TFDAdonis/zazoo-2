@@ -1,13 +1,17 @@
 import streamlit as st
 import json
+import tempfile
+import os
 import pandas as pd
+import folium
+from streamlit_folium import st_folium
+import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import ee
 import traceback
-from io import StringIO
 
 # Custom CSS for Clean Green & Black TypeScript/React Style
 st.markdown("""
@@ -16,17 +20,12 @@ st.markdown("""
     .stApp {
         background: #000000;
         color: #ffffff;
-        padding: 0 !important;
-        margin: 0 !important;
     }
     
     /* Remove Streamlit default padding */
     .main .block-container {
-        padding-top: 0.5rem !important;
-        padding-bottom: 0.5rem !important;
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
-        max-width: 100% !important;
+        padding-top: 1rem;
+        padding-bottom: 1rem;
     }
     
     /* Green & Black Theme */
@@ -72,20 +71,14 @@ st.markdown("""
     /* Layout Container */
     .main-container {
         display: flex;
-        flex-direction: column;
-        gap: 15px;
+        gap: 20px;
+        max-width: 1800px;
         margin: 0 auto;
     }
     
-    @media (min-width: 768px) {
-        .main-container {
-            flex-direction: row;
-        }
-    }
-    
     .sidebar-container {
-        flex: 0 0 320px;
-        min-width: 0;
+        width: 320px;
+        flex-shrink: 0;
     }
     
     .content-container {
@@ -98,8 +91,8 @@ st.markdown("""
         background: var(--card-black);
         border: 1px solid var(--border-gray);
         border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 12px;
+        padding: 20px;
+        margin-bottom: 15px;
         transition: all 0.2s ease;
     }
     
@@ -111,21 +104,21 @@ st.markdown("""
         display: flex;
         align-items: center;
         gap: 10px;
-        margin-bottom: 12px;
-        padding-bottom: 8px;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
         border-bottom: 1px solid var(--border-gray);
     }
     
     .card-title .icon {
-        width: 28px;
-        height: 28px;
+        width: 32px;
+        height: 32px;
         background: rgba(0, 255, 136, 0.1);
-        border-radius: 6px;
+        border-radius: 8px;
         display: flex;
         align-items: center;
         justify-content: center;
         color: var(--primary-green);
-        font-size: 14px;
+        font-size: 16px;
     }
     
     /* Buttons */
@@ -134,18 +127,18 @@ st.markdown("""
         background: linear-gradient(90deg, var(--primary-green), var(--accent-green));
         color: var(--primary-black) !important;
         border: none;
-        padding: 10px 16px;
-        border-radius: 6px;
+        padding: 12px 20px;
+        border-radius: 8px;
         font-weight: 600;
-        font-size: 13px;
+        font-size: 14px;
         letter-spacing: 0.5px;
         transition: all 0.3s ease;
-        margin: 4px 0;
+        margin: 5px 0;
     }
     
     .stButton > button:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
     }
     
     /* Input fields */
@@ -153,20 +146,18 @@ st.markdown("""
     .stSelectbox > div > div > select,
     .stDateInput > div > div > input,
     .stNumberInput > div > div > input,
-    .stTextArea > div > div > textarea,
-    .stMultiSelect > div > div {
+    .stTextArea > div > div > textarea {
         background: var(--secondary-black) !important;
         border: 1px solid var(--border-gray) !important;
         color: var(--text-white) !important;
         border-radius: 6px !important;
-        padding: 8px 10px !important;
-        font-size: 13px !important;
+        padding: 10px 12px !important;
+        font-size: 14px !important;
     }
     
     .stTextInput > div > div > input:focus,
     .stSelectbox > div > div > select:focus,
-    .stDateInput > div > div > input:focus,
-    .stMultiSelect > div > div:focus-within {
+    .stDateInput > div > div > input:focus {
         border-color: var(--primary-green) !important;
         box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.2) !important;
     }
@@ -174,44 +165,110 @@ st.markdown("""
     /* Map container */
     .map-container {
         border: 1px solid var(--border-gray);
-        border-radius: 8px;
+        border-radius: 10px;
         overflow: hidden;
-        height: 500px;
+        height: 600px;
+    }
+    
+    /* 3D Globe container */
+    .globe-container {
+        border: 1px solid var(--border-gray);
+        border-radius: 10px;
+        overflow: hidden;
+        height: 600px;
+        background: #000;
+        position: relative;
+    }
+    
+    /* Mapbox specific */
+    #map {
+        width: 100%;
+        height: 100%;
+        border-radius: 8px;
+    }
+    
+    .mapboxgl-popup {
+        max-width: 300px;
+    }
+    
+    .mapboxgl-popup-content {
+        background: var(--card-black);
+        color: var(--text-white);
+        border: 1px solid var(--border-gray);
+        border-radius=8px;
+        padding: 15px;
+    }
+    
+    .mapboxgl-popup-content h3 {
+        color: var(--primary-green);
+        margin: 0 0 10px 0;
+        font-size: 16px;
+    }
+    
+    .mapboxgl-popup-content p {
+        margin: 0;
+        color: var(--text-light-gray);
+        font-size: 14px;
     }
     
     /* Status badges */
     .status-badge {
         display: inline-flex;
         align-items: center;
-        padding: 3px 10px;
+        padding: 4px 12px;
         background: rgba(0, 255, 136, 0.1);
         color: var(--primary-green);
         border: 1px solid rgba(0, 255, 136, 0.3);
-        border-radius: 16px;
-        font-size: 11px;
+        border-radius: 20px;
+        font-size: 12px;
         font-weight: 600;
         letter-spacing: 0.5px;
-        margin: 2px;
+    }
+    
+    /* Info panel */
+    .info-panel {
+        background: var(--card-black);
+        border: 1px solid var(--border-gray);
+        border-radius=8px;
+        padding: 15px;
+        margin-top: 15px;
+    }
+    
+    .info-item {
+        margin-bottom: 10px;
+    }
+    
+    .info-label {
+        color: var(--text-gray);
+        font-size: 12px;
+        font-weight: 500;
+        margin-bottom: 2px;
+    }
+    
+    .info-value {
+        color: var(--text-white);
+        font-size: 14px;
+        font-weight: 500;
     }
     
     /* View toggle */
     .view-toggle {
         display: flex;
         background: var(--card-black);
-        border-radius: 6px;
-        padding: 3px;
+        border-radius: 8px;
+        padding: 4px;
         border: 1px solid var(--border-gray);
-        margin-bottom: 12px;
+        margin-bottom: 15px;
     }
     
     .view-option {
         flex: 1;
-        padding: 6px 10px;
+        padding: 8px 12px;
         text-align: center;
         cursor: pointer;
-        font-size: 12px;
+        font-size: 14px;
         font-weight: 500;
-        border-radius: 4px;
+        border-radius: 6px;
         transition: all 0.2s;
         color: var(--text-gray);
     }
@@ -221,30 +278,10 @@ st.markdown("""
         color: var(--primary-black);
     }
     
-    /* Charts */
-    .js-plotly-plot .plotly {
-        border-radius: 8px;
-    }
-    
     /* Hide Streamlit default elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
-    
-    /* Mobile responsive */
-    @media (max-width: 768px) {
-        .sidebar-container, .content-container {
-            flex: 1 0 100%;
-        }
-        
-        .map-container {
-            height: 400px;
-        }
-        
-        .card {
-            padding: 12px;
-        }
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -316,7 +353,9 @@ if 'ee_auto_initialized' not in st.session_state:
 
 # Initialize session state
 if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = True
+    st.session_state.authenticated = True  # Set to True since we're removing authentication
+if 'ee_initialized' not in st.session_state:
+    st.session_state.ee_initialized = False
 if 'selected_geometry' not in st.session_state:
     st.session_state.selected_geometry = None
 if 'analysis_results' not in st.session_state:
@@ -325,16 +364,32 @@ if 'selected_coordinates' not in st.session_state:
     st.session_state.selected_coordinates = None
 if 'selected_area_name' not in st.session_state:
     st.session_state.selected_area_name = None
-if 'selected_area_level' not in st.session_state:
-    st.session_state.selected_area_level = None
 
 # Page configuration
 st.set_page_config(
     page_title="Khisba GIS - 3D Global Vegetation Analysis",
     page_icon="🌍",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
+
+# Set authenticated to True since we're removing authentication
+st.session_state.authenticated = True
+
+# Main Dashboard Layout
+st.markdown("""
+<div class="compact-header">
+    <div>
+        <h1>🌍 KHISBA GIS</h1>
+        <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+        <span class="status-badge">Connected</span>
+        <span class="status-badge">3D Mapbox Globe</span>
+        <span class="status-badge">v2.0</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # Helper Functions for Earth Engine
 def get_admin_boundaries(level, country_code=None, admin1_code=None):
@@ -389,6 +444,7 @@ def get_geometry_coordinates(geometry):
         center_lat = sum(lats) / len(lats)
         center_lon = sum(lons) / len(lons)
         
+        # Get bounds for drawing rectangle
         min_lat = min(lats)
         max_lat = max(lats)
         min_lon = min(lons)
@@ -403,63 +459,8 @@ def get_geometry_coordinates(geometry):
         st.error(f"Error getting coordinates: {str(e)}")
         return {'center': [0, 20], 'bounds': None, 'zoom': 2}
 
-def simple_add_indices(image):
-    """Simplified vegetation indices calculation"""
-    # For Sentinel-2
-    try:
-        nir = image.select('B8')
-        red = image.select('B4')
-        green = image.select('B3')
-        blue = image.select('B2')
-        
-        # Calculate basic indices
-        ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI')
-        evi = nir.subtract(red).multiply(2.5).divide(
-            nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1)
-        ).rename('EVI')
-        savi = nir.subtract(red).multiply(1.5).divide(
-            nir.add(red).add(0.5)
-        ).rename('SAVI')
-        ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI')
-        
-        return image.addBands([ndvi, evi, savi, ndwi])
-    except:
-        # For Landsat
-        nir = image.select('B5')
-        red = image.select('B4')
-        green = image.select('B3')
-        blue = image.select('B2')
-        
-        ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI')
-        evi = nir.subtract(red).multiply(2.5).divide(
-            nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1)
-        ).rename('EVI')
-        savi = nir.subtract(red).multiply(1.5).divide(
-            nir.add(red).add(0.5)
-        ).rename('SAVI')
-        ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI')
-        
-        return image.addBands([ndvi, evi, savi, ndwi])
-
-# Main Dashboard Layout
-st.markdown("""
-<div style="margin-bottom: 20px;">
-    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-        <div>
-            <h1 style="margin: 0;">🌍 KHISBA GIS</h1>
-            <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics</p>
-        </div>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <span class="status-badge">Connected</span>
-            <span class="status-badge">3D Mapbox Globe</span>
-            <span class="status-badge">v2.0</span>
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
 # Create main layout containers
-col1, col2 = st.columns([1, 2], gap="medium")
+col1, col2 = st.columns([0.25, 0.75], gap="large")
 
 # LEFT SIDEBAR - All controls
 with col1:
@@ -566,15 +567,6 @@ with col1:
             st.session_state.selected_area_name = area_name
             st.session_state.selected_area_level = area_level
             
-            # Show selected area info
-            st.markdown(f"""
-            <div style="background: rgba(0, 255, 136, 0.1); padding: 12px; border-radius: 8px; margin-top: 10px;">
-                <div style="color: #00ff88; font-weight: 600; font-size: 13px;">📍 Selected Area</div>
-                <div style="color: white; font-size: 14px; margin: 5px 0;">{area_name}</div>
-                <div style="color: #999; font-size: 12px;">Level: {area_level}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
         except Exception as e:
             st.error(f"Error processing geometry: {str(e)}")
     
@@ -638,53 +630,85 @@ with col1:
         col_c, col_d = st.columns(2)
         with col_c:
             if st.button("Select All", use_container_width=True, key="select_all"):
-                st.session_state.selected_indices_all = available_indices
+                selected_indices = available_indices
                 st.rerun()
         with col_d:
             if st.button("Clear All", use_container_width=True, key="clear_all"):
-                st.session_state.selected_indices_all = []
+                selected_indices = []
                 st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Run Analysis Button
+        # Run Analysis Button - USING EXACT SAME LOGIC AS SECOND CODE
         if st.button("🚀 Run Analysis", type="primary", use_container_width=True, key="run_analysis"):
             if not selected_indices:
                 st.error("Please select at least one vegetation index")
             else:
                 with st.spinner("Running analysis..."):
                     try:
-                        # Define collection based on choice
+                        # Define collection based on choice - EXACTLY LIKE SECOND CODE
                         if collection_choice == "Sentinel-2":
                             collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
                         else:
                             collection = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
                         
-                        # Filter collection
+                        # Filter collection - EXACTLY LIKE SECOND CODE
                         filtered_collection = (collection
                             .filterDate(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
                             .filterBounds(st.session_state.selected_geometry.geometry())
                             .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
-                            .limit(50)  # Limit for performance
                         )
                         
-                        # Apply vegetation indices
-                        processed_collection = filtered_collection.map(simple_add_indices)
+                        # Import the vegetation indices functions - EXACTLY LIKE SECOND CODE
+                        try:
+                            from vegetation_indices import mask_clouds, add_vegetation_indices
+                            
+                            # Apply cloud masking and add vegetation indices - EXACTLY LIKE SECOND CODE
+                            if collection_choice == "Sentinel-2":
+                                processed_collection = (filtered_collection
+                                    .map(mask_clouds)
+                                    .map(add_vegetation_indices)
+                                )
+                            else:
+                                processed_collection = filtered_collection.map(add_vegetation_indices)
+                            
+                        except ImportError:
+                            # If module not found, use simplified version
+                            def simple_add_indices(image):
+                                nir = image.select('B8')
+                                red = image.select('B4')
+                                green = image.select('B3')
+                                blue = image.select('B2')
+                                
+                                ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI')
+                                evi = nir.subtract(red).multiply(2.5).divide(
+                                    nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1)
+                                ).rename('EVI')
+                                savi = nir.subtract(red).multiply(1.5).divide(
+                                    nir.add(red).add(0.5)
+                                ).rename('SAVI')
+                                ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI')
+                                
+                                return image.addBands([ndvi, evi, savi, ndwi])
+                            
+                            processed_collection = filtered_collection.map(simple_add_indices)
                         
-                        # Calculate time series for selected indices
+                        # Calculate time series for selected indices - EXACTLY LIKE SECOND CODE
                         results = {}
                         for index in selected_indices:
                             try:
-                                # Get time series for this index
+                                # EXACTLY THE SAME AS SECOND CODE - no client-side operations in mapped function
                                 def add_date_and_reduce(image):
                                     reduced = image.select(index).reduceRegion(
                                         reducer=ee.Reducer.mean(),
                                         geometry=st.session_state.selected_geometry.geometry(),
-                                        scale=100,  # Lower resolution for speed
-                                        maxPixels=1e8
+                                        scale=30,  # Same as second code
+                                        maxPixels=1e9
                                     )
+                                    # This returns a server-side feature - NO CLIENT-SIDE OPERATIONS
                                     return ee.Feature(None, reduced.set('date', image.date().format()))
                                 
+                                # Map over collection
                                 time_series = processed_collection.map(add_date_and_reduce)
                                 
                                 # Get results
@@ -717,7 +741,7 @@ with col1:
 with col2:
     # 3D Mapbox Globe
     st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-    st.markdown('<div style="padding: 15px 15px 8px 15px;"><h3 style="margin: 0;">Interactive 3D Global Map</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Interactive 3D Global Map</h3></div>', unsafe_allow_html=True)
     
     # Prepare coordinates for the map
     map_center = [0, 20]
@@ -729,13 +753,13 @@ with col2:
         map_zoom = st.session_state.selected_coordinates['zoom']
         bounds_data = st.session_state.selected_coordinates['bounds']
     
-    # Generate HTML for Mapbox interactive globe
+    # Generate HTML for Mapbox interactive globe with OUTDOORS as default
     mapbox_html = f"""
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
       <title>KHISBA GIS - 3D Global Map</title>
       <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
       <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
@@ -744,58 +768,167 @@ with col2:
           margin: 0; 
           padding: 0; 
           background: #000000;
-          font-family: 'Inter', sans-serif;
         }}
         #map {{ 
+          position: absolute; 
+          top: 0; 
+          bottom: 0; 
           width: 100%; 
-          height: 100%; 
           border-radius: 8px;
         }}
-        .map-container {{
-          width: 100%;
-          height: 450px;
-          position: relative;
-        }}
-        .selected-area-info {{
+        .map-overlay {{
           position: absolute;
-          top: 10px;
-          left: 10px;
+          top: 20px;
+          right: 20px;
           background: rgba(10, 10, 10, 0.9);
           color: white;
-          padding: 12px;
+          padding: 15px;
           border-radius: 8px;
           border: 1px solid #222222;
           max-width: 250px;
           z-index: 1000;
+          font-family: 'Inter', sans-serif;
+        }}
+        .overlay-title {{
+          color: #00ff88;
+          font-weight: 600;
+          margin-bottom: 10px;
+          font-size: 14px;
+        }}
+        .overlay-text {{
+          color: #cccccc;
           font-size: 12px;
+          line-height: 1.4;
+        }}
+        .coordinates-display {{
+          position: absolute;
+          bottom: 20px;
+          left: 20px;
+          background: rgba(10, 10, 10, 0.9);
+          color: white;
+          padding: 10px 15px;
+          border-radius: 6px;
+          border: 1px solid #222222;
+          font-family: monospace;
+          font-size: 12px;
+          z-index: 1000;
+        }}
+        .selected-area {{
+          position: absolute;
+          top: 20px;
+          left: 20px;
+          background: rgba(10, 10, 10, 0.9);
+          color: white;
+          padding: 15px;
+          border-radius: 8px;
+          border: 1px solid #222222;
+          max-width: 300px;
+          z-index: 1000;
+          font-family: 'Inter', sans-serif;
         }}
         .area-title {{
           color: #00ff88;
           font-weight: 600;
-          margin-bottom: 8px;
-          font-size: 13px;
+          margin-bottom: 10px;
+          font-size: 14px;
+        }}
+        .area-details {{
+          color: #cccccc;
+          font-size: 12px;
+          line-height: 1.4;
+        }}
+        .layer-switcher {{
+          position: absolute;
+          top: 20px;
+          right: 20px;
+          background: rgba(10, 10, 10, 0.9);
+          border: 1px solid #222222;
+          border-radius: 8px;
+          overflow: hidden;
+          z-index: 1000;
+        }}
+        .layer-button {{
+          display: block;
+          width: 120px;
+          padding: 10px;
+          background: #0a0a0a;
+          color: #ffffff;
+          border: none;
+          border-bottom: 1px solid #222222;
+          cursor: pointer;
+          font-size: 12px;
+          text-align: left;
+          transition: all 0.2s;
+        }}
+        .layer-button:hover {{
+          background: #111111;
+        }}
+        .layer-button.active {{
+          background: #00ff88;
+          color: #000000;
+          font-weight: bold;
+        }}
+        .layer-button:last-child {{
+          border-bottom: none;
+        }}
+        .mapboxgl-ctrl-group {{
+          background: #0a0a0a !important;
+          border: 1px solid #222222 !important;
+        }}
+        .mapboxgl-ctrl button {{
+          background-color: #0a0a0a !important;
+          color: #ffffff !important;
+        }}
+        .mapboxgl-ctrl button:hover {{
+          background-color: #111111 !important;
         }}
       </style>
     </head>
     <body>
-      <div class="map-container">
-        <div id="map"></div>
-        {f'''
-        <div class="selected-area-info">
-            <div class="area-title">📍 Selected Area</div>
-            <div style="color: white; font-weight: 500;">{st.session_state.selected_area_name if st.session_state.selected_area_name else 'None'}</div>
-            <div style="color: #999; margin-top: 5px;">Level: {st.session_state.selected_area_level if st.session_state.selected_area_level else 'None'}</div>
+      <div id="map"></div>
+      
+      <div class="map-overlay">
+        <div class="overlay-title">🌍 KHISBA GIS</div>
+        <div class="overlay-text">
+          • Drag to rotate the globe<br>
+          • Scroll to zoom in/out<br>
+          • Right-click to pan<br>
+          • Selected area highlighted in green
         </div>
-        ''' if st.session_state.selected_area_name else ''}
       </div>
+      
+      <div class="layer-switcher">
+        <button class="layer-button" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite Streets</button>
+        <button class="layer-button" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
+        <button class="layer-button active" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
+        <button class="layer-button" data-style="mapbox://styles/mapbox/light-v11">Light</button>
+        <button class="layer-button" data-style="mapbox://styles/mapbox/dark-v11">Dark</button>
+      </div>
+      
+      <div class="coordinates-display">
+        <div>Lat: <span id="lat-display">0.00°</span></div>
+        <div>Lon: <span id="lon-display">0.00°</span></div>
+      </div>
+      
+      {f'''
+      <div class="selected-area">
+        <div class="area-title">📍 Selected Area</div>
+        <div class="area-details">
+          <strong>{st.session_state.selected_area_name if hasattr(st.session_state, 'selected_area_name') else 'None'}</strong><br>
+          Level: {st.session_state.selected_area_level if hasattr(st.session_state, 'selected_area_level') else 'None'}<br>
+          Coordinates: {map_center[1]:.4f}°, {map_center[0]:.4f}°<br>
+          Status: <span style="color: #00ff88;">Ready for Analysis</span>
+        </div>
+      </div>
+      ''' if st.session_state.selected_area_name else ''}
       
       <script>
         mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
 
-        // Create a new map instance
+        // Create a new map instance with OUTDOORS as default
         const map = new mapboxgl.Map({{
           container: 'map',
-          style: 'mapbox://styles/mapbox/satellite-streets-v12',
+          style: 'mapbox://styles/mapbox/outdoors-v12',  // OUTDOORS is now default
           center: {map_center},
           zoom: {map_zoom},
           pitch: 45,
@@ -805,8 +938,95 @@ with col2:
         // Add navigation controls
         map.addControl(new mapboxgl.NavigationControl());
 
+        // Add scale control
+        map.addControl(new mapboxgl.ScaleControl({{
+          unit: 'metric'
+        }}));
+
+        // Add fullscreen control
+        map.addControl(new mapboxgl.FullscreenControl());
+
+        // Layer switcher functionality
+        const layerButtons = document.querySelectorAll('.layer-button');
+        layerButtons.forEach(button => {{
+          button.addEventListener('click', () => {{
+            // Update active button
+            layerButtons.forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+            
+            // Change map style
+            map.setStyle(button.dataset.style);
+            
+            // Re-add selected area after style change
+            setTimeout(() => {{
+              {f'''
+              if ({bounds_data}) {{
+                const bounds = {bounds_data};
+                
+                // Remove existing layers if they exist
+                if (map.getSource('selected-area')) {{
+                  map.removeLayer('selected-area-fill');
+                  map.removeLayer('selected-area-border');
+                  map.removeSource('selected-area');
+                }}
+                
+                // Create a polygon for the selected area
+                map.addSource('selected-area', {{
+                  'type': 'geojson',
+                  'data': {{
+                    'type': 'Feature',
+                    'geometry': {{
+                      'type': 'Polygon',
+                      'coordinates': [[
+                        [bounds[0][1], bounds[0][0]],
+                        [bounds[1][1], bounds[0][0]],
+                        [bounds[1][1], bounds[1][0]],
+                        [bounds[0][1], bounds[1][0]],
+                        [bounds[0][1], bounds[0][0]]
+                      ]]
+                    }}
+                  }}
+                }});
+
+                // Add the polygon layer
+                map.addLayer({{
+                  'id': 'selected-area-fill',
+                  'type': 'fill',
+                  'source': 'selected-area',
+                  'layout': {{}},
+                  'paint': {{
+                    'fill-color': '#00ff88',
+                    'fill-opacity': 0.2
+                  }}
+                }});
+
+                // Add border for the polygon
+                map.addLayer({{
+                  'id': 'selected-area-border',
+                  'type': 'line',
+                  'source': 'selected-area',
+                  'layout': {{}},
+                  'paint': {{
+                    'line-color': '#00ff88',
+                    'line-width': 3,
+                    'line-opacity': 0.8
+                  }}
+                }});
+              }}
+              ''' if bounds_data else ''}
+            }}, 500);
+          }});
+        }});
+
         // Wait for map to load
         map.on('load', () => {{
+          // Add event listener for mouse move to show coordinates
+          map.on('mousemove', (e) => {{
+            document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(2) + '°';
+            document.getElementById('lon-display').textContent = e.lngLat.lng.toFixed(2) + '°';
+          }});
+
+          // Add selected area polygon if bounds are available
           {f'''
           if ({bounds_data}) {{
             const bounds = {bounds_data};
@@ -849,7 +1069,7 @@ with col2:
               'layout': {{}},
               'paint': {{
                 'line-color': '#00ff88',
-                'line-width': 2,
+                'line-width': 3,
                 'line-opacity': 0.8
               }}
             }});
@@ -858,11 +1078,51 @@ with col2:
             map.flyTo({{
               center: {map_center},
               zoom: {map_zoom},
-              duration: 1500,
+              duration: 2000,
               essential: true
             }});
           }}
           ''' if bounds_data else ''}
+
+          // Add some sample cities for interaction
+          const cities = [
+            {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital' }},
+            {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical capital' }},
+            {{ name: 'Tokyo', coordinates: [139.6917, 35.6895], country: 'Japan', info: 'Mega metropolis' }},
+            {{ name: 'Sydney', coordinates: [151.2093, -33.8688], country: 'Australia', info: 'Harbor city' }},
+            {{ name: 'Cairo', coordinates: [31.2357, 30.0444], country: 'Egypt', info: 'Nile Delta' }}
+          ];
+
+          // Add city markers
+          cities.forEach(city => {{
+            // Create a custom marker element
+            const el = document.createElement('div');
+            el.className = 'marker';
+            el.style.backgroundColor = '#ffaa00';
+            el.style.width = '15px';
+            el.style.height = '15px';
+            el.style.borderRadius = '50%';
+            el.style.border = '2px solid #ffffff';
+            el.style.boxShadow = '0 0 10px rgba(255, 170, 0, 0.5)';
+            el.style.cursor = 'pointer';
+
+            // Create a popup
+            const popup = new mapboxgl.Popup({{
+              offset: 25,
+              closeButton: true,
+              closeOnClick: false
+            }}).setHTML(
+              `<h3>${{city.name}}</h3>
+               <p><strong>Country:</strong> ${{city.country}}</p>
+               <p>${{city.info}}</p>`
+            );
+
+            // Create marker
+            new mapboxgl.Marker(el)
+              .setLngLat(city.coordinates)
+              .setPopup(popup)
+              .addTo(map);
+          }});
         }});
       </script>
     </body>
@@ -870,16 +1130,16 @@ with col2:
     """
     
     # Display the Mapbox HTML
-    st.components.v1.html(mapbox_html, height=450)
+    st.components.v1.html(mapbox_html, height=550)
     
     st.markdown('</div>', unsafe_allow_html=True)
     
     # Analysis Results Section
     if st.session_state.analysis_results:
-        st.markdown('<div style="margin-top: 20px;">', unsafe_allow_html=True)
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
         
         # Results Header
-        st.markdown('<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;"><h3>Analysis Results</h3><span class="status-badge">Complete</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="compact-header"><h3>Analysis Results</h3><span class="status-badge">Complete</span></div>', unsafe_allow_html=True)
         
         results = st.session_state.analysis_results
         
@@ -911,7 +1171,7 @@ with col2:
             st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Vegetation Analytics</h3></div>', unsafe_allow_html=True)
             
             for index, data in results.items():
-                if data['dates'] and data['values'] and len(data['dates']) > 0 and len(data['values']) > 0:
+                if data['dates'] and data['values']:
                     try:
                         # Parse dates
                         dates = []
@@ -934,26 +1194,43 @@ with col2:
                             # Create chart with professional styling
                             fig = go.Figure()
                             
+                            # Calculate if value is increasing or decreasing
+                            current_value = df['Value'].iloc[-1] if len(df) > 0 else 0
+                            prev_value = df['Value'].iloc[-2] if len(df) > 1 else current_value
+                            is_increasing = current_value >= prev_value
+                            
                             fig.add_trace(go.Scatter(
                                 x=df['Date'], 
                                 y=df['Value'],
                                 mode='lines+markers',
                                 name=f'{index} Index',
-                                line=dict(color='#00ff88', width=2),
+                                line=dict(color='#00ff88' if is_increasing else '#ff4444', width=3),
                                 marker=dict(
-                                    size=5,
-                                    color='#00ff88',
+                                    size=6,
+                                    color='#00ff88' if is_increasing else '#ff4444',
                                     line=dict(width=1, color='#ffffff')
                                 ),
                                 hovertemplate='<b>%{fullData.name}</b><br>Date: %{x|%Y-%m-%d}<br>Value: %{y:.4f}<extra></extra>'
                             ))
+                            
+                            # Add 5-day moving average
+                            if len(df) >= 5:
+                                df['MA_5'] = df['Value'].rolling(window=min(5, len(df))).mean()
+                                fig.add_trace(go.Scatter(
+                                    x=df['Date'], 
+                                    y=df['MA_5'],
+                                    mode='lines',
+                                    name='MA 5-day',
+                                    line=dict(color='#ffaa00', width=2, dash='dot'),
+                                    opacity=0.7
+                                ))
                             
                             # Update layout
                             fig.update_layout(
                                 title=f'{index} - Vegetation Analysis',
                                 plot_bgcolor='#0a0a0a',
                                 paper_bgcolor='#0a0a0a',
-                                font=dict(color='#ffffff', size=10),
+                                font=dict(color='#ffffff'),
                                 xaxis=dict(
                                     gridcolor='#222222',
                                     zerolinecolor='#222222',
@@ -976,8 +1253,8 @@ with col2:
                                     y=0.99
                                 ),
                                 hovermode='x unified',
-                                height=250,
-                                margin=dict(t=40, b=40, l=40, r=40)
+                                height=300,
+                                margin=dict(t=50, b=50, l=50, r=50)
                             )
                             
                             st.plotly_chart(fig, use_container_width=True)
@@ -1009,21 +1286,19 @@ with col2:
                     label="Download CSV File",
                     data=csv,
                     file_name=f"vegetation_indices_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    key="download_csv"
+                    mime="text/csv"
                 )
             else:
                 st.warning("No data available for export")
         st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
 
 # Footer
 st.markdown("""
-<div style="text-align: center; color: #666666; font-size: 12px; padding: 20px 0; margin-top: 20px; border-top: 1px solid #222222;">
+<div class="section-divider"></div>
+<div style="text-align: center; color: #666666; font-size: 12px; padding: 20px 0;">
     <p style="margin: 5px 0;">KHISBA GIS • Interactive 3D Global Vegetation Analytics Platform</p>
     <p style="margin: 5px 0;">Created by Taibi Farouk Djilali • Clean Green & Black Design</p>
-    <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+    <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
         <span class="status-badge">3D Mapbox</span>
         <span class="status-badge">Earth Engine</span>
         <span class="status-badge">Streamlit</span>
@@ -1031,3 +1306,5 @@ st.markdown("""
     </div>
 </div>
 """, unsafe_allow_html=True)
+
+ xx
