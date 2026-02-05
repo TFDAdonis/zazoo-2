@@ -383,6 +383,18 @@ st.markdown("""
         font-size: 0.9rem !important;
         color: var(--text-gray) !important;
     }
+    
+    /* Section headers */
+    .section-header {
+        background: linear-gradient(90deg, rgba(0, 255, 136, 0.1), rgba(0, 204, 106, 0.1));
+        border-left: 4px solid var(--primary-green);
+        padding: 15px 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+        color: var(--text-white);
+        font-size: 1.2rem;
+        font-weight: 600;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -514,10 +526,10 @@ FAO_GAUL_ADMIN1 = ee.FeatureCollection("FAO/GAUL/2015/level1")
 FAO_GAUL_ADMIN2 = ee.FeatureCollection("FAO/GAUL/2015/level2")
 
 # =============================================================================
-# SIMPLIFIED CLIMATE & SOIL ANALYZER CLASS
+# ENHANCED SIMPLIFIED CLIMATE & SOIL ANALYZER CLASS
 # =============================================================================
 
-class SimplifiedClimateSoilAnalyzer:
+class EnhancedClimateSoilAnalyzer:
     def __init__(self):
         self.config = {
             'default_start_date': '2024-01-01',
@@ -557,8 +569,12 @@ class SimplifiedClimateSoilAnalyzer:
         self.current_soil_data = None
         self.analysis_results = {}
 
-    # Climate Analysis Methods
+    # =============================================================================
+    # CLIMATE ANALYSIS METHODS
+    # =============================================================================
+
     def classify_climate_simplified(self, temp, precip, aridity):
+        """Classify climate based on temperature and precipitation"""
         if temp > 18:
             if precip > 2000:
                 return 1
@@ -598,6 +614,7 @@ class SimplifiedClimateSoilAnalyzer:
             return 15
 
     def get_accurate_climate_classification(self, geometry, location_name):
+        """Get climate classification for a location"""
         try:
             worldclim = ee.Image("WORLDCLIM/V1/BIO")
             annual_mean_temp = worldclim.select('bio01').divide(10)
@@ -645,6 +662,7 @@ class SimplifiedClimateSoilAnalyzer:
             }
 
     def create_climate_classification_chart(self, location_name, climate_data):
+        """Create climate classification chart"""
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
         fig.suptitle(f'Climate Classification Analysis - {location_name}\nTemperature-Precipitation Classification', fontsize=14, fontweight='bold', y=0.95)
 
@@ -698,7 +716,12 @@ class SimplifiedClimateSoilAnalyzer:
         plt.tight_layout()
         return fig
 
+    # =============================================================================
+    # GEOMETRY METHODS
+    # =============================================================================
+
     def get_geometry_from_selection(self, country, region, municipality):
+        """Get geometry from administrative selection"""
         try:
             if municipality != 'Select Municipality':
                 feature = FAO_GAUL_ADMIN2.filter(ee.Filter.eq('ADM0_NAME', country)) \
@@ -731,8 +754,12 @@ class SimplifiedClimateSoilAnalyzer:
             st.error(f"❌ Geometry error: {e}")
             return None, None
 
-    # Soil Analysis Methods
+    # =============================================================================
+    # SOIL ANALYSIS METHODS
+    # =============================================================================
+
     def get_small_region_sample(self, geometry):
+        """Get small region sample for soil analysis"""
         try:
             centroid = geometry.centroid()
             small_region = centroid.buffer(1000)
@@ -762,6 +789,7 @@ class SimplifiedClimateSoilAnalyzer:
             return ee.FeatureCollection([ee.Feature(centroid)])
 
     def get_sentinel2_soil_indices_ultra_light(self, geometry):
+        """Get soil indices from Sentinel-2"""
         try:
             sampling_area = self.get_small_region_sample(geometry)
             start_date, end_date = '2023-06-01', '2023-08-31'
@@ -834,6 +862,7 @@ class SimplifiedClimateSoilAnalyzer:
             return None
 
     def get_reference_soil_data_improved(self, geometry, region_name):
+        """Get improved reference soil data"""
         try:
             gsoc = ee.Image("projects/earthengine-legacy/assets/projects/sat-io/open-datasets/FAO/GSOCMAP1-5-0")
             soc_mean_global = gsoc.select('b1').rename('soc_mean')
@@ -936,6 +965,7 @@ class SimplifiedClimateSoilAnalyzer:
             return None
 
     def calculate_soc_to_som(self, soc_stock_t_ha, bulk_density, depth_cm):
+        """Calculate SOC to SOM conversion"""
         try:
             soc_percent = soc_stock_t_ha / (bulk_density * depth_cm * 100)
             som_percent = soc_percent * SOC_TO_SOM_FACTOR * 100
@@ -944,6 +974,7 @@ class SimplifiedClimateSoilAnalyzer:
             return 0, 0
 
     def estimate_texture_components(self, texture_class):
+        """Estimate soil texture components"""
         texture_compositions = {
             1: (60, 20, 20),   # Clay
             2: (55, 10, 35),   # Sandy clay
@@ -961,6 +992,7 @@ class SimplifiedClimateSoilAnalyzer:
         return texture_compositions.get(texture_class, (20, 40, 40))
 
     def estimate_som_from_single_index(self, ndomi_value, texture_data):
+        """Estimate SOM from single index"""
         try:
             if ndomi_value is None:
                 return None, None
@@ -982,6 +1014,7 @@ class SimplifiedClimateSoilAnalyzer:
             return None, None
 
     def run_comprehensive_soil_analysis(self, country, region='Select Region', municipality='Select Municipality'):
+        """Run comprehensive soil analysis"""
         geometry, location_name = self.get_geometry_from_selection(country, region, municipality)
 
         if not geometry:
@@ -998,6 +1031,7 @@ class SimplifiedClimateSoilAnalyzer:
             return None
 
     def display_soil_analysis(self, soil_results):
+        """Display soil analysis results"""
         if not soil_results:
             return
 
@@ -1066,6 +1100,452 @@ class SimplifiedClimateSoilAnalyzer:
         plt.tight_layout()
         st.pyplot(fig)
         plt.close(fig)
+
+    # =============================================================================
+    # ENHANCED CLIMATE ANALYSIS METHODS
+    # =============================================================================
+
+    def get_daily_climate_data_for_analysis(self, geometry, start_date, end_date):
+        """Get enhanced daily climate data for comprehensive analysis"""
+        try:
+            # Use ERA5-Land for temperature and soil moisture
+            era5 = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR") \
+                .filterDate(start_date, end_date) \
+                .filterBounds(geometry)
+            
+            # Use CHIRPS for precipitation
+            chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY") \
+                .filterDate(start_date, end_date) \
+                .filterBounds(geometry)
+            
+            # Create monthly composites for analysis
+            def create_monthly_composite(year_month):
+                year_month = ee.Date(year_month)
+                month_start = year_month
+                month_end = month_start.advance(1, 'month')
+                
+                # Get monthly mean temperature
+                temp_monthly = era5.filterDate(month_start, month_end) \
+                                  .select('temperature_2m') \
+                                  .mean() \
+                                  .subtract(273.15)  # Convert to Celsius
+                
+                # Get monthly total precipitation
+                precip_monthly = chirps.filterDate(month_start, month_end) \
+                                      .select('precipitation') \
+                                      .sum()
+                
+                # Get monthly soil moisture
+                soil_moisture1 = era5.filterDate(month_start, month_end) \
+                                    .select('volumetric_soil_water_layer_1') \
+                                    .mean()
+                
+                soil_moisture2 = era5.filterDate(month_start, month_end) \
+                                    .select('volumetric_soil_water_layer_2') \
+                                    .mean()
+                
+                soil_moisture3 = era5.filterDate(month_start, month_end) \
+                                    .select('volumetric_soil_water_layer_3') \
+                                    .mean()
+                
+                # Calculate potential evaporation using improved Hargreaves method
+                # Hargreaves equation: PET = 0.0023 * Ra * (Tmean + 17.8) * sqrt(Tmax - Tmin)
+                # Simplified version for monthly data
+                temp_max = era5.filterDate(month_start, month_end) \
+                              .select('temperature_2m_max') \
+                              .max() \
+                              .subtract(273.15)
+                
+                temp_min = era5.filterDate(month_start, month_end) \
+                              .select('temperature_2m_min') \
+                              .min() \
+                              .subtract(273.15)
+                
+                # Calculate PET using simplified formula (mm/month)
+                temp_range = temp_max.subtract(temp_min)
+                pet = temp_monthly.add(17.8).multiply(temp_range.sqrt()).multiply(0.0023).multiply(30).rename('potential_evaporation')
+                
+                return ee.Image.cat([
+                    temp_monthly.rename('temperature_2m'),
+                    precip_monthly.rename('total_precipitation'),
+                    soil_moisture1.rename('volumetric_soil_water_layer_1'),
+                    soil_moisture2.rename('volumetric_water_layer_2'),
+                    soil_moisture3.rename('volumetric_water_layer_3'),
+                    pet
+                ]).set('system:time_start', month_start.millis())
+            
+            # Generate monthly sequence
+            start = ee.Date(start_date)
+            end = ee.Date(end_date)
+            months = ee.List.sequence(0, end.difference(start, 'month').subtract(1))
+            
+            monthly_collection = ee.ImageCollection(months.map(
+                lambda month: create_monthly_composite(start.advance(month, 'month'))
+            ))
+            
+            return monthly_collection
+            
+        except Exception as e:
+            st.error(f"Error getting climate data: {e}")
+            return None
+
+    def extract_monthly_statistics(self, monthly_collection, geometry):
+        """Extract monthly statistics for analysis"""
+        try:
+            # Sample at centroid
+            centroid = geometry.centroid()
+            
+            # Get time series
+            series = monthly_collection.getRegion(centroid, 10000).getInfo()
+            
+            if not series or len(series) <= 1:
+                return None
+            
+            # Process to DataFrame
+            headers = series[0]
+            data = series[1:]
+            
+            df = pd.DataFrame(data, columns=headers)
+            df['datetime'] = pd.to_datetime(df['time'], unit='ms')
+            df['month'] = df['datetime'].dt.month
+            df['month_name'] = df['datetime'].dt.strftime('%b')
+            df['year'] = df['datetime'].dt.year
+            
+            # Ensure we have data for all relevant columns
+            required_columns = ['temperature_2m', 'total_precipitation', 'potential_evaporation']
+            for col in required_columns:
+                if col in df.columns:
+                    # Replace None values with 0
+                    df[col] = df[col].fillna(0)
+            
+            return df
+            
+        except Exception as e:
+            st.error(f"Error extracting statistics: {e}")
+            return None
+
+    def create_comprehensive_climate_charts(self, climate_df, location_name):
+        """Create comprehensive climate analysis charts with proper month handling"""
+        if climate_df is None or climate_df.empty:
+            return None
+        
+        charts = {}
+        
+        # 1. Soil Moisture by Depth Chart
+        fig1, ax1 = plt.subplots(figsize=(10, 6))
+        
+        if 'volumetric_soil_water_layer_1' in climate_df.columns:
+            # Get unique months from data
+            months_data = climate_df['month'].unique()
+            months_data = sorted(months_data)
+            
+            # Map month numbers to names
+            month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+            
+            # Create mapping from month number to position
+            month_positions = list(range(len(months_data)))
+            month_labels = [month_names[m-1] for m in months_data if 1 <= m <= 12]
+            
+            # Plot soil moisture layers if available
+            layer_names = ['volumetric_soil_water_layer_1', 'volumetric_water_layer_2', 'volumetric_water_layer_3']
+            layer_labels = ['Layer 1 (0-7cm)', 'Layer 2 (7-28cm)', 'Layer 3 (28-100cm)']
+            colors = ['#FF6B6B', '#4ECDC4', '#45B7D1']
+            
+            for i, (layer, label, color) in enumerate(zip(layer_names, layer_labels, colors)):
+                if layer in climate_df.columns:
+                    # Group by actual months in data
+                    monthly_avg = climate_df.groupby('month')[layer].mean()
+                    # Reindex to only available months
+                    values = [monthly_avg.get(month, 0) for month in months_data]
+                    ax1.plot(month_positions, values, marker='o', color=color, linewidth=2, label=label)
+            
+            ax1.set_xlabel('Month')
+            ax1.set_ylabel('Soil Moisture (m³/m³)')
+            ax1.set_title(f'Soil Moisture by Depth - {location_name}', fontsize=14, fontweight='bold')
+            ax1.set_xticks(month_positions)
+            ax1.set_xticklabels(month_labels)
+            ax1.legend()
+            ax1.grid(True, alpha=0.3)
+            ax1.set_ylim(0, 0.4)
+            
+            plt.tight_layout()
+            charts['soil_moisture_depth'] = fig1
+        
+        # 2. Monthly Water Balance Chart
+        fig2, ax2 = plt.subplots(figsize=(10, 6))
+        
+        if 'total_precipitation' in climate_df.columns and 'potential_evaporation' in climate_df.columns:
+            # Get months from data
+            months_data = climate_df['month'].unique()
+            months_data = sorted(months_data)
+            month_positions = list(range(len(months_data)))
+            month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+            month_labels = [month_names[m-1] for m in months_data if 1 <= m <= 12]
+            
+            # Group by actual months in data
+            precip_monthly = climate_df.groupby('month')['total_precipitation'].sum()
+            evap_monthly = climate_df.groupby('month')['potential_evaporation'].mean()
+            
+            # Get values for available months
+            precip_values = [precip_monthly.get(month, 0) for month in months_data]
+            evap_values = [evap_monthly.get(month, 0) for month in months_data]
+            
+            width = 0.35
+            ax2.bar([i - width/2 for i in month_positions], precip_values, width, 
+                    label='Precipitation', color='#36A2EB', alpha=0.8)
+            ax2.bar([i + width/2 for i in month_positions], evap_values, width, 
+                    label='Evaporation', color='#FF6384', alpha=0.8)
+            
+            ax2.set_xlabel('Month')
+            ax2.set_ylabel('mm/month')
+            ax2.set_title(f'Monthly Water Balance - {location_name}', fontsize=14, fontweight='bold')
+            ax2.set_xticks(month_positions)
+            ax2.set_xticklabels(month_labels)
+            ax2.legend()
+            ax2.grid(True, alpha=0.3)
+            
+            plt.tight_layout()
+            charts['monthly_water_balance'] = fig2
+        
+        # 3. Seasonal Water Balance Chart
+        fig3, ax3 = plt.subplots(figsize=(10, 6))
+        
+        if 'total_precipitation' in climate_df.columns and 'potential_evaporation' in climate_df.columns:
+            # Get available months from data
+            months_data = climate_df['month'].unique()
+            months_data = sorted(months_data)
+            month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+            
+            precip_values = []
+            evap_values = []
+            available_months = []
+            
+            for month in months_data:
+                month_data = climate_df[climate_df['month'] == month]
+                if not month_data.empty:
+                    precip_values.append(month_data['total_precipitation'].sum())
+                    evap_values.append(month_data['potential_evaporation'].mean())
+                    available_months.append(month)
+            
+            x_positions = list(range(len(available_months)))
+            x_labels = [month_names[m-1] for m in available_months if 1 <= m <= 12]
+            
+            ax3.plot(x_positions, precip_values, 'b-', linewidth=2, label='Precipitation', marker='o')
+            ax3.plot(x_positions, evap_values, 'r-', linewidth=2, label='Evaporation', marker='s')
+            
+            # Fill between for water surplus/deficit
+            ax3.fill_between(x_positions, precip_values, evap_values, 
+                            where=[p > e for p, e in zip(precip_values, evap_values)],
+                            color='blue', alpha=0.2, label='Water Surplus')
+            ax3.fill_between(x_positions, precip_values, evap_values,
+                            where=[p <= e for p, e in zip(precip_values, evap_values)],
+                            color='red', alpha=0.2, label='Water Deficit')
+            
+            ax3.set_xlabel('Month')
+            ax3.set_ylabel('mm/month')
+            ax3.set_title(f'Seasonal Water Balance - {location_name}', fontsize=14, fontweight='bold')
+            ax3.set_xticks(x_positions)
+            ax3.set_xticklabels(x_labels)
+            ax3.legend()
+            ax3.grid(True, alpha=0.3)
+            
+            plt.tight_layout()
+            charts['seasonal_water_balance'] = fig3
+        
+        # 4. Summary Statistics Panel
+        fig4, ax4 = plt.subplots(figsize=(8, 8))
+        ax4.axis('off')
+        
+        # Calculate summary statistics
+        summary_text = "📊 CLIMATE SUMMARY STATISTICS\n\n"
+        
+        if 'temperature_2m' in climate_df.columns:
+            temp_mean = climate_df['temperature_2m'].mean()
+            temp_max = climate_df['temperature_2m'].max()
+            temp_min = climate_df['temperature_2m'].min()
+            summary_text += f"🌡️ Temperature:\n"
+            summary_text += f"  • Mean: {temp_mean:.1f}°C\n"
+            summary_text += f"  • Max: {temp_max:.1f}°C\n"
+            summary_text += f"  • Min: {temp_min:.1f}°C\n\n"
+        
+        if 'total_precipitation' in climate_df.columns:
+            precip_total = climate_df['total_precipitation'].sum()
+            precip_mean = climate_df['total_precipitation'].mean()
+            precip_max = climate_df['total_precipitation'].max()
+            summary_text += f"💧 Precipitation:\n"
+            summary_text += f"  • Total: {precip_total:.1f} mm\n"
+            summary_text += f"  • Mean: {precip_mean:.1f} mm/month\n"
+            summary_text += f"  • Max: {precip_max:.1f} mm/month\n\n"
+        
+        if 'potential_evaporation' in climate_df.columns:
+            evap_total = climate_df['potential_evaporation'].sum()
+            evap_mean = climate_df['potential_evaporation'].mean()
+            summary_text += f"☀️ Evaporation:\n"
+            summary_text += f"  • Total: {evap_total:.1f} mm\n"
+            summary_text += f"  • Mean: {evap_mean:.1f} mm/month\n\n"
+        
+        # Water balance calculation
+        if 'total_precipitation' in climate_df.columns and 'potential_evaporation' in climate_df.columns:
+            water_balance = precip_total - evap_total
+            summary_text += f"💦 Water Balance:\n"
+            summary_text += f"  • Net: {water_balance:.1f} mm\n"
+            summary_text += f"  • Status: {'SURPLUS' if water_balance > 0 else 'DEFICIT'}\n\n"
+        
+        # Soil moisture summary
+        soil_layers = []
+        for layer in ['volumetric_soil_water_layer_1', 'volumetric_water_layer_2', 'volumetric_water_layer_3']:
+            if layer in climate_df.columns:
+                soil_layers.append((layer, climate_df[layer].mean()))
+        
+        if soil_layers:
+            summary_text += f"🌱 Soil Moisture:\n"
+            for layer_name, mean_value in soil_layers:
+                depth = layer_name.split('_')[-1]
+                summary_text += f"  • Layer {depth}: {mean_value:.3f} m³/m³\n"
+        
+        ax4.text(0.1, 0.95, summary_text, transform=ax4.transAxes, fontsize=10,
+                 bbox=dict(boxstyle="round", facecolor="lightblue", alpha=0.8),
+                 verticalalignment='top')
+        
+        ax4.set_title('Summary Statistics', fontsize=12, fontweight='bold')
+        charts['summary_statistics'] = fig4
+        
+        return charts
+
+    def display_enhanced_climate_charts(self, location_name):
+        """Display enhanced climate charts for a location"""
+        st.markdown("---")
+        st.markdown(f'<div class="section-header">🌤️ ENHANCED CLIMATE ANALYSIS - {location_name}</div>', unsafe_allow_html=True)
+        
+        # Get climate data for the last 12 months
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+        
+        with st.spinner("Loading enhanced climate data..."):
+            # Get geometry from session state
+            if 'selected_geometry' in st.session_state and st.session_state.selected_geometry:
+                geometry = st.session_state.selected_geometry.geometry()
+                
+                # Get monthly climate data
+                monthly_collection = self.get_daily_climate_data_for_analysis(geometry, start_date, end_date)
+                
+                if monthly_collection:
+                    # Extract statistics
+                    climate_df = self.extract_monthly_statistics(monthly_collection, geometry)
+                    
+                    if climate_df is not None and not climate_df.empty:
+                        # Create comprehensive charts
+                        charts = self.create_comprehensive_climate_charts(climate_df, location_name)
+                        
+                        if charts:
+                            # Create tabs for different chart types
+                            tab1, tab2, tab3, tab4 = st.tabs([
+                                "🌱 Soil Moisture", 
+                                "💧 Monthly Balance", 
+                                "🔄 Seasonal Pattern",
+                                "📊 Summary Stats"
+                            ])
+                            
+                            with tab1:
+                                if 'soil_moisture_depth' in charts:
+                                    st.pyplot(charts['soil_moisture_depth'])
+                                    st.markdown("""
+                                    **Soil Moisture by Depth Analysis:**
+                                    - Shows volumetric soil water content at different depths
+                                    - Layer 1: 0-7cm (surface)
+                                    - Layer 2: 7-28cm (root zone)
+                                    - Layer 3: 28-100cm (deep storage)
+                                    - Higher values indicate better soil water retention
+                                    """)
+                            
+                            with tab2:
+                                if 'monthly_water_balance' in charts:
+                                    st.pyplot(charts['monthly_water_balance'])
+                                    st.markdown("""
+                                    **Monthly Water Balance:**
+                                    - Blue bars: Precipitation (total mm/month)
+                                    - Red bars: Evaporation (mean mm/month)
+                                    - Shows water availability by month
+                                    - Positive difference indicates water surplus
+                                    """)
+                            
+                            with tab3:
+                                if 'seasonal_water_balance' in charts:
+                                    st.pyplot(charts['seasonal_water_balance'])
+                                    st.markdown("""
+                                    **Seasonal Water Balance:**
+                                    - Blue line: Precipitation trend
+                                    - Red line: Evaporation trend
+                                    - Blue shaded area: Water surplus (P > E)
+                                    - Red shaded area: Water deficit (P < E)
+                                    - Shows seasonal patterns of water availability
+                                    """)
+                            
+                            with tab4:
+                                if 'summary_statistics' in charts:
+                                    st.pyplot(charts['summary_statistics'])
+                                    
+                                    # Display additional metrics
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    
+                                    with col1:
+                                        if 'temperature_2m' in climate_df.columns:
+                                            avg_temp = climate_df['temperature_2m'].mean()
+                                            st.metric("🌡️ Avg Temperature", f"{avg_temp:.1f}°C")
+                                    
+                                    with col2:
+                                        if 'total_precipitation' in climate_df.columns:
+                                            total_precip = climate_df['total_precipitation'].sum()
+                                            st.metric("💧 Total Precipitation", f"{total_precip:.0f} mm")
+                                    
+                                    with col3:
+                                        if 'potential_evaporation' in climate_df.columns:
+                                            total_evap = climate_df['potential_evaporation'].sum()
+                                            st.metric("☀️ Total Evaporation", f"{total_evap:.0f} mm")
+                                    
+                                    with col4:
+                                        if 'total_precipitation' in climate_df.columns and 'potential_evaporation' in climate_df.columns:
+                                            water_balance = climate_df['total_precipitation'].sum() - climate_df['potential_evaporation'].sum()
+                                            status = "Surplus" if water_balance > 0 else "Deficit"
+                                            st.metric("💦 Water Balance", f"{water_balance:.0f} mm", status)
+                        else:
+                            st.warning("Could not generate climate charts. The data may be incomplete.")
+                    else:
+                        st.warning("No climate data available for this location.")
+                else:
+                    st.warning("Could not retrieve climate data. Please try another location.")
+            else:
+                st.warning("No area selected. Please select an area first.")
+
+    def run_enhanced_climate_soil_analysis(self, country, region='Select Region', municipality='Select Municipality'):
+        """Run enhanced climate and soil analysis with comprehensive charts"""
+        try:
+            geometry, location_name = self.get_geometry_from_selection(country, region, municipality)
+
+            if not geometry:
+                return None
+
+            # Get climate classification
+            climate_results = self.get_accurate_climate_classification(geometry, location_name)
+            
+            # Get soil analysis
+            soil_results = self.run_comprehensive_soil_analysis(country, region, municipality)
+
+            if soil_results:
+                return {
+                    'climate_data': climate_results,
+                    'soil_data': soil_results,
+                    'location_name': location_name
+                }
+            else:
+                return None
+                
+        except Exception as e:
+            st.error(f"Enhanced analysis error: {e}")
+            return None
 
 # =============================================================================
 # VEGETATION INDICES FUNCTIONS
@@ -1782,6 +2262,15 @@ def main():
                         help="Use Sentinel-2 data for enhanced soil analysis"
                     )
                     
+                    # Add enhanced analysis options
+                    st.markdown("---")
+                    with st.expander("🔬 Enhanced Analysis Options", expanded=True):
+                        enhanced_analysis = st.checkbox(
+                            "Include Comprehensive Climate Charts",
+                            value=True,
+                            help="Add detailed climate analysis: soil moisture, water balance, seasonal patterns"
+                        )
+                    
                     st.markdown("""
                     **Data Sources:**
                     - **Global Soil Data:** FAO GSOCMAP (0-30cm depth)
@@ -1799,7 +2288,8 @@ def main():
                     with col_next:
                         if st.button("✅ Save Soil Settings", type="primary", use_container_width=True):
                             st.session_state.soil_parameters = {
-                                'include_satellite_indices': include_satellite_indices
+                                'include_satellite_indices': include_satellite_indices,
+                                'enhanced_analysis': enhanced_analysis
                             }
                             st.session_state.current_step = 4
                             st.rerun()
@@ -1898,6 +2388,9 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                     
+                    # Get enhanced analysis option from session state
+                    enhanced_analysis = st.session_state.soil_parameters.get('enhanced_analysis', True) if hasattr(st.session_state, 'soil_parameters') else True
+                    
                     col_back, col_next = st.columns(2)
                     with col_back:
                         if st.button("⬅️ Back to Soil Settings", use_container_width=True):
@@ -1906,8 +2399,8 @@ def main():
                     
                     with col_next:
                         if st.button("🚀 Run Climate & Soil Analysis", type="primary", use_container_width=True):
-                            with st.spinner("Running Climate & Soil Analysis..."):
-                                analyzer = SimplifiedClimateSoilAnalyzer()
+                            with st.spinner("Running Comprehensive Climate & Soil Analysis..."):
+                                analyzer = EnhancedClimateSoilAnalyzer()
                                 
                                 # Extract country, region, municipality from selected area name
                                 area_parts = st.session_state.selected_area_name.split(',')
@@ -1924,29 +2417,52 @@ def main():
                                     region = 'Select Region'
                                     municipality = 'Select Municipality'
                                 
-                                geometry, location_name = analyzer.get_geometry_from_selection(
-                                    country, region, municipality
-                                )
-                                
-                                if geometry:
-                                    # Get climate classification
-                                    climate_results = analyzer.get_accurate_climate_classification(
-                                        geometry, location_name
-                                    )
-                                    
-                                    # Get soil analysis
-                                    soil_results = analyzer.run_comprehensive_soil_analysis(
+                                if enhanced_analysis:
+                                    # Run enhanced analysis with comprehensive charts
+                                    enhanced_results = analyzer.run_enhanced_climate_soil_analysis(
                                         country, region, municipality
                                     )
                                     
-                                    st.session_state.climate_soil_results = {
-                                        'climate': climate_results,
-                                        'soil': soil_results,
-                                        'location_name': location_name
-                                    }
+                                    if enhanced_results:
+                                        st.session_state.climate_soil_results = {
+                                            'enhanced_results': enhanced_results,
+                                            'location_name': enhanced_results['location_name'],
+                                            'analysis_type': 'enhanced'
+                                        }
+                                        
+                                        st.session_state.current_step = 5
+                                        st.rerun()
+                                    else:
+                                        st.error("Enhanced analysis failed. Please try again.")
+                                else:
+                                    # Original basic analysis
+                                    # Get climate classification
+                                    geometry, location_name = analyzer.get_geometry_from_selection(
+                                        country, region, municipality
+                                    )
                                     
-                                    st.session_state.current_step = 5
-                                    st.rerun()
+                                    if geometry:
+                                        climate_results = analyzer.get_accurate_climate_classification(
+                                            geometry, location_name
+                                        )
+                                        
+                                        # Get soil analysis
+                                        soil_results = analyzer.run_comprehensive_soil_analysis(
+                                            country, region, municipality
+                                        )
+                                        
+                                        if soil_results:
+                                            st.session_state.climate_soil_results = {
+                                                'climate': climate_results,
+                                                'soil': soil_results,
+                                                'location_name': location_name,
+                                                'analysis_type': 'basic'
+                                            }
+                                            
+                                            st.session_state.current_step = 5
+                                            st.rerun()
+                                        else:
+                                            st.error("Soil analysis failed. Please try again.")
                 else:
                     st.warning("Please go back to Step 1 and select an area first.")
                     if st.button("⬅️ Go to Area Selection", use_container_width=True):
@@ -2024,9 +2540,77 @@ def main():
             
             else:  # Climate & Soil
                 st.markdown('<div class="card">', unsafe_allow_html=True)
-                st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Step 5: Climate & Soil Results</h3></div>', unsafe_allow_html=True)
+                st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Step 5: Climate & Soil Analysis Results</h3></div>', unsafe_allow_html=True)
                 
                 if st.session_state.climate_soil_results:
+                    analyzer = EnhancedClimateSoilAnalyzer()
+                    
+                    # Check analysis type
+                    analysis_type_result = st.session_state.climate_soil_results.get('analysis_type', 'basic')
+                    
+                    if analysis_type_result == 'enhanced':
+                        # Display enhanced analysis
+                        enhanced_results = st.session_state.climate_soil_results.get('enhanced_results')
+                        if enhanced_results:
+                            # Display climate classification
+                            climate_data = enhanced_results['climate_data']
+                            location_name = enhanced_results['location_name']
+                            
+                            st.markdown("---")
+                            st.markdown('<div class="section-header">🌤️ CLIMATE CLASSIFICATION</div>', unsafe_allow_html=True)
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("🌡️ Mean Temperature", f"{climate_data['mean_temperature']:.1f}°C")
+                            with col2:
+                                st.metric("💧 Mean Precipitation", f"{climate_data['mean_precipitation']:.0f} mm/year")
+                            with col3:
+                                st.metric("🌍 Climate Zone", climate_data['climate_zone'].split('(')[0])
+                            
+                            # Display climate classification chart
+                            fig = analyzer.create_climate_classification_chart(location_name, climate_data)
+                            st.pyplot(fig)
+                            plt.close(fig)
+                            
+                            # Display enhanced climate charts
+                            analyzer.display_enhanced_climate_charts(location_name)
+                            
+                            # Display soil analysis
+                            if 'soil_data' in enhanced_results and enhanced_results['soil_data']:
+                                st.markdown("---")
+                                st.markdown('<div class="section-header">🌱 SOIL ANALYSIS RESULTS</div>', unsafe_allow_html=True)
+                                analyzer.display_soil_analysis(enhanced_results['soil_data'])
+                    else:
+                        # Display basic analysis
+                        climate_data = st.session_state.climate_soil_results.get('climate')
+                        soil_results = st.session_state.climate_soil_results.get('soil')
+                        location_name = st.session_state.climate_soil_results.get('location_name', 'Unknown Location')
+                        
+                        if climate_data:
+                            # Display climate classification
+                            st.markdown("---")
+                            st.markdown('<div class="section-header">🌤️ CLIMATE CLASSIFICATION</div>', unsafe_allow_html=True)
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("🌡️ Mean Temperature", f"{climate_data['mean_temperature']:.1f}°C")
+                            with col2:
+                                st.metric("💧 Mean Precipitation", f"{climate_data['mean_precipitation']:.0f} mm/year")
+                            with col3:
+                                st.metric("🌍 Climate Zone", climate_data['climate_zone'].split('(')[0])
+                            
+                            # Display climate classification chart
+                            fig = analyzer.create_climate_classification_chart(location_name, climate_data)
+                            st.pyplot(fig)
+                            plt.close(fig)
+                        
+                        # Display soil analysis
+                        if soil_results:
+                            st.markdown("---")
+                            st.markdown('<div class="section-header">🌱 SOIL ANALYSIS RESULTS</div>', unsafe_allow_html=True)
+                            analyzer.display_soil_analysis(soil_results)
+                    
+                    # Navigation buttons
                     col_back, col_new = st.columns(2)
                     with col_back:
                         if st.button("⬅️ Back to Settings", use_container_width=True):
@@ -2722,82 +3306,8 @@ def main():
                 st.markdown('</div>', unsafe_allow_html=True)
             
             else:  # Climate & Soil
-                st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-                st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">📊 Climate & Soil Analysis Results</h3></div>', unsafe_allow_html=True)
-                
-                if st.session_state.climate_soil_results:
-                    analyzer = SimplifiedClimateSoilAnalyzer()
-                    
-                    st.markdown(f"""
-                    <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin: 10px 20px; border-left: 4px solid #00ff88;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <div style="color: #00ff88; font-weight: 600; font-size: 16px;">{st.session_state.climate_soil_results['location_name']}</div>
-                                <div style="color: #cccccc; font-size: 12px; margin-top: 5px;">
-                                    Climate Classification: Temperature-Precipitation • 
-                                    Soil Analysis: Complete
-                                </div>
-                            </div>
-                            <div style="background: #00ff88; color: #000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">
-                                ✅ Complete
-                            </div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    climate_data = st.session_state.climate_soil_results['climate']
-                    soil_data = st.session_state.climate_soil_results['soil']
-                    
-                    # Display climate metrics
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("🌡️ Mean Temperature", f"{climate_data['mean_temperature']:.1f}°C")
-                    with col2:
-                        st.metric("💧 Mean Precipitation", f"{climate_data['mean_precipitation']:.0f} mm/year")
-                    with col3:
-                        st.metric("🌍 Climate Zone", climate_data['climate_zone'].split('(')[0])
-                    
-                    # Display climate classification chart
-                    st.markdown("""
-                    <div style="margin: 20px;">
-                        <h3 style="color: #00ff88;">🌤️ Climate Classification</h3>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    fig = analyzer.create_climate_classification_chart(
-                        st.session_state.climate_soil_results['location_name'],
-                        climate_data
-                    )
-                    st.pyplot(fig)
-                    plt.close(fig)
-                    
-                    # Display soil analysis if available
-                    if soil_data:
-                        analyzer.display_soil_analysis(soil_data)
-                    
-                    # Display additional climate information
-                    st.markdown(f"""
-                    <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin-top: 20px; border-left: 4px solid #00ff88;">
-                        <div style="color: #00ff88; font-weight: 600; margin-bottom: 10px;">📋 Climate Classification Details</div>
-                        <div style="color: #cccccc; font-size: 14px;">
-                            <div>Classification System: <strong>{climate_data['classification_type']}</strong></div>
-                            <div>Class: <strong>{climate_data['climate_class']}</strong></div>
-                            <div>Aridity Index: <strong>{climate_data['aridity_index']:.3f}</strong></div>
-                            <div>Full Zone Description: <strong>{climate_data['climate_zone']}</strong></div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                else:
-                    st.markdown("""
-                    <div style="text-align: center; padding: 100px 0;">
-                        <div style="font-size: 64px; margin-bottom: 20px;">📊</div>
-                        <div style="color: #666666; font-size: 16px; margin-bottom: 10px;">No Results Available</div>
-                        <div style="color: #444444; font-size: 14px;">Please run an analysis to see results</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                st.markdown('</div>', unsafe_allow_html=True)
+                # Results are displayed in the left column for Climate & Soil
+                pass
 
     # Footer
     st.markdown("""
