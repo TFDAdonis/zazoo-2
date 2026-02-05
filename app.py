@@ -7,9 +7,73 @@ import ee
 import traceback
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import linregress
 import warnings
 warnings.filterwarnings('ignore')
+def linregress_numpy(x, y):
+    """
+    Pure NumPy implementation of linear regression.
+    Returns: slope, intercept, r_value, p_value, std_err
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    
+    n = len(x)
+    if n != len(y):
+        raise ValueError("x and y must have the same length")
+    
+    # Calculate means
+    x_mean = np.mean(x)
+    y_mean = np.mean(y)
+    
+    # Calculate slope (beta1) and intercept (beta0)
+    ss_xy = np.sum((x - x_mean) * (y - y_mean))
+    ss_xx = np.sum((x - x_mean) ** 2)
+    
+    if ss_xx == 0:
+        slope = 0
+    else:
+        slope = ss_xy / ss_xx
+    
+    intercept = y_mean - slope * x_mean
+    
+    # Calculate predictions
+    y_pred = slope * x + intercept
+    
+    # Calculate residuals
+    residuals = y - y_pred
+    
+    # Calculate R-squared and correlation
+    ss_res = np.sum(residuals ** 2)
+    ss_tot = np.sum((y - y_mean) ** 2)
+    
+    if ss_tot == 0:
+        r_squared = 1.0 if ss_res == 0 else 0.0
+    else:
+        r_squared = 1 - (ss_res / ss_tot)
+    
+    r_value = np.sqrt(max(0, r_squared))
+    if ss_xy < 0:
+        r_value = -r_value
+    
+    # Standard error of the estimate
+    if n > 2:
+        std_err = np.sqrt(ss_res / (n - 2))
+    else:
+        std_err = 0.0
+    
+    # Calculate p-value using t-statistic
+    if n > 2 and ss_xx > 0 and std_err > 0:
+        t_stat = slope / (std_err / np.sqrt(ss_xx))
+        # Simplified p-value calculation
+        # For accurate p-value, we'd need t-distribution CDF
+        # This is a rough approximation
+        p_value = 2 * (1 - 0.5 * (1 + np.math.erf(abs(t_stat) / np.sqrt(2))))
+        p_value = min(max(p_value, 0), 1)
+    else:
+        p_value = 1.0
+    
+    return slope, intercept, r_value, p_value, std_err
+
 
 # Custom CSS for Clean Green & Black TypeScript/React Style with Guided UI
 st.markdown("""
