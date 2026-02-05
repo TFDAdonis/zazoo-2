@@ -7,7 +7,6 @@ import ee
 import traceback
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import linregress
 import warnings
 warnings.filterwarnings('ignore')
 
