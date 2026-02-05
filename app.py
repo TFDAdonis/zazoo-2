@@ -1,13 +1,25 @@
 import streamlit as st
-import json
-import pandas as pd
-import plotly.graph_objects as go
-from datetime import datetime
 import ee
-import traceback
+import pandas as pd
+import matplotlib.pyplot as plt
 import numpy as np
+from datetime import datetime
+import warnings
+import json
+import plotly.graph_objects as go
+import traceback
+warnings.filterwarnings('ignore')
 
-# Custom CSS for Clean Green & Black TypeScript/React Style with Guided UI
+# ============================================
+# CUSTOM CSS FOR BOTH APPLICATIONS
+# ============================================
+st.set_page_config(
+    page_title="KHISBA GIS - Comprehensive Climate & Soil Analysis",
+    page_icon="🌍",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
 st.markdown("""
 <style>
     /* Base styling */
@@ -35,21 +47,47 @@ st.markdown("""
         --text-light-gray: #cccccc;
     }
     
-    /* Typography */
-    h1, h2, h3, h4, h5, h6 {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        font-weight: 600;
-        letter-spacing: -0.025em;
-        color: var(--text-white) !important;
-    }
-    
-    h1 {
-        font-size: 2rem !important;
+    /* Custom CSS for Climate & Soil Analysis */
+    .main-header {
+        font-size: 2.5rem;
+        color: var(--primary-green);
+        text-align: center;
+        margin-bottom: 2rem;
         background: linear-gradient(90deg, var(--primary-green), var(--accent-green));
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
-        margin-bottom: 0.5rem !important;
+    }
+    
+    .sub-header {
+        font-size: 1.5rem;
+        color: var(--primary-green);
+        margin-top: 1.5rem;
+    }
+    
+    .info-box {
+        background-color: rgba(0, 255, 136, 0.1);
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 5px solid var(--primary-green);
+        margin-bottom: 20px;
+        border: 1px solid rgba(0, 255, 136, 0.3);
+    }
+    
+    .success-box {
+        background-color: rgba(0, 255, 136, 0.1);
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid var(--primary-green);
+        margin: 10px 0;
+    }
+    
+    .warning-box {
+        background-color: rgba(255, 140, 0, 0.1);
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid #FF8C00;
+        margin: 10px 0;
     }
     
     /* Progress Steps */
@@ -339,10 +377,41 @@ st.markdown("""
             transform: translateY(0);
         }
     }
+    
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 2px;
+        background-color: var(--secondary-black);
+        padding: 4px;
+        border-radius: 8px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: transparent;
+        border-radius: 4px;
+        color: var(--text-gray);
+        padding: 10px 16px;
+        font-weight: 500;
+        transition: all 0.3s;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background-color: var(--primary-green) !important;
+        color: var(--primary-black) !important;
+        font-weight: 600;
+    }
+    
+    .stTabs [data-baseweb="tab-highlight"] {
+        background-color: transparent;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# Earth Engine Auto-Authentication - FIXED VERSION
+# ============================================
+# EARTH ENGINE INITIALIZATION
+# ============================================
 def auto_initialize_earth_engine():
     """Automatically initialize Earth Engine with service account credentials"""
     try:
@@ -401,7 +470,608 @@ e5aU1RW6tlG8nzHHwK2FeyI=
         st.error(f"Earth Engine auto-initialization failed: {str(e)}")
         return False
 
-# CLIMATE DATA FUNCTIONS (from Jupyter notebook)
+# Initialize Earth Engine
+if 'ee_initialized' not in st.session_state:
+    st.session_state.ee_initialized = auto_initialize_earth_engine()
+
+if not st.session_state.ee_initialized:
+    st.error("Earth Engine not initialized. Please check your credentials.")
+    st.stop()
+
+# ============================================
+# CONSTANTS AND DATA SOURCES
+# ============================================
+# Constants for Soil Analysis
+BULK_DENSITY = 1.3
+SOC_TO_SOM_FACTOR = 1.724
+
+# Soil texture classes
+SOIL_TEXTURE_CLASSES = {
+    1: 'Clay', 2: 'Sandy clay', 3: 'Silty clay', 4: 'Clay loam', 5: 'Sandy clay loam',
+    6: 'Silty clay loam', 7: 'Loam', 8: 'Sandy loam', 9: 'Silt loam', 10: 'Silt',
+    11: 'Loamy sand', 12: 'Sand'
+}
+
+# Africa bounds
+AFRICA_BOUNDS = ee.Geometry.Polygon([
+    [-25.0, -35.0], [-25.0, 37.5], [-5.5, 37.5], [-5.5, 35.5],
+    [0.0, 35.5], [5.0, 38.0], [12.0, 38.0], [32.0, 31.0],
+    [32.0, -35.0], [-25.0, -35.0]
+])
+
+# Data Sources Documentation
+DATA_SOURCES = {
+    'reference_soil': {
+        'global': {
+            'name': 'GSOCMAP (FAO)',
+            'source': 'projects/earthengine-legacy/assets/projects/sat-io/open-datasets/FAO/GSOCMAP1-5-0',
+            'depth': '0-30cm',
+            'description': 'Global Soil Organic Carbon Map (GSOCmap) - FAO',
+            'citation': 'FAO. 2018. Global Soil Organic Carbon Map (GSOCmap) Technical Report'
+        },
+        'africa': {
+            'name': 'ISDASOIL Africa',
+            'source': 'ISDASOIL/Africa/v1/carbon_organic',
+            'depth': '0-20cm',
+            'description': 'Africa Soil Information Service (AfSIS) Soil Organic Carbon',
+            'citation': 'Hengl, T., et al. 2017. Soil nutrient maps of Sub-Saharan Africa'
+        }
+    },
+    'soil_texture': {
+        'name': 'OpenLandMap Soil Texture',
+        'source': 'OpenLandMap/SOL/SOL_TEXTURE-CLASS_USDA-TT_M/v02',
+        'description': 'Soil texture classes based on USDA classification',
+        'citation': 'OpenLandMap project, 2020'
+    },
+    'sentinel2': {
+        'name': 'Sentinel-2 MSI',
+        'source': 'COPERNICUS/S2_SR',
+        'description': 'Sentinel-2 MultiSpectral Instrument, Level-2A',
+        'citation': 'European Space Agency, Copernicus Program'
+    },
+    'administrative': {
+        'name': 'FAO GAUL',
+        'source': 'FAO/GAUL/2015/level0',
+        'description': 'Global Administrative Unit Layers (GAUL)',
+        'citation': 'Food and Agriculture Organization of the United Nations'
+    }
+}
+
+# FAO GAUL Dataset
+FAO_GAUL = ee.FeatureCollection("FAO/GAUL/2015/level0")
+FAO_GAUL_ADMIN1 = ee.FeatureCollection("FAO/GAUL/2015/level1")
+FAO_GAUL_ADMIN2 = ee.FeatureCollection("FAO/GAUL/2015/level2")
+
+# ============================================
+# COMPREHENSIVE CLIMATE & SOIL ANALYZER CLASS
+# ============================================
+class ComprehensiveClimateSoilAnalyzer:
+    def __init__(self):
+        self.config = {
+            'default_start_date': '2024-01-01',
+            'default_end_date': '2024-12-31',
+            'scale': 1000,
+            'max_pixels': 1e6
+        }
+
+        # Climate classification parameters
+        self.climate_palettes = {
+            'Simplified Temperature-Precipitation': [
+                '#006400', '#32CD32', '#9ACD32', '#FFD700', '#FF4500', '#FF8C00', '#B8860B',
+                '#0000FF', '#1E90FF', '#87CEEB', '#2E8B57', '#696969', '#ADD8E6', '#FFFFFF', '#8B0000'
+            ],
+            'Aridity-Based': [
+                '#000080', '#0000FF', '#00BFFF', '#FFFF00', '#FFA500', '#FF0000'
+            ],
+            'Köppen-Geiger': [
+                '#006400', '#32CD32', '#9ACD32', '#FF0000', '#FFA500', '#FF4500',
+                '#1E90FF', '#FF8C00', '#4682B4', '#87CEEB', '#ADD8E6'
+            ]
+        }
+
+        self.climate_class_names = {
+            'Simplified Temperature-Precipitation': {
+                1: 'Tropical Rainforest (Temp > 18°C, Precip > 2000mm)',
+                2: 'Tropical Monsoon (Temp > 18°C, Precip 1500-2000mm)',
+                3: 'Tropical Savanna (Temp > 18°C, Precip 1000-1500mm)',
+                4: 'Tropical Dry (Temp > 18°C, Precip 500-1000mm)',
+                5: 'Humid Subtropical (Temp 12-18°C, Precip > 1200mm)',
+                6: 'Mediterranean (Temp 12-18°C, Precip 600-1200mm)',
+                7: 'Desert/Steppe (Arid/Semi-arid)',
+                8: 'Oceanic (Temp 6-12°C, Precip > 1000mm)',
+                9: 'Warm Temperate (Temp 6-12°C, Precip 500-1000mm)',
+                10: 'Temperate Dry (Temp 6-12°C, Precip < 500mm)',
+                11: 'Boreal Humid (Temp 0-6°C, Precip > 500mm)',
+                12: 'Boreal Dry (Temp 0-6°C, Precip < 500mm)',
+                13: 'Tundra (Temp -10 to 0°C)',
+                14: 'Ice Cap (Temp < -10°C)',
+                15: 'Hyper-arid (Aridity < 0.03)'
+            },
+            'Aridity-Based': {
+                1: 'Hyper-humid (Aridity > 0.65)',
+                2: 'Humid (Aridity 0.5-0.65)',
+                3: 'Sub-humid (Aridity 0.2-0.5)',
+                4: 'Semi-arid (Aridity 0.03-0.2)',
+                5: 'Arid (Aridity 0.005-0.03)',
+                6: 'Hyper-arid (Aridity < 0.005)'
+            },
+            'Köppen-Geiger': {
+                1: 'Af - Tropical rainforest',
+                2: 'Am - Tropical monsoon',
+                3: 'Aw - Tropical savanna',
+                4: 'BW - Desert',
+                5: 'BS - Steppe',
+                6: 'Cfa - Humid subtropical',
+                7: 'Cfb - Oceanic',
+                8: 'Csa - Mediterranean',
+                9: 'Dfa - Hot summer continental',
+                10: 'Dfb - Warm summer continental',
+                11: 'ET - Tundra'
+            }
+        }
+
+    # CLIMATE ANALYSIS METHODS
+    def classify_climate_simplified(self, temp, precip, aridity):
+        """Climate classification"""
+        if temp > 18:
+            if precip > 2000:
+                return 1
+            elif precip > 1500:
+                return 2
+            elif precip > 1000:
+                return 3
+            elif precip > 500:
+                return 4
+            else:
+                return 7
+        elif temp > 12:
+            if precip > 1200:
+                return 5
+            elif precip > 600:
+                return 6
+            else:
+                return 7
+        elif temp > 6:
+            if precip > 1000:
+                return 8
+            elif precip > 500:
+                return 9
+            else:
+                return 10
+        elif temp > 0:
+            if precip > 500:
+                return 11
+            else:
+                return 12
+        elif temp > -10:
+            return 13
+        else:
+            return 14
+
+        if aridity < 0.03:
+            return 15
+
+    def get_accurate_climate_classification(self, geometry, location_name, classification_type='Simplified Temperature-Precipitation'):
+        """Get climate classification"""
+        with st.spinner(f"Getting climate classification for {location_name}..."):
+            try:
+                worldclim = ee.Image("WORLDCLIM/V1/BIO")
+                annual_mean_temp = worldclim.select('bio01').divide(10)
+                annual_precip = worldclim.select('bio12')
+                aridity_index = annual_precip.divide(annual_mean_temp.add(33))
+
+                stats = ee.Image.cat([annual_mean_temp, annual_precip, aridity_index]).reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=geometry.centroid(),
+                    scale=10000,
+                    maxPixels=1e6
+                ).getInfo()
+
+                mean_temp = stats.get('bio01', 18.5)
+                mean_precip = stats.get('bio12', 800)
+                mean_aridity = stats.get('bio12', 0) / (stats.get('bio01', 0) + 33) if (stats.get('bio01', 0) + 33) != 0 else 1.5
+
+                if classification_type == 'Simplified Temperature-Precipitation':
+                    climate_class = self.classify_climate_simplified(mean_temp, mean_precip, mean_aridity)
+                elif classification_type == 'Aridity-Based':
+                    if mean_aridity > 0.65:
+                        climate_class = 1
+                    elif mean_aridity > 0.5:
+                        climate_class = 2
+                    elif mean_aridity > 0.2:
+                        climate_class = 3
+                    elif mean_aridity > 0.03:
+                        climate_class = 4
+                    elif mean_aridity > 0.005:
+                        climate_class = 5
+                    else:
+                        climate_class = 6
+                else:  # Köppen-Geiger
+                    if mean_temp > 18:
+                        if mean_precip > 1800:
+                            climate_class = 1
+                        elif mean_precip > 1000:
+                            climate_class = 2
+                        elif mean_precip > 750:
+                            climate_class = 3
+                        else:
+                            climate_class = 4
+                    elif mean_aridity < 0.2:
+                        if mean_aridity < 0.03:
+                            climate_class = 4
+                        else:
+                            climate_class = 5
+                    elif mean_temp > 0:
+                        if mean_precip > 800:
+                            climate_class = 6
+                        elif mean_precip > 500:
+                            climate_class = 7
+                        else:
+                            climate_class = 8
+                    elif mean_temp > -10:
+                        if mean_precip > 500:
+                            climate_class = 9
+                        else:
+                            climate_class = 10
+                    else:
+                        climate_class = 11
+
+                climate_zone = self.climate_class_names[classification_type].get(climate_class, 'Unknown')
+
+                climate_analysis = {
+                    'climate_zone': climate_zone,
+                    'climate_class': climate_class,
+                    'mean_temperature': round(mean_temp, 1),
+                    'mean_precipitation': round(mean_precip),
+                    'aridity_index': round(mean_aridity, 3),
+                    'classification_type': classification_type,
+                }
+
+                st.success(f"Climate classification: {climate_zone}")
+                return climate_analysis
+
+            except Exception as e:
+                st.error(f"Climate classification failed: {e}")
+                return {
+                    'climate_zone': "Tropical Dry (Temp > 18°C, Precip 500-1000mm)",
+                    'climate_class': 4,
+                    'mean_temperature': 19.5,
+                    'mean_precipitation': 635,
+                    'aridity_index': 1.52,
+                    'classification_type': classification_type,
+                }
+
+    def create_climate_classification_chart(self, classification_type, location_name, climate_data):
+        """Create climate classification visualization"""
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
+        fig.suptitle(f'Climate Classification Analysis - {location_name}\n{classification_type}',
+                    fontsize=16, fontweight='bold', y=0.95)
+
+        current_class = climate_data['climate_class']
+        current_zone = climate_data['climate_zone']
+
+        ax1.barh([0], [1], color=self.climate_palettes[classification_type][current_class-1], alpha=0.7)
+        ax1.set_yticks([0])
+        ax1.set_yticklabels([f'Class {current_class}'])
+        ax1.set_xlabel('Representation')
+        ax1.set_title(f'Current Climate Zone: {current_zone}', fontsize=12, fontweight='bold')
+        ax1.grid(True, alpha=0.3)
+
+        categories = ['Temperature', 'Precipitation', 'Aridity']
+        values = [
+            climate_data['mean_temperature'] / 30,
+            climate_data['mean_precipitation'] / 3000,
+            climate_data['aridity_index'] * 10
+        ]
+
+        values += values[:1]
+        angles = np.linspace(0, 2*np.pi, len(categories), endpoint=False).tolist()
+        angles += angles[:1]
+
+        ax2 = plt.subplot(222, polar=True)
+        ax2.plot(angles, values, 'o-', linewidth=2, label='Current Location')
+        ax2.fill(angles, values, alpha=0.25)
+        ax2.set_thetagrids(np.degrees(angles[:-1]), categories)
+        ax2.set_ylim(0, 1)
+        ax2.set_title('Climate Parameters Radar Chart', fontsize=12, fontweight='bold')
+        ax2.legend()
+
+        ax3.scatter(climate_data['mean_temperature'], climate_data['mean_precipitation'],
+                   c=self.climate_palettes[classification_type][current_class-1], s=200, alpha=0.7)
+        ax3.set_xlabel('Mean Temperature (°C)')
+        ax3.set_ylabel('Mean Precipitation (mm/year)')
+        ax3.set_title('Temperature vs Precipitation', fontsize=12, fontweight='bold')
+        ax3.grid(True, alpha=0.3)
+        ax3.annotate(f'Class {current_class}',
+                    (climate_data['mean_temperature'], climate_data['mean_precipitation']),
+                    xytext=(10, 10), textcoords='offset points')
+
+        ax4.axis('off')
+        legend_text = "CLIMATE CLASSIFICATION LEGEND\n\n"
+        for class_id, class_name in self.climate_class_names[classification_type].items():
+            color = self.climate_palettes[classification_type][class_id-1]
+            marker = '▶' if class_id == current_class else '○'
+            legend_text += f"{marker} Class {class_id}: {class_name}\n"
+
+        ax4.text(0.1, 0.9, legend_text, transform=ax4.transAxes, fontsize=9,
+                bbox=dict(boxstyle="round", facecolor="lightgray", alpha=0.8),
+                verticalalignment='top')
+
+        st.pyplot(fig)
+        plt.close(fig)
+
+    def get_geometry_from_selection(self, country, region, municipality):
+        """Get geometry based on selection"""
+        try:
+            if municipality != 'Select Municipality':
+                feature = FAO_GAUL_ADMIN2.filter(ee.Filter.eq('ADM0_NAME', country)) \
+                                       .filter(ee.Filter.eq('ADM1_NAME', region)) \
+                                       .filter(ee.Filter.eq('ADM2_NAME', municipality)) \
+                                       .first()
+                geometry = feature.geometry()
+                location_name = f"{municipality}, {region}, {country}"
+                st.info(f"Selected: {location_name}")
+                return geometry, location_name
+
+            elif region != 'Select Region':
+                feature = FAO_GAUL_ADMIN1.filter(ee.Filter.eq('ADM0_NAME', country)) \
+                                       .filter(ee.Filter.eq('ADM1_NAME', region)) \
+                                       .first()
+                geometry = feature.geometry()
+                location_name = f"{region}, {country}"
+                st.info(f"Selected: {location_name}")
+                return geometry, location_name
+
+            elif country != 'Select Country':
+                feature = FAO_GAUL.filter(ee.Filter.eq('ADM0_NAME', country)).first()
+                geometry = feature.geometry()
+                location_name = f"{country}"
+                st.info(f"Selected: {location_name}")
+                return geometry, location_name
+
+            else:
+                st.warning("Please select a country")
+                return None, None
+
+        except Exception as e:
+            st.error(f"Geometry error: {e}")
+            return None, None
+
+    def run_accurate_analysis(self, country, region='Select Region', municipality='Select Municipality',
+                            start_date=None, end_date=None, classification_type='Simplified Temperature-Precipitation'):
+        """Run climate analysis"""
+        if start_date is None:
+            start_date = self.config['default_start_date']
+        if end_date is None:
+            end_date = self.config['default_end_date']
+
+        st.subheader(f"Climate Analysis for {country}")
+        if region != 'Select Region':
+            st.write(f"Region/State: {region}")
+        if municipality != 'Select Municipality':
+            st.write(f"Municipality/City: {municipality}")
+        st.write(f"Classification: {classification_type}")
+        st.write(f"Period: {start_date} to {end_date}")
+
+        geometry, location_name = self.get_geometry_from_selection(country, region, municipality)
+
+        if not geometry:
+            st.error("Could not get geometry for the selected location")
+            return None
+
+        results = {
+            'location_name': location_name,
+            'analysis_period': f"{start_date} to {end_date}",
+            'classification_type': classification_type
+        }
+
+        # Climate Classification
+        results['climate_analysis'] = self.get_accurate_climate_classification(
+            geometry, location_name, classification_type)
+
+        return results
+
+    def plot_accurate_results(self, results):
+        """Plot climate results"""
+        if not results:
+            st.error("No results to plot")
+            return
+
+        self.create_climate_classification_chart(
+            results['classification_type'],
+            results['location_name'],
+            results['climate_analysis']
+        )
+
+        # Print summary
+        st.subheader("Climate Analysis Summary")
+        climate = results['climate_analysis']
+        st.write(f"**Location:** {results['location_name']}")
+        st.write(f"**Climate Zone:** {climate['climate_zone']}")
+        st.write(f"**Mean Temperature:** {climate['mean_temperature']:.1f}°C")
+        st.write(f"**Mean Precipitation:** {climate['mean_precipitation']:.0f} mm/year")
+        st.write(f"**Aridity Index:** {climate['aridity_index']:.3f}")
+
+    # SOIL ANALYSIS METHODS
+    def get_reference_soil_data_improved(self, geometry, region_name):
+        """Get reference soil data"""
+        with st.spinner(f"Getting soil data for {region_name}..."):
+            try:
+                gsoc = ee.Image("projects/earthengine-legacy/assets/projects/sat-io/open-datasets/FAO/GSOCMAP1-5-0")
+                soc_mean_global = gsoc.select('b1').rename('soc_mean')
+
+                africa_soil = ee.Image("ISDASOIL/Africa/v1/carbon_organic")
+                converted_africa = africa_soil.divide(10).exp().subtract(1)
+
+                texture_dataset = ee.Image('OpenLandMap/SOL/SOL_TEXTURE-CLASS_USDA-TT_M/v02')
+                soil_texture = texture_dataset.select('b0')
+
+                is_in_africa = AFRICA_BOUNDS.intersects(geometry, 100).getInfo()
+
+                if is_in_africa:
+                    soc_stock = converted_africa.select(0).clip(geometry).rename('soc_stock')
+                    depth = 20
+                    soil_source = DATA_SOURCES['reference_soil']['africa']
+                else:
+                    soc_stock = soc_mean_global.clip(geometry).rename('soc_stock')
+                    depth = 30
+                    soil_source = DATA_SOURCES['reference_soil']['global']
+
+                texture_clipped = soil_texture.clip(geometry).rename('texture')
+
+                def get_soil_stats(image, property_name):
+                    try:
+                        stats = image.reduceRegion(
+                            reducer=ee.Reducer.mean(),
+                            geometry=geometry,
+                            scale=1000,
+                            maxPixels=1e9,
+                            bestEffort=True
+                        )
+                        result = stats.get(property_name).getInfo()
+                        return result if result is not None else 0
+                    except Exception as e:
+                        st.warning(f"Could not get {property_name}: {str(e)}")
+                        return 0
+
+                def get_texture_mode(image):
+                    try:
+                        mode_stats = image.reduceRegion(
+                            reducer=ee.Reducer.mode(),
+                            geometry=geometry,
+                            scale=250,
+                            maxPixels=1e9,
+                            bestEffort=True
+                        )
+                        result = mode_stats.get('texture').getInfo()
+                        return int(result) if result is not None else 7
+                    except Exception as e:
+                        st.warning(f"Could not get texture: {str(e)}")
+                        return 7
+
+                soc_stock_val = get_soil_stats(soc_stock, 'soc_stock')
+                texture_val = get_texture_mode(texture_clipped)
+
+                soc_percent, som_percent = self.calculate_soc_to_som(soc_stock_val, BULK_DENSITY, depth)
+                clay_val, silt_val, sand_val = self.estimate_texture_components(texture_val)
+
+                soil_data = {
+                    'region_name': region_name,
+                    'texture_class': texture_val,
+                    'texture_name': SOIL_TEXTURE_CLASSES.get(texture_val, 'Unknown'),
+                    'soc_stock': soc_stock_val,
+                    'soil_organic_matter': som_percent,
+                    'bulk_density': BULK_DENSITY,
+                    'depth_cm': depth,
+                    'clay_content': clay_val,
+                    'silt_content': silt_val,
+                    'sand_content': sand_val,
+                    'is_africa': is_in_africa,
+                    'calculated_soc_percent': soc_percent,
+                    'calculated_som_percent': som_percent,
+                    'data_sources': {
+                        'soil_organic_carbon': soil_source,
+                        'soil_texture': DATA_SOURCES['soil_texture']
+                    }
+                }
+
+                st.success(f"Soil data retrieved for {region_name}")
+                return soil_data
+
+            except Exception as e:
+                st.error(f"Error getting soil data: {str(e)}")
+                return None
+
+    def calculate_soc_to_som(self, soc_stock_t_ha, bulk_density, depth_cm):
+        """Calculate SOC% and SOM% from SOC stock"""
+        try:
+            soc_percent = soc_stock_t_ha / (bulk_density * depth_cm * 100)
+            som_percent = soc_percent * SOC_TO_SOM_FACTOR * 100
+            return soc_percent * 100, som_percent
+        except Exception as e:
+            st.error(f"Error in SOC to SOM calculation: {e}")
+            return 0, 0
+
+    def estimate_texture_components(self, texture_class):
+        """Estimate clay, silt, sand percentages"""
+        texture_compositions = {
+            1: (60, 20, 20),   # Clay
+            2: (55, 10, 35),   # Sandy clay
+            3: (40, 40, 20),   # Silty clay
+            4: (35, 30, 35),   # Clay loam
+            5: (30, 10, 60),   # Sandy clay loam
+            6: (30, 50, 20),   # Silty clay loam
+            7: (20, 40, 40),   # Loam
+            8: (15, 10, 75),   # Sandy loam
+            9: (10, 60, 30),   # Silt loam
+            10: (5, 70, 25),   # Silt
+            11: (10, 10, 80),  # Loamy sand
+            12: (5, 5, 90)     # Sand
+        }
+        return texture_compositions.get(texture_class, (20, 40, 40))
+
+    def display_comprehensive_analysis(self, soil_data):
+        """Display soil analysis results"""
+        if not soil_data:
+            st.error("No soil data to display")
+            return
+
+        st.subheader(f"Soil Analysis for {soil_data['region_name']}")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("### Soil Properties")
+            st.write(f"**Soil Texture:** {soil_data['texture_name']}")
+            st.write(f"**SOC Stock:** {soil_data['soc_stock']:.1f} t/ha")
+            st.write(f"**Soil Organic Matter:** {soil_data['soil_organic_matter']:.2f}%")
+            st.write(f"**Bulk Density:** {soil_data['bulk_density']} g/cm³")
+            st.write(f"**Depth:** {soil_data['depth_cm']} cm")
+
+        with col2:
+            st.markdown("### Texture Composition")
+            texture_values = [soil_data['clay_content'], soil_data['silt_content'], soil_data['sand_content']]
+            texture_labels = ['Clay', 'Silt', 'Sand']
+            colors = ['#8B4513', '#DEB887', '#F4A460']
+
+            fig, ax = plt.subplots(figsize=(8, 6))
+            bars = ax.bar(texture_labels, texture_values, color=colors)
+            ax.set_ylabel('Percentage (%)')
+            ax.set_ylim(0, 100)
+            ax.set_title('Soil Texture Composition')
+            
+            for i, v in enumerate(texture_values):
+                ax.text(i, v + 1, f'{v}%', ha='center', va='bottom', fontweight='bold')
+            
+            st.pyplot(fig)
+            plt.close(fig)
+
+        st.markdown("### Data Sources")
+        for source_type, source_info in soil_data['data_sources'].items():
+            if isinstance(source_info, dict):
+                st.write(f"**{source_type.replace('_', ' ').title()}:** {source_info['name']}")
+                st.write(f"*Citation:* {source_info['citation']}")
+
+    def run_comprehensive_soil_analysis(self, country, region='Select Region', municipality='Select Municipality'):
+        """Run soil analysis"""
+        geometry, location_name = self.get_geometry_from_selection(country, region, municipality)
+
+        if not geometry:
+            st.error("Could not get geometry for the selected location")
+            return None
+
+        soil_data = self.get_reference_soil_data_improved(geometry, location_name)
+
+        if soil_data:
+            self.display_comprehensive_analysis(soil_data)
+            return soil_data
+        else:
+            st.error("Failed to retrieve soil data")
+            return None
+
+# ============================================
+# CLIMATE DATA FUNCTIONS
+# ============================================
 def get_daily_climate_data_corrected(start_date, end_date, geometry, scale=50000):
     """
     CORRECTED version: Get daily temperature and precipitation data
@@ -524,101 +1194,43 @@ def analyze_daily_climate_data(study_roi, start_date, end_date):
         st.error(f"❌ Error generating daily climate charts: {str(e)}")
         return None
 
-# Initialize session state for steps
-if 'current_step' not in st.session_state:
-    st.session_state.current_step = 1
-if 'selected_geometry' not in st.session_state:
-    st.session_state.selected_geometry = None
-if 'analysis_results' not in st.session_state:
-    st.session_state.analysis_results = None
-if 'selected_coordinates' not in st.session_state:
-    st.session_state.selected_coordinates = None
-if 'selected_area_name' not in st.session_state:
-    st.session_state.selected_area_name = None
-if 'analysis_parameters' not in st.session_state:
-    st.session_state.analysis_parameters = None
-if 'auto_show_results' not in st.session_state:
-    st.session_state.auto_show_results = False
-if 'climate_data' not in st.session_state:
-    st.session_state.climate_data = None
-if 'ee_initialized' not in st.session_state:
-    st.session_state.ee_initialized = False
+# ============================================
+# HELPER FUNCTIONS FOR BOTH APPLICATIONS
+# ============================================
+def get_country_list():
+    """Get list of all countries"""
+    try:
+        countries = FAO_GAUL.aggregate_array('ADM0_NAME').distinct().sort().getInfo()
+        return ['Select Country'] + countries
+    except Exception as e:
+        st.error(f"Error getting country list: {e}")
+        return ['Select Country', 'Algeria', 'Nigeria', 'Kenya', 'South Africa']
 
-# Page configuration
-st.set_page_config(
-    page_title="Khisba GIS - 3D Global Vegetation & Climate Analysis",
-    page_icon="🌍",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+def get_region_list(country):
+    """Get list of regions/states for a country"""
+    if country == 'Select Country':
+        return ['Select Region']
+    try:
+        regions = FAO_GAUL_ADMIN1.filter(ee.Filter.eq('ADM0_NAME', country)) \
+                                .aggregate_array('ADM1_NAME').distinct().sort().getInfo()
+        return ['Select Region'] + regions
+    except Exception as e:
+        st.error(f"Error getting regions for {country}: {e}")
+        return ['Select Region']
 
-# Define steps
-STEPS = [
-    {"number": 1, "label": "Select Area", "icon": "📍"},
-    {"number": 2, "label": "Set Parameters", "icon": "⚙️"},
-    {"number": 3, "label": "View Map", "icon": "🗺️"},
-    {"number": 4, "label": "Run Analysis", "icon": "🚀"},
-    {"number": 5, "label": "View Results", "icon": "📊"}
-]
+def get_municipality_list(country, region):
+    """Get list of municipalities for a region"""
+    if region == 'Select Region':
+        return ['Select Municipality']
+    try:
+        municipalities = FAO_GAUL_ADMIN2.filter(ee.Filter.eq('ADM0_NAME', country)) \
+                                       .filter(ee.Filter.eq('ADM1_NAME', region)) \
+                                       .aggregate_array('ADM2_NAME').distinct().sort().getInfo()
+        return ['Select Municipality'] + municipalities
+    except Exception as e:
+        st.error(f"Error getting municipalities for {region}: {e}")
+        return ['Select Municipality']
 
-# Header
-st.markdown("""
-<div style="margin-bottom: 20px;">
-    <h1>🌍 KHISBA GIS</h1>
-    <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation & Climate Analytics - Guided Workflow</p>
-</div>
-""", unsafe_allow_html=True)
-
-# Progress Steps
-st.markdown("""
-<div class="progress-steps">
-    <div class="progress-line"></div>
-    <div class="progress-fill" id="progress-fill"></div>
-""", unsafe_allow_html=True)
-
-for i, step in enumerate(STEPS):
-    step_class = "active" if st.session_state.current_step == step["number"] else ""
-    step_class = "completed" if st.session_state.current_step > step["number"] else step_class
-    
-    st.markdown(f"""
-    <div class="progress-step">
-        <div class="step-circle {step_class}">
-            {step["icon"] if step_class == "completed" else step["number"]}
-        </div>
-        <div class="step-label {step_class}">
-            {step["label"]}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("</div>", unsafe_allow_html=True)
-
-# JavaScript for progress fill
-st.markdown(f"""
-<script>
-    document.getElementById('progress-fill').style.width = '{((st.session_state.current_step - 1) / (len(STEPS) - 1)) * 100}%';
-</script>
-""", unsafe_allow_html=True)
-
-# Status indicators
-st.markdown("""
-<div class="status-container">
-    <div class="status-item">
-        <div class="status-dot" id="ee_status"></div>
-        <span>Earth Engine: Loading...</span>
-    </div>
-    <div class="status-item">
-        <div class="status-dot" id="area_status"></div>
-        <span>Area Selected: {'Yes' if st.session_state.selected_area_name else 'No'}</span>
-    </div>
-    <div class="status-item">
-        <div class="status-dot" id="analysis_status"></div>
-        <span>Analysis: {'Complete' if st.session_state.analysis_results else 'Pending'}</span>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-# Helper Functions
 def get_admin_boundaries(level, country_code=None, admin1_code=None):
     """Get administrative boundaries from Earth Engine"""
     try:
@@ -684,558 +1296,1426 @@ def get_geometry_coordinates(geometry):
         st.error(f"Error getting coordinates: {str(e)}")
         return {'center': [0, 20], 'bounds': None, 'zoom': 2}
 
-# Main content area
-col1, col2 = st.columns([0.35, 0.65], gap="large")
-
-with col1:
-    # Step 1: Area Selection
-    if st.session_state.current_step == 1:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">📍</div><h3 style="margin: 0;">Step 1: Select Your Area</h3></div>', unsafe_allow_html=True)
-        
-        # Guided instruction for step 1
+# ============================================
+# MAIN APPLICATION
+# ============================================
+def main():
+    # Initialize session states
+    if 'current_step' not in st.session_state:
+        st.session_state.current_step = 1
+    if 'selected_geometry' not in st.session_state:
+        st.session_state.selected_geometry = None
+    if 'analysis_results' not in st.session_state:
+        st.session_state.analysis_results = None
+    if 'selected_coordinates' not in st.session_state:
+        st.session_state.selected_coordinates = None
+    if 'selected_area_name' not in st.session_state:
+        st.session_state.selected_area_name = None
+    if 'analysis_parameters' not in st.session_state:
+        st.session_state.analysis_parameters = None
+    if 'auto_show_results' not in st.session_state:
+        st.session_state.auto_show_results = False
+    if 'climate_data' not in st.session_state:
+        st.session_state.climate_data = None
+    if 'selected_area_level' not in st.session_state:
+        st.session_state.selected_area_level = None
+    
+    # Header
+    st.markdown('<h1 class="main-header">🌍 KHISBA GIS - Comprehensive Climate & Soil Analysis</h1>', unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class="info-box">
+    <strong>Integrated Platform:</strong> Climate Analysis + Soil Organic Matter Analysis + Vegetation Analysis<br>
+    <strong>Features:</strong> Climate classification, Soil properties analysis, Vegetation indices, 3D mapping, Data visualization
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Tabs for different analysis types
+    tab1, tab2, tab3 = st.tabs([
+        "🌿 Vegetation & Climate Analytics", 
+        "🌡️ Comprehensive Climate & Soil Analysis", 
+        "🗺️ 3D Interactive Map"
+    ])
+    
+    # TAB 1: Vegetation & Climate Analytics
+    with tab1:
         st.markdown("""
         <div class="guide-container">
             <div class="guide-header">
-                <div class="guide-icon">🎯</div>
-                <div class="guide-title">Get Started</div>
+                <div class="guide-icon">🌿</div>
+                <div class="guide-title">Vegetation & Climate Analytics</div>
             </div>
             <div class="guide-content">
-                Select a geographic area for analysis. Start by choosing a country, then narrow down to state/province and municipality if needed.
+                Analyze vegetation health using multiple indices and daily climate data. Get time-series analysis for your selected area.
             </div>
         </div>
         """, unsafe_allow_html=True)
         
-        # Initialize variables
-        selected_country = None
-        selected_admin1 = None
-        selected_admin2 = None
+        # Define steps for vegetation analysis
+        VEG_STEPS = [
+            {"number": 1, "label": "Select Area", "icon": "📍"},
+            {"number": 2, "label": "Set Parameters", "icon": "⚙️"},
+            {"number": 3, "label": "View Map", "icon": "🗺️"},
+            {"number": 4, "label": "Run Analysis", "icon": "🚀"},
+            {"number": 5, "label": "View Results", "icon": "📊"}
+        ]
         
-        # Try to auto-initialize Earth Engine if not already done
-        if not st.session_state.ee_initialized:
-            with st.spinner("Initializing Earth Engine..."):
-                st.session_state.ee_initialized = auto_initialize_earth_engine()
+        # Progress Steps
+        st.markdown("""
+        <div class="progress-steps">
+            <div class="progress-line"></div>
+            <div class="progress-fill" id="veg-progress-fill"></div>
+        """, unsafe_allow_html=True)
+
+        for i, step in enumerate(VEG_STEPS):
+            step_class = "active" if st.session_state.current_step == step["number"] else ""
+            step_class = "completed" if st.session_state.current_step > step["number"] else step_class
+            
+            st.markdown(f"""
+            <div class="progress-step">
+                <div class="step-circle {step_class}">
+                    {step["icon"] if step_class == "completed" else step["number"]}
+                </div>
+                <div class="step-label {step_class}">
+                    {step["label"]}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
         
-        if st.session_state.ee_initialized:
-            try:
+        # Status indicators
+        st.markdown("""
+        <div class="status-container">
+            <div class="status-item">
+                <div class="status-dot" id="ee_status_veg"></div>
+                <span>Earth Engine: {'Active' if st.session_state.ee_initialized else 'Inactive'}</span>
+            </div>
+            <div class="status-item">
+                <div class="status-dot" id="area_status_veg"></div>
+                <span>Area Selected: {'Yes' if st.session_state.selected_area_name else 'No'}</span>
+            </div>
+            <div class="status-item">
+                <div class="status-dot" id="analysis_status_veg"></div>
+                <span>Analysis: {'Complete' if st.session_state.analysis_results else 'Pending'}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns([0.35, 0.65], gap="large")
+        
+        with col1:
+            # Step 1: Area Selection
+            if st.session_state.current_step == 1:
+                st.markdown('<div class="card">', unsafe_allow_html=True)
+                st.markdown('<div class="card-title"><div class="icon">📍</div><h3 style="margin: 0;">Step 1: Select Your Area</h3></div>', unsafe_allow_html=True)
+                
                 # Get countries
-                countries_fc = get_admin_boundaries(0)
-                if countries_fc:
-                    country_names = get_boundary_names(countries_fc, 0)
-                    if country_names:
-                        selected_country = st.selectbox(
-                            "🌍 Country",
-                            options=["Select a country"] + country_names,
+                countries = get_country_list()
+                selected_country = st.selectbox(
+                    "🌍 Country",
+                    options=countries,
+                    index=countries.index('Algeria') if 'Algeria' in countries else 0,
+                    key="veg_country"
+                )
+                
+                if selected_country != 'Select Country':
+                    regions = get_region_list(selected_country)
+                    selected_region = st.selectbox(
+                        "🏛️ State/Province",
+                        options=regions,
+                        index=0,
+                        key="veg_region"
+                    )
+                    
+                    if selected_region != 'Select Region':
+                        municipalities = get_municipality_list(selected_country, selected_region)
+                        selected_municipality = st.selectbox(
+                            "🏘️ Municipality",
+                            options=municipalities,
                             index=0,
-                            help="Choose a country for analysis",
-                            key="country_select"
+                            key="veg_municipality"
+                        )
+                
+                if selected_country != 'Select Country':
+                    if st.button("✅ Confirm Selection", type="primary", use_container_width=True, key="veg_confirm"):
+                        analyzer = ComprehensiveClimateSoilAnalyzer()
+                        geometry, location_name = analyzer.get_geometry_from_selection(
+                            selected_country, 
+                            selected_region if 'selected_region' in locals() else 'Select Region', 
+                            selected_municipality if 'selected_municipality' in locals() else 'Select Municipality'
                         )
                         
-                        if selected_country and selected_country != "Select a country":
-                            # Get country code
-                            country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
+                        if geometry:
+                            st.session_state.selected_geometry = geometry
+                            st.session_state.selected_area_name = location_name
+                            coords_info = get_geometry_coordinates(geometry)
+                            st.session_state.selected_coordinates = coords_info
                             
-                            # Get admin1 regions for selected country
-                            admin1_fc = get_admin_boundaries(1, country_feature.get('ADM0_CODE').getInfo())
-                            if admin1_fc:
-                                admin1_names = get_boundary_names(admin1_fc, 1)
-                                if admin1_names:
-                                    selected_admin1 = st.selectbox(
-                                        "🏛️ State/Province",
-                                        options=["Select state/province"] + admin1_names,
-                                        index=0,
-                                        help="Choose a state or province",
-                                        key="admin1_select"
-                                    )
-                                    
-                                    if selected_admin1 and selected_admin1 != "Select state/province":
-                                        # Get admin1 code
-                                        admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
-                                        
-                                        # Get admin2 regions for selected admin1
-                                        admin2_fc = get_admin_boundaries(2, None, admin1_feature.get('ADM1_CODE').getInfo())
-                                        if admin2_fc:
-                                            admin2_names = get_boundary_names(admin2_fc, 2)
-                                            if admin2_names:
-                                                selected_admin2 = st.selectbox(
-                                                    "🏘️ Municipality",
-                                                    options=["Select municipality"] + admin2_names,
-                                                    index=0,
-                                                    help="Choose a municipality",
-                                                    key="admin2_select"
-                                                )
+                            # Determine area level
+                            if selected_municipality != 'Select Municipality':
+                                st.session_state.selected_area_level = "Municipality"
+                            elif selected_region != 'Select Region':
+                                st.session_state.selected_area_level = "State/Province"
                             else:
-                                selected_admin1 = None
-                                selected_admin2 = None
-                    else:
-                        st.warning("No countries found. Please check Earth Engine connection.")
-                else:
-                    st.error("Failed to load countries. Please check Earth Engine connection.")
-                    
-            except Exception as e:
-                st.error(f"Error loading boundaries: {str(e)}")
-                selected_country = None
-                selected_admin1 = None
-                selected_admin2 = None
-        else:
-            st.warning("Earth Engine not initialized. Please wait...")
-        
-        # Only show confirmation button if country is selected
-        if selected_country and selected_country != "Select a country":
-            try:
-                # Determine geometry
-                if selected_admin2 and selected_admin2 != "Select municipality":
-                    geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
-                    area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
-                    area_level = "Municipality"
-                elif selected_admin1 and selected_admin1 != "Select state/province":
-                    geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
-                    area_name = f"{selected_admin1}, {selected_country}"
-                    area_level = "State/Province"
-                else:
-                    geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
-                    area_name = selected_country
-                    area_level = "Country"
+                                st.session_state.selected_area_level = "Country"
+                            
+                            st.session_state.current_step = 2
+                            st.rerun()
                 
-                # Get coordinates for the map
-                coords_info = get_geometry_coordinates(geometry)
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Step 2: Analysis Parameters
+            elif st.session_state.current_step == 2:
+                st.markdown('<div class="card">', unsafe_allow_html=True)
+                st.markdown('<div class="card-title"><div class="icon">⚙️</div><h3 style="margin: 0;">Step 2: Set Analysis Parameters</h3></div>', unsafe_allow_html=True)
                 
-                if st.button("✅ Confirm Selection", type="primary", use_container_width=True):
-                    # Store in session state
-                    st.session_state.selected_geometry = geometry
-                    st.session_state.selected_coordinates = coords_info
-                    st.session_state.selected_area_name = area_name
-                    st.session_state.selected_area_level = area_level
+                if st.session_state.selected_area_name:
+                    st.info(f"**Selected Area:** {st.session_state.selected_area_name}")
                     
-                    # Move to next step
-                    st.session_state.current_step = 2
-                    st.rerun()
+                    # Date range
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        start_date = st.date_input(
+                            "📅 Start Date",
+                            value=datetime(2023, 1, 1),
+                            help="Start date for analysis",
+                            key="veg_start_date"
+                        )
+                    with col_b:
+                        end_date = st.date_input(
+                            "📅 End Date",
+                            value=datetime(2023, 12, 31),
+                            help="End date for analysis",
+                            key="veg_end_date"
+                        )
                     
-            except Exception as e:
-                st.error(f"Error processing geometry: {str(e)}")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Step 2: Analysis Parameters
-    elif st.session_state.current_step == 2:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">⚙️</div><h3 style="margin: 0;">Step 2: Set Analysis Parameters</h3></div>', unsafe_allow_html=True)
-        
-        # Guided instruction for step 2
-        st.markdown("""
-        <div class="guide-container">
-            <div class="guide-header">
-                <div class="guide-icon">📋</div>
-                <div class="guide-title">Configure Analysis</div>
-            </div>
-            <div class="guide-content">
-                Set the time range, satellite source, and vegetation indices for your analysis. Default values are optimized for most use cases.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.session_state.selected_area_name:
-            st.info(f"**Selected Area:** {st.session_state.selected_area_name}")
-            
-            # Date range
-            col_a, col_b = st.columns(2)
-            with col_a:
-                start_date = st.date_input(
-                    "📅 Start Date",
-                    value=datetime(2023, 1, 1),
-                    help="Start date for analysis"
-                )
-            with col_b:
-                end_date = st.date_input(
-                    "📅 End Date",
-                    value=datetime(2023, 12, 31),
-                    help="End date for analysis"
-                )
-            
-            # Include climate data option
-            include_climate = st.checkbox(
-                "🌤️ Include Climate Data Analysis",
-                value=True,
-                help="Include temperature and precipitation analysis"
-            )
-            
-            # Satellite source
-            collection_choice = st.selectbox(
-                "🛰️ Satellite Source",
-                options=["Sentinel-2", "Landsat-8"],
-                help="Choose satellite collection",
-                index=0
-            )
-            
-            # Cloud cover
-            cloud_cover = st.slider(
-                "☁️ Max Cloud Cover (%)",
-                min_value=0,
-                max_value=100,
-                value=20,
-                help="Maximum cloud cover percentage"
-            )
-            
-            # Vegetation indices
-            available_indices = [
-                'NDVI', 'ARVI', 'ATSAVI', 'DVI', 'EVI', 'EVI2', 'GNDVI', 'MSAVI', 'MSI', 'MTVI', 'MTVI2',
-                'NDTI', 'NDWI', 'OSAVI', 'RDVI', 'RI', 'RVI', 'SAVI', 'TVI', 'TSAVI', 'VARI', 'VIN', 'WDRVI',
-                'GCVI', 'AWEI', 'MNDWI', 'WI', 'ANDWI', 'NDSI', 'nDDI', 'NBR', 'DBSI', 'SI', 'S3', 'BRI',
-                'SSI', 'NDSI_Salinity', 'SRPI', 'MCARI', 'NDCI', 'PSSRb1', 'SIPI', 'PSRI', 'Chl_red_edge', 'MARI', 'NDMI'
-            ]
-            
-            selected_indices = st.multiselect(
-                "🌿 Vegetation Indices",
-                options=available_indices,
-                default=['NDVI', 'EVI', 'SAVI', 'NDWI'],
-                help="Choose vegetation indices to analyze"
-            )
-            
-            # Navigation buttons
-            col_back, col_next = st.columns(2)
-            with col_back:
-                if st.button("⬅️ Back to Area Selection", use_container_width=True):
-                    st.session_state.current_step = 1
-                    st.rerun()
-            
-            with col_next:
-                if st.button("✅ Save Parameters & Continue", type="primary", use_container_width=True, disabled=not selected_indices):
-                    st.session_state.analysis_parameters = {
-                        'start_date': start_date,
-                        'end_date': end_date,
-                        'include_climate': include_climate,
-                        'collection_choice': collection_choice,
-                        'cloud_cover': cloud_cover,
-                        'selected_indices': selected_indices
-                    }
-                    st.session_state.current_step = 3
-                    st.rerun()
-        else:
-            st.warning("Please go back to Step 1 and select an area first.")
-            if st.button("⬅️ Go to Area Selection", use_container_width=True):
-                st.session_state.current_step = 1
-                st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Step 3: View Map & Confirm
-    elif st.session_state.current_step == 3:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">🗺️</div><h3 style="margin: 0;">Step 3: Preview Selected Area</h3></div>', unsafe_allow_html=True)
-        
-        # Guided instruction for step 3
-        st.markdown("""
-        <div class="guide-container">
-            <div class="guide-header">
-                <div class="guide-icon">👁️</div>
-                <div class="guide-title">Preview Area</div>
-            </div>
-            <div class="guide-content">
-                Review your selected area on the 3D map. Make sure the highlighted region matches your intended analysis area.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.session_state.selected_area_name:
-            st.info(f"""
-            **Selected Area:** {st.session_state.selected_area_name}
-            
-            **Analysis Parameters:**
-            - Time Range: {st.session_state.analysis_parameters['start_date']} to {st.session_state.analysis_parameters['end_date']}
-            - Climate Analysis: {'Yes' if st.session_state.analysis_parameters['include_climate'] else 'No'}
-            - Satellite: {st.session_state.analysis_parameters['collection_choice']}
-            - Cloud Cover: ≤{st.session_state.analysis_parameters['cloud_cover']}%
-            - Indices: {', '.join(st.session_state.analysis_parameters['selected_indices'])}
-            """)
-            
-            # Navigation buttons
-            col_back, col_next = st.columns(2)
-            with col_back:
-                if st.button("⬅️ Back to Parameters", use_container_width=True):
-                    st.session_state.current_step = 2
-                    st.rerun()
-            
-            with col_next:
-                if st.button("🚀 Run Analysis Now", type="primary", use_container_width=True):
-                    st.session_state.current_step = 4
-                    st.session_state.auto_show_results = False
-                    st.rerun()
-        else:
-            st.warning("No area selected. Please go back to Step 1.")
-            if st.button("⬅️ Go to Area Selection", use_container_width=True):
-                st.session_state.current_step = 1
-                st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Step 4: Running Analysis
-    elif st.session_state.current_step == 4:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">🚀</div><h3 style="margin: 0;">Step 4: Running Analysis</h3></div>', unsafe_allow_html=True)
-        
-        # Show analysis progress
-        st.markdown("""
-        <div class="guide-container">
-            <div class="guide-header">
-                <div class="guide-icon">⏳</div>
-                <div class="guide-title">Analysis in Progress</div>
-            </div>
-            <div class="guide-content">
-                Please wait while we process your vegetation analysis. This may take a few moments depending on the area size and time range.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Run the analysis automatically
-        if not st.session_state.auto_show_results:
-            # Create a placeholder for progress
-            progress_placeholder = st.empty()
-            status_placeholder = st.empty()
-            
-            with progress_placeholder.container():
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                
-                analysis_steps = [
-                    "Initializing Earth Engine...",
-                    "Loading satellite data...",
-                    "Processing vegetation indices...",
-                    "Calculating statistics...",
-                    "Generating visualizations..."
-                ]
-                
-                # Add climate analysis step if needed
-                if st.session_state.analysis_parameters['include_climate']:
-                    analysis_steps.insert(3, "Loading climate data...")
-                
-                # Simulate analysis progress
-                try:
-                    params = st.session_state.analysis_parameters
-                    geometry = st.session_state.selected_geometry
-                    
-                    for i, step in enumerate(analysis_steps):
-                        status_text.text(step)
-                        progress_bar.progress((i + 1) / len(analysis_steps))
-                        
-                        # Simulate processing time
-                        import time
-                        time.sleep(1)
-                    
-                    # Define collection based on choice
-                    if params['collection_choice'] == "Sentinel-2":
-                        collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-                    else:
-                        collection = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
-                    
-                    # Filter collection
-                    filtered_collection = (collection
-                        .filterDate(params['start_date'].strftime('%Y-%m-%d'), params['end_date'].strftime('%Y-%m-%d'))
-                        .filterBounds(geometry.geometry())
-                        .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', params['cloud_cover']))
+                    # Include climate data option
+                    include_climate = st.checkbox(
+                        "🌤️ Include Climate Data Analysis",
+                        value=True,
+                        help="Include temperature and precipitation analysis",
+                        key="veg_include_climate"
                     )
                     
-                    # Create simplified vegetation indices
-                    def simple_add_indices(image):
-                        if params['collection_choice'] == "Sentinel-2":
-                            nir = image.select('B8')
-                            red = image.select('B4')
-                            green = image.select('B3')
-                            blue = image.select('B2')
-                        else:
-                            nir = image.select('SR_B5')
-                            red = image.select('SR_B4')
-                            green = image.select('SR_B3')
-                            blue = image.select('SR_B2')
-                        
-                        # Basic indices calculation
-                        indices = []
-                        if 'NDVI' in params['selected_indices']:
-                            ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI')
-                            indices.append(ndvi)
-                        
-                        if 'EVI' in params['selected_indices']:
-                            evi = nir.subtract(red).multiply(2.5).divide(
-                                nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1)
-                            ).rename('EVI')
-                            indices.append(evi)
-                        
-                        if 'SAVI' in params['selected_indices']:
-                            savi = nir.subtract(red).multiply(1.5).divide(
-                                nir.add(red).add(0.5)
-                            ).rename('SAVI')
-                            indices.append(savi)
-                        
-                        if 'NDWI' in params['selected_indices']:
-                            ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI')
-                            indices.append(ndwi)
-                        
-                        # Add other indices as needed
-                        for idx in params['selected_indices']:
-                            if idx not in ['NDVI', 'EVI', 'SAVI', 'NDWI']:
-                                # Simplified version for other indices
-                                other_idx = nir.subtract(red).divide(nir.add(red)).rename(idx)
-                                indices.append(other_idx)
-                        
-                        return image.addBands(indices)
+                    # Satellite source
+                    collection_choice = st.selectbox(
+                        "🛰️ Satellite Source",
+                        options=["Sentinel-2", "Landsat-8"],
+                        help="Choose satellite collection",
+                        index=0,
+                        key="veg_satellite"
+                    )
                     
-                    processed_collection = filtered_collection.map(simple_add_indices)
+                    # Cloud cover
+                    cloud_cover = st.slider(
+                        "☁️ Max Cloud Cover (%)",
+                        min_value=0,
+                        max_value=100,
+                        value=20,
+                        help="Maximum cloud cover percentage",
+                        key="veg_cloud_cover"
+                    )
                     
-                    # Calculate time series for selected indices
-                    results = {}
-                    for index in params['selected_indices']:
-                        try:
-                            # Map over collection to get mean values
-                            def add_date_and_reduce(img):
-                                reduced = img.select(index).reduceRegion(
-                                    reducer=ee.Reducer.mean(),
-                                    geometry=geometry.geometry(),
-                                    scale=30,
-                                    maxPixels=1e9
-                                )
-                                return ee.Feature(None, reduced.set('date', img.date().format('YYYY-MM-dd')))
-                            
-                            time_series = processed_collection.map(add_date_and_reduce)
-                            time_series_list = time_series.getInfo()
-                            
-                            dates = []
-                            values = []
-                            
-                            if 'features' in time_series_list:
-                                for feature in time_series_list['features']:
-                                    props = feature['properties']
-                                    if index in props and props[index] is not None and 'date' in props:
-                                        dates.append(props['date'])
-                                        values.append(float(props[index]))
-                            
-                            results[index] = {'dates': dates, 'values': values}
-                            
-                        except Exception as e:
-                            st.warning(f"Could not calculate {index}: {str(e)}")
-                            results[index] = {'dates': [], 'values': []}
+                    # Vegetation indices
+                    available_indices = [
+                        'NDVI', 'ARVI', 'ATSAVI', 'DVI', 'EVI', 'EVI2', 'GNDVI', 'MSAVI', 'MSI', 'MTVI', 'MTVI2',
+                        'NDTI', 'NDWI', 'OSAVI', 'RDVI', 'RI', 'RVI', 'SAVI', 'TVI', 'TSAVI', 'VARI', 'VIN', 'WDRVI',
+                        'GCVI', 'AWEI', 'MNDWI', 'WI', 'ANDWI', 'NDSI', 'nDDI', 'NBR', 'DBSI', 'SI', 'S3', 'BRI',
+                        'SSI', 'NDSI_Salinity', 'SRPI', 'MCARI', 'NDCI', 'PSSRb1', 'SIPI', 'PSRI', 'Chl_red_edge', 'MARI', 'NDMI'
+                    ]
                     
-                    st.session_state.analysis_results = results
+                    selected_indices = st.multiselect(
+                        "🌿 Vegetation Indices",
+                        options=available_indices,
+                        default=['NDVI', 'EVI', 'SAVI', 'NDWI'],
+                        help="Choose vegetation indices to analyze",
+                        key="veg_indices"
+                    )
                     
-                    # Load climate data if requested
-                    if params['include_climate']:
-                        try:
-                            status_text.text("Loading climate data...")
-                            climate_df = analyze_daily_climate_data(
-                                geometry.geometry(),
-                                params['start_date'].strftime('%Y-%m-%d'),
-                                params['end_date'].strftime('%Y-%m-%d')
-                            )
-                            st.session_state.climate_data = climate_df
-                        except Exception as e:
-                            st.warning(f"Could not load climate data: {str(e)}")
-                            st.session_state.climate_data = None
+                    # Navigation buttons
+                    col_back, col_next = st.columns(2)
+                    with col_back:
+                        if st.button("⬅️ Back to Area Selection", use_container_width=True, key="veg_back_2"):
+                            st.session_state.current_step = 1
+                            st.rerun()
                     
-                    progress_bar.progress(1.0)
-                    status_text.text("✅ Analysis Complete!")
-                    
-                    # Auto-move to results after 2 seconds
-                    time.sleep(2)
-                    st.session_state.current_step = 5
-                    st.session_state.auto_show_results = True
-                    st.rerun()
-                    
-                except Exception as e:
-                    st.error(f"Analysis failed: {str(e)}")
-                    if st.button("🔄 Try Again", use_container_width=True):
+                    with col_next:
+                        if st.button("✅ Save Parameters & Continue", type="primary", use_container_width=True, 
+                                    disabled=not selected_indices, key="veg_next_2"):
+                            st.session_state.analysis_parameters = {
+                                'start_date': start_date,
+                                'end_date': end_date,
+                                'include_climate': include_climate,
+                                'collection_choice': collection_choice,
+                                'cloud_cover': cloud_cover,
+                                'selected_indices': selected_indices
+                            }
+                            st.session_state.current_step = 3
+                            st.rerun()
+                else:
+                    st.warning("Please go back to Step 1 and select an area first.")
+                    if st.button("⬅️ Go to Area Selection", use_container_width=True, key="veg_back_to_1"):
+                        st.session_state.current_step = 1
                         st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Step 5: View Results
-    elif st.session_state.current_step == 5:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Step 5: Analysis Results</h3></div>', unsafe_allow_html=True)
-        
-        if st.session_state.analysis_results or st.session_state.climate_data is not None:
-            # Navigation buttons
-            col_back, col_new = st.columns(2)
-            with col_back:
-                if st.button("⬅️ Back to Map", use_container_width=True):
-                    st.session_state.current_step = 3
-                    st.rerun()
+                
+                st.markdown('</div>', unsafe_allow_html=True)
             
-            with col_new:
-                if st.button("🔄 New Analysis", use_container_width=True):
-                    # Reset for new analysis
-                    for key in ['selected_geometry', 'analysis_results', 'selected_coordinates', 
-                               'selected_area_name', 'analysis_parameters', 'climate_data']:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                    st.session_state.current_step = 1
-                    st.rerun()
-            
-            # Export options
-            st.subheader("💾 Export Results")
-            if st.button("📥 Download All Data", use_container_width=True):
-                # Create CSV data
-                export_data = []
+            # Step 3: View Map & Confirm
+            elif st.session_state.current_step == 3:
+                st.markdown('<div class="card">', unsafe_allow_html=True)
+                st.markdown('<div class="card-title"><div class="icon">🗺️</div><h3 style="margin: 0;">Step 3: Preview Selected Area</h3></div>', unsafe_allow_html=True)
                 
-                # Add vegetation indices data
-                for index, data in st.session_state.analysis_results.items():
-                    for date, value in zip(data['dates'], data['values']):
-                        export_data.append({
-                            'Date': date,
-                            'Index': index,
-                            'Value': value
-                        })
-                
-                # Add climate data if available
-                if st.session_state.climate_data is not None:
-                    climate_df = st.session_state.climate_data
-                    for _, row in climate_df.iterrows():
-                        export_data.append({
-                            'Date': row['date'].strftime('%Y-%m-%d'),
-                            'Index': 'Temperature (°C)',
-                            'Value': row['temperature']
-                        })
-                        export_data.append({
-                            'Date': row['date'].strftime('%Y-%m-%d'),
-                            'Index': 'Precipitation (mm)',
-                            'Value': row['precipitation']
-                        })
-                
-                if export_data:
-                    df = pd.DataFrame(export_data)
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="Click to Download CSV",
-                        data=csv,
-                        file_name=f"vegetation_climate_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv"
-                    )
+                if st.session_state.selected_area_name:
+                    st.info(f"""
+                    **Selected Area:** {st.session_state.selected_area_name}
+                    
+                    **Analysis Parameters:**
+                    - Time Range: {st.session_state.analysis_parameters['start_date']} to {st.session_state.analysis_parameters['end_date']}
+                    - Climate Analysis: {'Yes' if st.session_state.analysis_parameters['include_climate'] else 'No'}
+                    - Satellite: {st.session_state.analysis_parameters['collection_choice']}
+                    - Cloud Cover: ≤{st.session_state.analysis_parameters['cloud_cover']}%
+                    - Indices: {', '.join(st.session_state.analysis_parameters['selected_indices'])}
+                    """)
+                    
+                    # Navigation buttons
+                    col_back, col_next = st.columns(2)
+                    with col_back:
+                        if st.button("⬅️ Back to Parameters", use_container_width=True, key="veg_back_3"):
+                            st.session_state.current_step = 2
+                            st.rerun()
+                    
+                    with col_next:
+                        if st.button("🚀 Run Analysis Now", type="primary", use_container_width=True, key="veg_run_3"):
+                            st.session_state.current_step = 4
+                            st.session_state.auto_show_results = False
+                            st.rerun()
                 else:
-                    st.warning("No data available for export")
-        else:
-            st.warning("No results available. Please run an analysis first.")
-            if st.button("⬅️ Go Back", use_container_width=True):
-                st.session_state.current_step = 4
-                st.rerun()
+                    st.warning("No area selected. Please go back to Step 1.")
+                    if st.button("⬅️ Go to Area Selection", use_container_width=True, key="veg_back_to_1_3"):
+                        st.session_state.current_step = 1
+                        st.rerun()
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Step 4: Running Analysis
+            elif st.session_state.current_step == 4:
+                st.markdown('<div class="card">', unsafe_allow_html=True)
+                st.markdown('<div class="card-title"><div class="icon">🚀</div><h3 style="margin: 0;">Step 4: Running Analysis</h3></div>', unsafe_allow_html=True)
+                
+                # Show analysis progress
+                if not st.session_state.auto_show_results:
+                    progress_placeholder = st.empty()
+                    status_placeholder = st.empty()
+                    
+                    with progress_placeholder.container():
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        analysis_steps = [
+                            "Initializing Earth Engine...",
+                            "Loading satellite data...",
+                            "Processing vegetation indices...",
+                            "Calculating statistics...",
+                            "Generating visualizations..."
+                        ]
+                        
+                        # Add climate analysis step if needed
+                        if st.session_state.analysis_parameters['include_climate']:
+                            analysis_steps.insert(3, "Loading climate data...")
+                        
+                        # Simulate analysis progress
+                        try:
+                            params = st.session_state.analysis_parameters
+                            geometry = st.session_state.selected_geometry
+                            
+                            for i, step in enumerate(analysis_steps):
+                                status_text.text(step)
+                                progress_bar.progress((i + 1) / len(analysis_steps))
+                                
+                                # Simulate processing time
+                                import time
+                                time.sleep(1)
+                            
+                            # Define collection based on choice
+                            if params['collection_choice'] == "Sentinel-2":
+                                collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+                            else:
+                                collection = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+                            
+                            # Filter collection
+                            filtered_collection = (collection
+                                .filterDate(params['start_date'].strftime('%Y-%m-%d'), params['end_date'].strftime('%Y-%m-%d'))
+                                .filterBounds(geometry.geometry())
+                                .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', params['cloud_cover']))
+                            )
+                            
+                            # Create simplified vegetation indices
+                            def simple_add_indices(image):
+                                if params['collection_choice'] == "Sentinel-2":
+                                    nir = image.select('B8')
+                                    red = image.select('B4')
+                                    green = image.select('B3')
+                                    blue = image.select('B2')
+                                else:
+                                    nir = image.select('SR_B5')
+                                    red = image.select('SR_B4')
+                                    green = image.select('SR_B3')
+                                    blue = image.select('SR_B2')
+                                
+                                # Basic indices calculation
+                                indices = []
+                                if 'NDVI' in params['selected_indices']:
+                                    ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI')
+                                    indices.append(ndvi)
+                                
+                                if 'EVI' in params['selected_indices']:
+                                    evi = nir.subtract(red).multiply(2.5).divide(
+                                        nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1)
+                                    ).rename('EVI')
+                                    indices.append(evi)
+                                
+                                if 'SAVI' in params['selected_indices']:
+                                    savi = nir.subtract(red).multiply(1.5).divide(
+                                        nir.add(red).add(0.5)
+                                    ).rename('SAVI')
+                                    indices.append(savi)
+                                
+                                if 'NDWI' in params['selected_indices']:
+                                    ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI')
+                                    indices.append(ndwi)
+                                
+                                # Add other indices as needed
+                                for idx in params['selected_indices']:
+                                    if idx not in ['NDVI', 'EVI', 'SAVI', 'NDWI']:
+                                        # Simplified version for other indices
+                                        other_idx = nir.subtract(red).divide(nir.add(red)).rename(idx)
+                                        indices.append(other_idx)
+                                
+                                return image.addBands(indices)
+                            
+                            processed_collection = filtered_collection.map(simple_add_indices)
+                            
+                            # Calculate time series for selected indices
+                            results = {}
+                            for index in params['selected_indices']:
+                                try:
+                                    # Map over collection to get mean values
+                                    def add_date_and_reduce(img):
+                                        reduced = img.select(index).reduceRegion(
+                                            reducer=ee.Reducer.mean(),
+                                            geometry=geometry.geometry(),
+                                            scale=30,
+                                            maxPixels=1e9
+                                        )
+                                        return ee.Feature(None, reduced.set('date', img.date().format('YYYY-MM-dd')))
+                                    
+                                    time_series = processed_collection.map(add_date_and_reduce)
+                                    time_series_list = time_series.getInfo()
+                                    
+                                    dates = []
+                                    values = []
+                                    
+                                    if 'features' in time_series_list:
+                                        for feature in time_series_list['features']:
+                                            props = feature['properties']
+                                            if index in props and props[index] is not None and 'date' in props:
+                                                dates.append(props['date'])
+                                                values.append(float(props[index]))
+                                    
+                                    results[index] = {'dates': dates, 'values': values}
+                                    
+                                except Exception as e:
+                                    st.warning(f"Could not calculate {index}: {str(e)}")
+                                    results[index] = {'dates': [], 'values': []}
+                            
+                            st.session_state.analysis_results = results
+                            
+                            # Load climate data if requested
+                            if params['include_climate']:
+                                try:
+                                    status_text.text("Loading climate data...")
+                                    climate_df = analyze_daily_climate_data(
+                                        geometry.geometry(),
+                                        params['start_date'].strftime('%Y-%m-%d'),
+                                        params['end_date'].strftime('%Y-%m-%d')
+                                    )
+                                    st.session_state.climate_data = climate_df
+                                except Exception as e:
+                                    st.warning(f"Could not load climate data: {str(e)}")
+                                    st.session_state.climate_data = None
+                            
+                            progress_bar.progress(1.0)
+                            status_text.text("✅ Analysis Complete!")
+                            
+                            # Auto-move to results after 2 seconds
+                            time.sleep(2)
+                            st.session_state.current_step = 5
+                            st.session_state.auto_show_results = True
+                            st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"Analysis failed: {str(e)}")
+                            if st.button("🔄 Try Again", use_container_width=True, key="veg_retry"):
+                                st.rerun()
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Step 5: View Results
+            elif st.session_state.current_step == 5:
+                st.markdown('<div class="card">', unsafe_allow_html=True)
+                st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Step 5: Analysis Results</h3></div>', unsafe_allow_html=True)
+                
+                if st.session_state.analysis_results or st.session_state.climate_data is not None:
+                    # Navigation buttons
+                    col_back, col_new = st.columns(2)
+                    with col_back:
+                        if st.button("⬅️ Back to Map", use_container_width=True, key="veg_back_5"):
+                            st.session_state.current_step = 3
+                            st.rerun()
+                    
+                    with col_new:
+                        if st.button("🔄 New Analysis", use_container_width=True, key="veg_new_analysis"):
+                            # Reset for new analysis
+                            for key in ['selected_geometry', 'analysis_results', 'selected_coordinates', 
+                                       'selected_area_name', 'analysis_parameters', 'climate_data']:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                            st.session_state.current_step = 1
+                            st.rerun()
+                    
+                    # Export options
+                    st.subheader("💾 Export Results")
+                    if st.button("📥 Download All Data", use_container_width=True, key="veg_export"):
+                        # Create CSV data
+                        export_data = []
+                        
+                        # Add vegetation indices data
+                        for index, data in st.session_state.analysis_results.items():
+                            for date, value in zip(data['dates'], data['values']):
+                                export_data.append({
+                                    'Date': date,
+                                    'Index': index,
+                                    'Value': value
+                                })
+                        
+                        # Add climate data if available
+                        if st.session_state.climate_data is not None:
+                            climate_df = st.session_state.climate_data
+                            for _, row in climate_df.iterrows():
+                                export_data.append({
+                                    'Date': row['date'].strftime('%Y-%m-%d'),
+                                    'Index': 'Temperature (°C)',
+                                    'Value': row['temperature']
+                                })
+                                export_data.append({
+                                    'Date': row['date'].strftime('%Y-%m-%d'),
+                                    'Index': 'Precipitation (mm)',
+                                    'Value': row['precipitation']
+                                })
+                        
+                        if export_data:
+                            df = pd.DataFrame(export_data)
+                            csv = df.to_csv(index=False)
+                            st.download_button(
+                                label="Click to Download CSV",
+                                data=csv,
+                                file_name=f"vegetation_climate_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                mime="text/csv",
+                                key="veg_download"
+                            )
+                        else:
+                            st.warning("No data available for export")
+                else:
+                    st.warning("No results available. Please run an analysis first.")
+                    if st.button("⬅️ Go Back", use_container_width=True, key="veg_back_to_4"):
+                        st.session_state.current_step = 4
+                        st.rerun()
+                
+                st.markdown('</div>', unsafe_allow_html=True)
         
-        st.markdown('</div>', unsafe_allow_html=True)
+        with col2:
+            # Right column - Show map or results based on step
+            if st.session_state.current_step <= 3:
+                # Show 3D Mapbox Globe for steps 1-3
+                st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
+                st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Interactive 3D Global Map</h3></div>', unsafe_allow_html=True)
+                
+                # Prepare coordinates for the map
+                map_center = [0, 20]
+                map_zoom = 2
+                bounds_data = None
+                
+                if st.session_state.selected_coordinates:
+                    map_center = st.session_state.selected_coordinates['center']
+                    map_zoom = st.session_state.selected_coordinates['zoom']
+                    bounds_data = st.session_state.selected_coordinates['bounds']
+                
+                # Generate HTML for Mapbox interactive globe
+                mapbox_html = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                  <meta charset="utf-8" />
+                  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+                  <title>KHISBA GIS - 3D Global Map</title>
+                  <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+                  <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+                  <style>
+                    body {{ 
+                      margin: 0; 
+                      padding: 0; 
+                      background: #000000;
+                    }}
+                    #map {{ 
+                      position: absolute; 
+                      top: 0; 
+                      bottom: 0; 
+                      width: 100%; 
+                      border-radius: 8px;
+                    }}
+                    .map-overlay {{
+                      position: absolute;
+                      top: 20px;
+                      right: 20px;
+                      background: rgba(10, 10, 10, 0.9);
+                      color: white;
+                      padding: 15px;
+                      border-radius: 8px;
+                      border: 1px solid #222222;
+                      max-width: 250px;
+                      z-index: 1000;
+                      font-family: 'Inter', sans-serif;
+                    }}
+                    .overlay-title {{
+                      color: #00ff88;
+                      font-weight: 600;
+                      margin-bottom: 10px;
+                      font-size: 14px;
+                    }}
+                    .overlay-text {{
+                      color: #cccccc;
+                      font-size: 12px;
+                      line-height: 1.4;
+                    }}
+                    .coordinates-display {{
+                      position: absolute;
+                      bottom: 20px;
+                      left: 20px;
+                      background: rgba(10, 10, 10, 0.9);
+                      color: white;
+                      padding: 10px 15px;
+                      border-radius: 6px;
+                      border: 1px solid #222222;
+                      font-family: monospace;
+                      font-size: 12px;
+                      z-index: 1000;
+                    }}
+                    .selected-area {{
+                      position: absolute;
+                      top: 20px;
+                      left: 20px;
+                      background: rgba(10, 10, 10, 0.9);
+                      color: white;
+                      padding: 15px;
+                      border-radius: 8px;
+                      border: 1px solid #222222;
+                      max-width: 300px;
+                      z-index: 1000;
+                      font-family: 'Inter', sans-serif;
+                    }}
+                    .area-title {{
+                      color: #00ff88;
+                      font-weight: 600;
+                      margin-bottom: 10px;
+                      font-size: 14px;
+                    }}
+                    .area-details {{
+                      color: #cccccc;
+                      font-size: 12px;
+                      line-height: 1.4;
+                    }}
+                    .layer-switcher {{
+                      position: absolute;
+                      top: 20px;
+                      right: 20px;
+                      background: rgba(10, 10, 10, 0.9);
+                      border: 1px solid #222222;
+                      border-radius: 8px;
+                      overflow: hidden;
+                      z-index: 1000;
+                    }}
+                    .layer-button {{
+                      display: block;
+                      width: 120px;
+                      padding: 10px;
+                      background: #0a0a0a;
+                      color: #ffffff;
+                      border: none;
+                      border-bottom: 1px solid #222222;
+                      cursor: pointer;
+                      font-size: 12px;
+                      text-align: left;
+                      transition: all 0.2s;
+                    }}
+                    .layer-button:hover {{
+                      background: #111111;
+                    }}
+                    .layer-button.active {{
+                      background: #00ff88;
+                      color: #000000;
+                      font-weight: bold;
+                    }}
+                    .layer-button:last-child {{
+                      border-bottom: none;
+                    }}
+                    .mapboxgl-ctrl-group {{
+                      background: #0a0a0a !important;
+                      border: 1px solid #222222 !important;
+                    }}
+                    .mapboxgl-ctrl button {{
+                      background-color: #0a0a0a !important;
+                      color: #ffffff !important;
+                    }}
+                    .mapboxgl-ctrl button:hover {{
+                      background-color: #111111 !important;
+                    }}
+                  </style>
+                </head>
+                <body>
+                  <div id="map"></div>
+                  
+                  <div class="map-overlay">
+                    <div class="overlay-title">🌍 KHISBA GIS</div>
+                    <div class="overlay-text">
+                      • Drag to rotate the globe<br>
+                      • Scroll to zoom in/out<br>
+                      • Right-click to pan<br>
+                      • Selected area highlighted in green
+                    </div>
+                  </div>
+                  
+                  <div class="layer-switcher">
+                    <button class="layer-button" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite Streets</button>
+                    <button class="layer-button" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
+                    <button class="layer-button active" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
+                    <button class="layer-button" data-style="mapbox://styles/mapbox/light-v11">Light</button>
+                    <button class="layer-button" data-style="mapbox://styles/mapbox/dark-v11">Dark</button>
+                  </div>
+                  
+                  <div class="coordinates-display">
+                    <div>Lat: <span id="lat-display">0.00°</span></div>
+                    <div>Lon: <span id="lon-display">0.00°</span></div>
+                  </div>
+                  
+                  {f'''
+                  <div class="selected-area">
+                    <div class="area-title">📍 Selected Area</div>
+                    <div class="area-details">
+                      <strong>{st.session_state.selected_area_name if hasattr(st.session_state, 'selected_area_name') else 'None'}</strong><br>
+                      Level: {st.session_state.selected_area_level if hasattr(st.session_state, 'selected_area_level') else 'None'}<br>
+                      Coordinates: {map_center[1]:.4f}°, {map_center[0]:.4f}°<br>
+                      Status: <span style="color: #00ff88;">Ready for Analysis</span>
+                    </div>
+                  </div>
+                  ''' if st.session_state.selected_area_name else ''}
+                  
+                  <script>
+                    mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
 
-with col2:
-    # Right column - Show map or results based on step
-    if st.session_state.current_step <= 3:
-        # Show 3D Mapbox Globe for steps 1-3
-        st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Interactive 3D Global Map</h3></div>', unsafe_allow_html=True)
+                    // Create a new map instance with OUTDOORS as default
+                    const map = new mapboxgl.Map({{
+                      container: 'map',
+                      style: 'mapbox://styles/mapbox/outdoors-v12',
+                      center: {map_center},
+                      zoom: {map_zoom},
+                      pitch: 45,
+                      bearing: 0
+                    }});
+
+                    // Add navigation controls
+                    map.addControl(new mapboxgl.NavigationControl());
+
+                    // Add scale control
+                    map.addControl(new mapboxgl.ScaleControl({{
+                      unit: 'metric'
+                    }}));
+
+                    // Add fullscreen control
+                    map.addControl(new mapboxgl.FullscreenControl());
+
+                    // Layer switcher functionality
+                    const layerButtons = document.querySelectorAll('.layer-button');
+                    layerButtons.forEach(button => {{
+                      button.addEventListener('click', () => {{
+                        // Update active button
+                        layerButtons.forEach(btn => btn.classList.remove('active'));
+                        button.classList.add('active');
+                        
+                        // Change map style
+                        map.setStyle(button.dataset.style);
+                        
+                        // Re-add selected area after style change
+                        setTimeout(() => {{
+                          {f'''
+                          if ({bounds_data}) {{
+                            const bounds = {bounds_data};
+                            
+                            // Remove existing layers if they exist
+                            if (map.getSource('selected-area')) {{
+                              map.removeLayer('selected-area-fill');
+                              map.removeLayer('selected-area-border');
+                              map.removeSource('selected-area');
+                            }}
+                            
+                            // Create a polygon for the selected area
+                            map.addSource('selected-area', {{
+                              'type': 'geojson',
+                              'data': {{
+                                'type': 'Feature',
+                                'geometry': {{
+                                  'type': 'Polygon',
+                                  'coordinates': [[
+                                    [bounds[0][1], bounds[0][0]],
+                                    [bounds[1][1], bounds[0][0]],
+                                    [bounds[1][1], bounds[1][0]],
+                                    [bounds[0][1], bounds[1][0]],
+                                    [bounds[0][1], bounds[0][0]]
+                                  ]]
+                                }}
+                              }}
+                            }});
+
+                            // Add the polygon layer
+                            map.addLayer({{
+                              'id': 'selected-area-fill',
+                              'type': 'fill',
+                              'source': 'selected-area',
+                              'layout': {{}},
+                              'paint': {{
+                                'fill-color': '#00ff88',
+                                'fill-opacity': 0.2
+                              }}
+                            }});
+
+                            // Add border for the polygon
+                            map.addLayer({{
+                              'id': 'selected-area-border',
+                              'type': 'line',
+                              'source': 'selected-area',
+                              'layout': {{}},
+                              'paint': {{
+                                'line-color': '#00ff88',
+                                'line-width': 3,
+                                'line-opacity': 0.8
+                              }}
+                            }});
+                          }}
+                          ''' if bounds_data else ''}
+                        }}, 500);
+                      }});
+                    }});
+
+                    // Wait for map to load
+                    map.on('load', () => {{
+                      // Add event listener for mouse move to show coordinates
+                      map.on('mousemove', (e) => {{
+                        document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(2) + '°';
+                        document.getElementById('lon-display').textContent = e.lngLat.lng.toFixed(2) + '°';
+                      }});
+
+                      // Add selected area polygon if bounds are available
+                      {f'''
+                      if ({bounds_data}) {{
+                        const bounds = {bounds_data};
+                        
+                        // Create a polygon for the selected area
+                        map.addSource('selected-area', {{
+                          'type': 'geojson',
+                          'data': {{
+                            'type': 'Feature',
+                            'geometry': {{
+                              'type': 'Polygon',
+                              'coordinates': [[
+                                [bounds[0][1], bounds[0][0]],
+                                [bounds[1][1], bounds[0][0]],
+                                [bounds[1][1], bounds[1][0]],
+                                [bounds[0][1], bounds[1][0]],
+                                [bounds[0][1], bounds[0][0]]
+                              ]]
+                            }}
+                          }}
+                        }});
+
+                        // Add the polygon layer
+                        map.addLayer({{
+                          'id': 'selected-area-fill',
+                          'type': 'fill',
+                          'source': 'selected-area',
+                          'layout': {{}},
+                          'paint': {{
+                            'fill-color': '#00ff88',
+                            'fill-opacity': 0.2
+                          }}
+                        }});
+
+                        // Add border for the polygon
+                        map.addLayer({{
+                          'id': 'selected-area-border',
+                          'type': 'line',
+                          'source': 'selected-area',
+                          'layout': {{}},
+                          'paint': {{
+                            'line-color': '#00ff88',
+                            'line-width': 3,
+                            'line-opacity': 0.8
+                          }}
+                        }});
+
+                        // Fly to the selected area with animation
+                        map.flyTo({{
+                          center: {map_center},
+                          zoom: {map_zoom},
+                          duration: 2000,
+                          essential: true
+                        }});
+                      }}
+                      ''' if bounds_data else ''}
+
+                      // Add some sample cities for interaction
+                      const cities = [
+                        {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital' }},
+                        {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical capital' }},
+                        {{ name: 'Tokyo', coordinates: [139.6917, 35.6895], country: 'Japan', info: 'Mega metropolis' }},
+                        {{ name: 'Sydney', coordinates: [151.2093, -33.8688], country: 'Australia', info: 'Harbor city' }},
+                        {{ name: 'Cairo', coordinates: [31.2357, 30.0444], country: 'Egypt', info: 'Nile Delta' }}
+                      ];
+
+                      // Add city markers
+                      cities.forEach(city => {{
+                        // Create a custom marker element
+                        const el = document.createElement('div');
+                        el.className = 'marker';
+                        el.style.backgroundColor = '#ffaa00';
+                        el.style.width = '15px';
+                        el.style.height = '15px';
+                        el.style.borderRadius = '50%';
+                        el.style.border = '2px solid #ffffff';
+                        el.style.boxShadow = '0 0 10px rgba(255, 170, 0, 0.5)';
+                        el.style.cursor = 'pointer';
+
+                        // Create a popup
+                        const popup = new mapboxgl.Popup({{
+                          offset: 25,
+                          closeButton: true,
+                          closeOnClick: false
+                        }}).setHTML(
+                          `<h3>${{city.name}}</h3>
+                           <p><strong>Country:</strong> ${{city.country}}</p>
+                           <p>${{city.info}}</p>`
+                        );
+
+                        // Create marker
+                        new mapboxgl.Marker(el)
+                          .setLngLat(city.coordinates)
+                          .setPopup(popup)
+                          .addTo(map);
+                      }});
+                    }});
+                  </script>
+                </body>
+                </html>
+                """
+                
+                # Display the Mapbox HTML
+                st.components.v1.html(mapbox_html, height=550)
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            elif st.session_state.current_step == 4:
+                # During analysis, show loading state
+                st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
+                st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Analysis in Progress</h3></div>', unsafe_allow_html=True)
+                
+                # Show loading animation with analysis details
+                st.markdown(f"""
+                <div style="text-align: center; padding: 100px 0;">
+                    <div style="font-size: 64px; margin-bottom: 20px; animation: spin 2s linear infinite;">🌱</div>
+                    <div style="color: #00ff88; font-size: 18px; margin-bottom: 10px;">Processing Vegetation Data</div>
+                    <div style="color: #666666; font-size: 14px;">Analyzing {st.session_state.selected_area_name}</div>
+                </div>
+                
+                <style>
+                @keyframes spin {{
+                    0% {{ transform: rotate(0deg); }}
+                    100% {{ transform: rotate(360deg); }}
+                }}
+                </style>
+                """, unsafe_allow_html=True)
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            elif st.session_state.current_step == 5:
+                # Show analysis results
+                st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
+                st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">📊 Vegetation & Climate Analysis Results</h3></div>', unsafe_allow_html=True)
+                
+                if st.session_state.analysis_results:
+                    # Show selected area info
+                    st.markdown(f"""
+                    <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin: 10px 20px; border-left: 4px solid #00ff88;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <div style="color: #00ff88; font-weight: 600; font-size: 16px;">{st.session_state.selected_area_name}</div>
+                                <div style="color: #cccccc; font-size: 12px; margin-top: 5px;">
+                                    {st.session_state.analysis_parameters['start_date']} to {st.session_state.analysis_parameters['end_date']} • 
+                                    {st.session_state.analysis_parameters['collection_choice']} • 
+                                    {len(st.session_state.analysis_parameters['selected_indices'])} vegetation indices analyzed •
+                                    Climate Analysis: {'Yes' if st.session_state.climate_data is not None else 'No'}
+                                </div>
+                            </div>
+                            <div style="background: #00ff88; color: #000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">
+                                ✅ Complete
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # CLIMATE DATA SECTION
+                    if st.session_state.climate_data is not None:
+                        climate_df = st.session_state.climate_data
+                        
+                        st.markdown("""
+                        <div style="margin: 20px;">
+                            <h3 style="color: #00ff88;">🌤️ Climate Analysis</h3>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Create temperature chart
+                        fig_temp = go.Figure()
+                        
+                        fig_temp.add_trace(go.Scatter(
+                            x=climate_df['date'],
+                            y=climate_df['temperature'],
+                            mode='lines+markers',
+                            name='Temperature',
+                            line=dict(color='#ff5555', width=3),
+                            marker=dict(size=8, color='#ffffff', line=dict(width=1, color='#ff5555'))
+                        ))
+                        
+                        fig_temp.update_layout(
+                            title="<b>Daily Temperature (°C)</b>",
+                            plot_bgcolor='#0a0a0a',
+                            paper_bgcolor='#0a0a0a',
+                            font=dict(color='#ffffff'),
+                            xaxis=dict(
+                                title="Date",
+                                gridcolor='#222222',
+                                tickcolor='#444444',
+                                showgrid=True
+                            ),
+                            yaxis=dict(
+                                title="Temperature (°C)",
+                                gridcolor='#222222',
+                                tickcolor='#444444',
+                                showgrid=True
+                            ),
+                            height=300,
+                            margin=dict(l=50, r=50, t=50, b=50),
+                            hovermode='x unified',
+                            showlegend=True
+                        )
+                        
+                        st.plotly_chart(fig_temp, use_container_width=True, key="temperature_chart_veg")
+                        
+                        # Create precipitation chart
+                        fig_precip = go.Figure()
+                        
+                        fig_precip.add_trace(go.Bar(
+                            x=climate_df['date'],
+                            y=climate_df['precipitation'],
+                            name='Precipitation',
+                            marker_color='#5555ff'
+                        ))
+                        
+                        fig_precip.update_layout(
+                            title="<b>Daily Precipitation (mm)</b>",
+                            plot_bgcolor='#0a0a0a',
+                            paper_bgcolor='#0a0a0a',
+                            font=dict(color='#ffffff'),
+                            xaxis=dict(
+                                title="Date",
+                                gridcolor='#222222',
+                                tickcolor='#444444',
+                                showgrid=True
+                            ),
+                            yaxis=dict(
+                                title="Precipitation (mm)",
+                                gridcolor='#222222',
+                                tickcolor='#444444',
+                                showgrid=True
+                            ),
+                            height=300,
+                            margin=dict(l=50, r=50, t=50, b=50),
+                            hovermode='x unified',
+                            showlegend=True
+                        )
+                        
+                        st.plotly_chart(fig_precip, use_container_width=True, key="precipitation_chart_veg")
+                        
+                        # Climate statistics
+                        st.markdown("""
+                        <div style="margin: 20px;">
+                            <h4>📊 Climate Statistics</h4>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Calculate statistics
+                        if not climate_df.empty:
+                            temp_mean = climate_df['temperature'].mean()
+                            temp_max = climate_df['temperature'].max()
+                            temp_min = climate_df['temperature'].min()
+                            precip_total = climate_df['precipitation'].sum()
+                            precip_mean = climate_df['precipitation'].mean()
+                            precip_max = climate_df['precipitation'].max()
+                            
+                            # Find hottest and wettest days
+                            hottest_day = climate_df.loc[climate_df['temperature'].idxmax()]
+                            wettest_day = climate_df.loc[climate_df['precipitation'].idxmax()]
+                            
+                            # Display statistics in columns
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                st.markdown(f"""
+                                <div style="background: rgba(255, 85, 85, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid #ff5555; margin-bottom: 10px;">
+                                    <div style="color: #ff5555; font-weight: 600; margin-bottom: 10px;">🌡️ Temperature</div>
+                                    <div style="color: #cccccc; font-size: 14px;">
+                                        <div>Mean: <strong>{temp_mean:.2f}°C</strong></div>
+                                        <div>Max: <strong>{temp_max:.2f}°C</strong></div>
+                                        <div>Min: <strong>{temp_min:.2f}°C</strong></div>
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            
+                            with col2:
+                                st.markdown(f"""
+                                <div style="background: rgba(85, 85, 255, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid #5555ff; margin-bottom: 10px;">
+                                    <div style="color: #5555ff; font-weight: 600; margin-bottom: 10px;">🌧️ Precipitation</div>
+                                    <div style="color: #cccccc; font-size: 14px;">
+                                        <div>Total: <strong>{precip_total:.1f} mm</strong></div>
+                                        <div>Mean: <strong>{precip_mean:.2f} mm/day</strong></div>
+                                        <div>Max: <strong>{precip_max:.1f} mm/day</strong></div>
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            
+                            # Extreme days
+                            st.markdown(f"""
+                            <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid #00ff88; margin-top: 10px;">
+                                <div style="color: #00ff88; font-weight: 600; margin-bottom: 10px;">📅 Extreme Days</div>
+                                <div style="color: #cccccc; font-size: 14px;">
+                                    <div>🔥 Hottest day: <strong>{hottest_day['date'].strftime('%Y-%m-%d')}</strong> ({hottest_day['temperature']:.1f}°C)</div>
+                                    <div>💧 Wettest day: <strong>{wettest_day['date'].strftime('%Y-%m-%d')}</strong> ({wettest_day['precipitation']:.1f}mm)</div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    
+                    # VEGETATION INDICES SECTION
+                    st.markdown("""
+                    <div style="margin: 20px;">
+                        <h3 style="color: #00ff88;">🌿 Vegetation Indices</h3>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Create charts for each vegetation index
+                    for index, data in st.session_state.analysis_results.items():
+                        if data['dates'] and data['values']:
+                            try:
+                                # Create Plotly chart
+                                fig = go.Figure()
+                                
+                                fig.add_trace(go.Scatter(
+                                    x=data['dates'],
+                                    y=data['values'],
+                                    mode='lines+markers',
+                                    name=index,
+                                    line=dict(color='#00ff88', width=3),
+                                    marker=dict(size=8, color='#ffffff', line=dict(width=1, color='#00ff88'))
+                                ))
+                                
+                                # Add trend line if enough data points
+                                if len(data['values']) > 1:
+                                    import numpy as np
+                                    x_numeric = list(range(len(data['dates'])))
+                                    z = np.polyfit(x_numeric, data['values'], 1)
+                                    p = np.poly1d(z)
+                                    fig.add_trace(go.Scatter(
+                                        x=data['dates'],
+                                        y=p(x_numeric),
+                                        mode='lines',
+                                        name='Trend',
+                                        line=dict(color='#ffaa00', width=2, dash='dash')
+                                    ))
+                                
+                                fig.update_layout(
+                                    title=f"<b>{index}</b> - Vegetation Index Over Time",
+                                    plot_bgcolor='#0a0a0a',
+                                    paper_bgcolor='#0a0a0a',
+                                    font=dict(color='#ffffff'),
+                                    xaxis=dict(
+                                        title="Date",
+                                        gridcolor='#222222',
+                                        tickcolor='#444444',
+                                        showgrid=True
+                                    ),
+                                    yaxis=dict(
+                                        title=f"{index} Value",
+                                        gridcolor='#222222',
+                                        tickcolor='#444444',
+                                        range=[min(data['values'])*0.9 if data['values'] else 0, max(data['values'])*1.1 if data['values'] else 1],
+                                        showgrid=True
+                                    ),
+                                    height=300,
+                                    margin=dict(l=50, r=50, t=50, b=50),
+                                    hovermode='x unified',
+                                    showlegend=True,
+                                    legend=dict(
+                                        orientation="h",
+                                        yanchor="bottom",
+                                        y=1.02,
+                                        xanchor="right",
+                                        x=1
+                                    )
+                                )
+                                
+                                st.plotly_chart(fig, use_container_width=True, key=f"chart_{index}_veg")
+                                
+                            except Exception as e:
+                                st.warning(f"Could not display chart for {index}: {str(e)}")
+                    
+                    # Summary statistics for vegetation indices
+                    st.markdown('<div style="padding: 0 20px;"><h4>📈 Vegetation Indices Summary</h4></div>', unsafe_allow_html=True)
+                    
+                    summary_data = []
+                    for index, data in st.session_state.analysis_results.items():
+                        if data['values']:
+                            values = data['values']
+                            if values:
+                                current = values[-1] if values else 0
+                                previous = values[-2] if len(values) > 1 else current
+                                change = ((current - previous) / previous * 100) if previous != 0 else 0
+                                
+                                summary_data.append({
+                                    'Index': index,
+                                    'Current': round(current, 4),
+                                    'Previous': round(previous, 4),
+                                    'Change (%)': f"{change:+.2f}%",
+                                    'Min': round(min(values), 4),
+                                    'Max': round(max(values), 4),
+                                    'Avg': round(sum(values) / len(values), 4)
+                                })
+                    
+                    if summary_data:
+                        df = pd.DataFrame(summary_data)
+                        st.dataframe(
+                            df,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Change (%)": st.column_config.TextColumn(
+                                    "Change",
+                                    help="Percentage change from previous period",
+                                )
+                            }
+                        )
+                else:
+                    st.markdown("""
+                    <div style="text-align: center; padding: 100px 0;">
+                        <div style="font-size: 64px; margin-bottom: 20px;">📊</div>
+                        <div style="color: #666666; font-size: 16px; margin-bottom: 10px;">No Results Available</div>
+                        <div style="color: #444444; font-size: 14px;">Please run an analysis to see results</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown('</div>', unsafe_allow_html=True)
         
-        # Prepare coordinates for the map
-        map_center = [0, 20]
-        map_zoom = 2
-        bounds_data = None
+        # Update status indicators with JavaScript
+        st.markdown(f"""
+        <script>
+            // Update progress fill
+            document.getElementById('veg-progress-fill').style.width = '{((st.session_state.current_step - 1) / (len(VEG_STEPS) - 1)) * 100}%';
+            
+            // Update Earth Engine status
+            document.getElementById('ee_status_veg').className = 'status-dot ' + 
+                ({'true' if st.session_state.ee_initialized else 'false'} ? 'active' : '');
+            
+            // Update area status
+            document.getElementById('area_status_veg').className = 'status-dot ' + 
+                ({'true' if st.session_state.selected_area_name else 'false'} ? 'active' : '');
+            
+            // Update analysis status
+            document.getElementById('analysis_status_veg').className = 'status-dot ' + 
+                ({'true' if st.session_state.analysis_results else 'false'} ? 'active' : '');
+        </script>
+        """, unsafe_allow_html=True)
+    
+    # TAB 2: Comprehensive Climate & Soil Analysis
+    with tab2:
+        st.markdown("""
+        <div class="guide-container">
+            <div class="guide-header">
+                <div class="guide-icon">🌡️</div>
+                <div class="guide-title">Comprehensive Climate & Soil Analysis</div>
+            </div>
+            <div class="guide-content">
+                Get detailed climate classification and soil analysis including soil organic matter, texture, and comprehensive statistics.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         
-        if st.session_state.selected_coordinates:
-            map_center = st.session_state.selected_coordinates['center']
-            map_zoom = st.session_state.selected_coordinates['zoom']
-            bounds_data = st.session_state.selected_coordinates['bounds']
+        analyzer = ComprehensiveClimateSoilAnalyzer()
         
-        # Generate HTML for Mapbox interactive globe
-        mapbox_html = f"""
+        # Create selection interface
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            countries = get_country_list()
+            selected_country_cs = st.selectbox(
+                "Select Country",
+                options=countries,
+                index=countries.index('Algeria') if 'Algeria' in countries else 0,
+                key="cs_country"
+            )
+        
+        with col2:
+            if selected_country_cs != 'Select Country':
+                regions = get_region_list(selected_country_cs)
+                selected_region_cs = st.selectbox(
+                    "Select Region/State",
+                    options=regions,
+                    index=0,
+                    key="cs_region"
+                )
+            else:
+                selected_region_cs = 'Select Region'
+        
+        with col3:
+            if selected_region_cs != 'Select Region':
+                municipalities = get_municipality_list(selected_country_cs, selected_region_cs)
+                selected_municipality_cs = st.selectbox(
+                    "Select Municipality/City",
+                    options=municipalities,
+                    index=0,
+                    key="cs_municipality"
+                )
+            else:
+                selected_municipality_cs = 'Select Municipality'
+
+        # Analysis type selection
+        analysis_type = st.selectbox(
+            "Select Analysis Type",
+            options=['Climate Analysis', 'Soil Analysis', 'Both Analyses'],
+            index=2,
+            key="cs_analysis_type"
+        )
+
+        if analysis_type in ['Climate Analysis', 'Both Analyses']:
+            climate_classification = st.selectbox(
+                "Climate Classification System",
+                options=['Simplified Temperature-Precipitation', 'Aridity-Based', 'Köppen-Geiger'],
+                index=0,
+                key="cs_climate_class"
+            )
+
+        # Run analysis button
+        if st.button("Run Comprehensive Analysis", type="primary", key="cs_run_analysis"):
+            if selected_country_cs == 'Select Country':
+                st.warning("Please select a country first.")
+            else:
+                with st.spinner("Running analysis..."):
+                    results = {}
+
+                    if analysis_type in ['Climate Analysis', 'Both Analyses']:
+                        st.markdown("### 🌤️ Climate Analysis Results")
+                        climate_results = analyzer.run_accurate_analysis(
+                            selected_country_cs,
+                            selected_region_cs,
+                            selected_municipality_cs,
+                            classification_type=climate_classification
+                        )
+                        if climate_results:
+                            analyzer.plot_accurate_results(climate_results)
+                            results['climate'] = climate_results
+                        else:
+                            st.error("Climate analysis failed")
+
+                    if analysis_type in ['Soil Analysis', 'Both Analyses']:
+                        st.markdown("### 🌱 Soil Analysis Results")
+                        soil_results = analyzer.run_comprehensive_soil_analysis(
+                            selected_country_cs,
+                            selected_region_cs,
+                            selected_municipality_cs
+                        )
+                        if soil_results:
+                            results['soil'] = soil_results
+                        else:
+                            st.error("Soil analysis failed")
+
+                    if results:
+                        st.success("Analysis completed successfully!")
+                        
+                        # Option to download results
+                        if st.button("Download Results Summary", key="cs_download"):
+                            # Create summary DataFrame
+                            summary_data = {}
+                            if 'climate' in results:
+                                climate = results['climate']['climate_analysis']
+                                summary_data.update({
+                                    'Climate Zone': climate['climate_zone'],
+                                    'Mean Temperature (°C)': climate['mean_temperature'],
+                                    'Mean Precipitation (mm/year)': climate['mean_precipitation'],
+                                    'Aridity Index': climate['aridity_index']
+                                })
+                            
+                            if 'soil' in results:
+                                soil = results['soil']
+                                summary_data.update({
+                                    'Soil Texture': soil['texture_name'],
+                                    'SOC Stock (t/ha)': soil['soc_stock'],
+                                    'Soil Organic Matter (%)': soil['soil_organic_matter'],
+                                    'Clay Content (%)': soil['clay_content'],
+                                    'Silt Content (%)': soil['silt_content'],
+                                    'Sand Content (%)': soil['sand_content']
+                                })
+                            
+                            df_summary = pd.DataFrame([summary_data])
+                            csv = df_summary.to_csv(index=False)
+                            
+                            st.download_button(
+                                label="Download CSV",
+                                data=csv,
+                                file_name="climate_soil_analysis_results.csv",
+                                mime="text/csv",
+                                key="cs_download_csv"
+                            )
+    
+    # TAB 3: 3D Interactive Map
+    with tab3:
+        st.markdown("""
+        <div class="guide-container">
+            <div class="guide-header">
+                <div class="guide-icon">🗺️</div>
+                <div class="guide-title">3D Interactive Map</div>
+            </div>
+            <div class="guide-content">
+                Explore the world with our interactive 3D map. View satellite imagery, terrain, and administrative boundaries.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Generate full-screen 3D map
+        mapbox_html_full = """
         <!DOCTYPE html>
         <html>
         <head>
@@ -1245,19 +2725,19 @@ with col2:
           <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
           <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
           <style>
-            body {{ 
+            body { 
               margin: 0; 
               padding: 0; 
               background: #000000;
-            }}
-            #map {{ 
+            }
+            #map { 
               position: absolute; 
               top: 0; 
               bottom: 0; 
               width: 100%; 
-              border-radius: 8px;
-            }}
-            .map-overlay {{
+              height: 100vh;
+            }
+            .map-overlay {
               position: absolute;
               top: 20px;
               right: 20px;
@@ -1266,22 +2746,22 @@ with col2:
               padding: 15px;
               border-radius: 8px;
               border: 1px solid #222222;
-              max-width: 250px;
+              max-width: 300px;
               z-index: 1000;
               font-family: 'Inter', sans-serif;
-            }}
-            .overlay-title {{
+            }
+            .overlay-title {
               color: #00ff88;
               font-weight: 600;
               margin-bottom: 10px;
               font-size: 14px;
-            }}
-            .overlay-text {{
+            }
+            .overlay-text {
               color: #cccccc;
               font-size: 12px;
               line-height: 1.4;
-            }}
-            .coordinates-display {{
+            }
+            .coordinates-display {
               position: absolute;
               bottom: 20px;
               left: 20px;
@@ -1293,32 +2773,8 @@ with col2:
               font-family: monospace;
               font-size: 12px;
               z-index: 1000;
-            }}
-            .selected-area {{
-              position: absolute;
-              top: 20px;
-              left: 20px;
-              background: rgba(10, 10, 10, 0.9);
-              color: white;
-              padding: 15px;
-              border-radius: 8px;
-              border: 1px solid #222222;
-              max-width: 300px;
-              z-index: 1000;
-              font-family: 'Inter', sans-serif;
-            }}
-            .area-title {{
-              color: #00ff88;
-              font-weight: 600;
-              margin-bottom: 10px;
-              font-size: 14px;
-            }}
-            .area-details {{
-              color: #cccccc;
-              font-size: 12px;
-              line-height: 1.4;
-            }}
-            .layer-switcher {{
+            }
+            .layer-switcher {
               position: absolute;
               top: 20px;
               right: 20px;
@@ -1327,10 +2783,10 @@ with col2:
               border-radius: 8px;
               overflow: hidden;
               z-index: 1000;
-            }}
-            .layer-button {{
+            }
+            .layer-button {
               display: block;
-              width: 120px;
+              width: 150px;
               padding: 10px;
               background: #0a0a0a;
               color: #ffffff;
@@ -1340,262 +2796,171 @@ with col2:
               font-size: 12px;
               text-align: left;
               transition: all 0.2s;
-            }}
-            .layer-button:hover {{
+            }
+            .layer-button:hover {
               background: #111111;
-            }}
-            .layer-button.active {{
+            }
+            .layer-button.active {
               background: #00ff88;
               color: #000000;
               font-weight: bold;
-            }}
-            .layer-button:last-child {{
+            }
+            .layer-button:last-child {
               border-bottom: none;
-            }}
-            .mapboxgl-ctrl-group {{
+            }
+            .mapboxgl-ctrl-group {
               background: #0a0a0a !important;
               border: 1px solid #222222 !important;
-            }}
-            .mapboxgl-ctrl button {{
+            }
+            .mapboxgl-ctrl button {
               background-color: #0a0a0a !important;
               color: #ffffff !important;
-            }}
-            .mapboxgl-ctrl button:hover {{
+            }
+            .mapboxgl-ctrl button:hover {
               background-color: #111111 !important;
-            }}
+            }
+            .info-panel {
+              position: absolute;
+              top: 20px;
+              left: 20px;
+              background: rgba(10, 10, 10, 0.9);
+              color: white;
+              padding: 15px;
+              border-radius: 8px;
+              border: 1px solid #222222;
+              max-width: 350px;
+              z-index: 1000;
+              font-family: 'Inter', sans-serif;
+            }
+            .info-title {
+              color: #00ff88;
+              font-weight: 600;
+              margin-bottom: 10px;
+              font-size: 16px;
+            }
+            .info-content {
+              color: #cccccc;
+              font-size: 12px;
+              line-height: 1.4;
+            }
           </style>
         </head>
         <body>
           <div id="map"></div>
           
-          <div class="map-overlay">
-            <div class="overlay-title">🌍 KHISBA GIS</div>
-            <div class="overlay-text">
+          <div class="info-panel">
+            <div class="info-title">🌍 KHISBA GIS - 3D Global Map</div>
+            <div class="info-content">
+              <strong>Navigation Controls:</strong><br>
               • Drag to rotate the globe<br>
               • Scroll to zoom in/out<br>
               • Right-click to pan<br>
-              • Selected area highlighted in green
+              • Click on markers for city info<br><br>
+              
+              <strong>Map Features:</strong><br>
+              • Satellite imagery<br>
+              • Terrain elevation<br>
+              • Administrative boundaries<br>
+              • City markers<br><br>
+              
+              <strong>Tips:</strong><br>
+              • Use layer switcher to change map style<br>
+              • Tilt view with Ctrl + drag<br>
+              • Reset view with home button
             </div>
-          </div>
-          
-          <div class="layer-switcher">
-            <button class="layer-button" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite Streets</button>
-            <button class="layer-button" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
-            <button class="layer-button active" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
-            <button class="layer-button" data-style="mapbox://styles/mapbox/light-v11">Light</button>
-            <button class="layer-button" data-style="mapbox://styles/mapbox/dark-v11">Dark</button>
           </div>
           
           <div class="coordinates-display">
             <div>Lat: <span id="lat-display">0.00°</span></div>
             <div>Lon: <span id="lon-display">0.00°</span></div>
+            <div>Zoom: <span id="zoom-display">2</span></div>
           </div>
-          
-          {f'''
-          <div class="selected-area">
-            <div class="area-title">📍 Selected Area</div>
-            <div class="area-details">
-              <strong>{st.session_state.selected_area_name if hasattr(st.session_state, 'selected_area_name') else 'None'}</strong><br>
-              Level: {st.session_state.selected_area_level if hasattr(st.session_state, 'selected_area_level') else 'None'}<br>
-              Coordinates: {map_center[1]:.4f}°, {map_center[0]:.4f}°<br>
-              Status: <span style="color: #00ff88;">Ready for Analysis</span>
-            </div>
-          </div>
-          ''' if st.session_state.selected_area_name else ''}
           
           <script>
             mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
 
-            // Create a new map instance with OUTDOORS as default
-            const map = new mapboxgl.Map({{
+            // Create a new map instance
+            const map = new mapboxgl.Map({
               container: 'map',
-              style: 'mapbox://styles/mapbox/outdoors-v12',
-              center: {map_center},
-              zoom: {map_zoom},
+              style: 'mapbox://styles/mapbox/satellite-streets-v12',
+              center: [0, 20],
+              zoom: 2,
               pitch: 45,
               bearing: 0
-            }});
+            });
 
             // Add navigation controls
             map.addControl(new mapboxgl.NavigationControl());
 
             // Add scale control
-            map.addControl(new mapboxgl.ScaleControl({{
+            map.addControl(new mapboxgl.ScaleControl({
               unit: 'metric'
-            }}));
+            }));
 
             // Add fullscreen control
             map.addControl(new mapboxgl.FullscreenControl());
 
-            // Layer switcher functionality
-            const layerButtons = document.querySelectorAll('.layer-button');
-            layerButtons.forEach(button => {{
-              button.addEventListener('click', () => {{
-                // Update active button
-                layerButtons.forEach(btn => btn.classList.remove('active'));
-                button.classList.add('active');
-                
-                // Change map style
-                map.setStyle(button.dataset.style);
-                
-                // Re-add selected area after style change
-                setTimeout(() => {{
-                  {f'''
-                  if ({bounds_data}) {{
-                    const bounds = {bounds_data};
-                    
-                    // Remove existing layers if they exist
-                    if (map.getSource('selected-area')) {{
-                      map.removeLayer('selected-area-fill');
-                      map.removeLayer('selected-area-border');
-                      map.removeSource('selected-area');
-                    }}
-                    
-                    // Create a polygon for the selected area
-                    map.addSource('selected-area', {{
-                      'type': 'geojson',
-                      'data': {{
-                        'type': 'Feature',
-                        'geometry': {{
-                          'type': 'Polygon',
-                          'coordinates': [[
-                            [bounds[0][1], bounds[0][0]],
-                            [bounds[1][1], bounds[0][0]],
-                            [bounds[1][1], bounds[1][0]],
-                            [bounds[0][1], bounds[1][0]],
-                            [bounds[0][1], bounds[0][0]]
-                          ]]
-                        }}
-                      }}
-                    }});
-
-                    // Add the polygon layer
-                    map.addLayer({{
-                      'id': 'selected-area-fill',
-                      'type': 'fill',
-                      'source': 'selected-area',
-                      'layout': {{}},
-                      'paint': {{
-                        'fill-color': '#00ff88',
-                        'fill-opacity': 0.2
-                      }}
-                    }});
-
-                    // Add border for the polygon
-                    map.addLayer({{
-                      'id': 'selected-area-border',
-                      'type': 'line',
-                      'source': 'selected-area',
-                      'layout': {{}},
-                      'paint': {{
-                        'line-color': '#00ff88',
-                        'line-width': 3,
-                        'line-opacity': 0.8
-                      }}
-                    }});
-                  }}
-                  ''' if bounds_data else ''}
-                }}, 500);
-              }});
-            }});
+            // Add geolocation control
+            map.addControl(new mapboxgl.GeolocateControl({
+              positionOptions: {
+                enableHighAccuracy: true
+              },
+              trackUserLocation: true,
+              showUserLocation: true
+            }));
 
             // Wait for map to load
-            map.on('load', () => {{
+            map.on('load', () => {
               // Add event listener for mouse move to show coordinates
-              map.on('mousemove', (e) => {{
+              map.on('mousemove', (e) => {
                 document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(2) + '°';
                 document.getElementById('lon-display').textContent = e.lngLat.lng.toFixed(2) + '°';
-              }});
+                document.getElementById('zoom-display').textContent = map.getZoom().toFixed(1);
+              });
 
-              // Add selected area polygon if bounds are available
-              {f'''
-              if ({bounds_data}) {{
-                const bounds = {bounds_data};
-                
-                // Create a polygon for the selected area
-                map.addSource('selected-area', {{
-                  'type': 'geojson',
-                  'data': {{
-                    'type': 'Feature',
-                    'geometry': {{
-                      'type': 'Polygon',
-                      'coordinates': [[
-                        [bounds[0][1], bounds[0][0]],
-                        [bounds[1][1], bounds[0][0]],
-                        [bounds[1][1], bounds[1][0]],
-                        [bounds[0][1], bounds[1][0]],
-                        [bounds[0][1], bounds[0][0]]
-                      ]]
-                    }}
-                  }}
-                }});
+              // Add event listener for zoom change
+              map.on('zoom', () => {
+                document.getElementById('zoom-display').textContent = map.getZoom().toFixed(1);
+              });
 
-                // Add the polygon layer
-                map.addLayer({{
-                  'id': 'selected-area-fill',
-                  'type': 'fill',
-                  'source': 'selected-area',
-                  'layout': {{}},
-                  'paint': {{
-                    'fill-color': '#00ff88',
-                    'fill-opacity': 0.2
-                  }}
-                }});
-
-                // Add border for the polygon
-                map.addLayer({{
-                  'id': 'selected-area-border',
-                  'type': 'line',
-                  'source': 'selected-area',
-                  'layout': {{}},
-                  'paint': {{
-                    'line-color': '#00ff88',
-                    'line-width': 3,
-                    'line-opacity': 0.8
-                  }}
-                }});
-
-                // Fly to the selected area with animation
-                map.flyTo({{
-                  center: {map_center},
-                  zoom: {map_zoom},
-                  duration: 2000,
-                  essential: true
-                }});
-              }}
-              ''' if bounds_data else ''}
-
-              // Add some sample cities for interaction
+              // Add major cities
               const cities = [
-                {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital' }},
-                {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical capital' }},
-                {{ name: 'Tokyo', coordinates: [139.6917, 35.6895], country: 'Japan', info: 'Mega metropolis' }},
-                {{ name: 'Sydney', coordinates: [151.2093, -33.8688], country: 'Australia', info: 'Harbor city' }},
-                {{ name: 'Cairo', coordinates: [31.2357, 30.0444], country: 'Egypt', info: 'Nile Delta' }}
+                { name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', population: '8.4M', elevation: '10m' },
+                { name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', population: '8.9M', elevation: '35m' },
+                { name: 'Tokyo', coordinates: [139.6917, 35.6895], country: 'Japan', population: '13.9M', elevation: '40m' },
+                { name: 'Sydney', coordinates: [151.2093, -33.8688], country: 'Australia', population: '5.3M', elevation: '58m' },
+                { name: 'Cairo', coordinates: [31.2357, 30.0444], country: 'Egypt', population: '9.5M', elevation: '23m' },
+                { name: 'Moscow', coordinates: [37.6173, 55.7558], country: 'Russia', population: '12.5M', elevation: '156m' },
+                { name: 'São Paulo', coordinates: [-46.6333, -23.5505], country: 'Brazil', population: '12.3M', elevation: '760m' },
+                { name: 'Mumbai', coordinates: [72.8777, 19.0760], country: 'India', population: '20.7M', elevation: '14m' },
+                { name: 'Shanghai', coordinates: [121.4737, 31.2304], country: 'China', population: '26.3M', elevation: '4m' },
+                { name: 'Lagos', coordinates: [3.3792, 6.5244], country: 'Nigeria', population: '14.9M', elevation: '41m' }
               ];
 
               // Add city markers
-              cities.forEach(city => {{
+              cities.forEach(city => {
                 // Create a custom marker element
                 const el = document.createElement('div');
                 el.className = 'marker';
-                el.style.backgroundColor = '#ffaa00';
-                el.style.width = '15px';
-                el.style.height = '15px';
+                el.style.backgroundColor = '#00ff88';
+                el.style.width = '12px';
+                el.style.height = '12px';
                 el.style.borderRadius = '50%';
                 el.style.border = '2px solid #ffffff';
-                el.style.boxShadow = '0 0 10px rgba(255, 170, 0, 0.5)';
+                el.style.boxShadow = '0 0 10px rgba(0, 255, 136, 0.5)';
                 el.style.cursor = 'pointer';
 
                 // Create a popup
-                const popup = new mapboxgl.Popup({{
+                const popup = new mapboxgl.Popup({
                   offset: 25,
                   closeButton: true,
                   closeOnClick: false
-                }}).setHTML(
-                  `<h3>${{city.name}}</h3>
-                   <p><strong>Country:</strong> ${{city.country}}</p>
-                   <p>${{city.info}}</p>`
+                }).setHTML(
+                  `<h3 style="color: #00ff88; margin-bottom: 5px;">${city.name}</h3>
+                   <p><strong>Country:</strong> ${city.country}</p>
+                   <p><strong>Population:</strong> ${city.population}</p>
+                   <p><strong>Elevation:</strong> ${city.elevation}</p>
+                   <p><strong>Coordinates:</strong> ${city.coordinates[1].toFixed(4)}°, ${city.coordinates[0].toFixed(4)}°</p>`
                 );
 
                 // Create marker
@@ -1603,353 +2968,108 @@ with col2:
                   .setLngLat(city.coordinates)
                   .setPopup(popup)
                   .addTo(map);
-              }});
-            }});
+              });
+
+              // Add terrain
+              map.addSource('mapbox-dem', {
+                'type': 'raster-dem',
+                'url': 'mapbox://mapbox.mapbox-terrain-dem-v1',
+                'tileSize': 512,
+                'maxzoom': 14
+              });
+              
+              map.setTerrain({ 'source': 'mapbox-dem', 'exaggeration': 1.5 });
+
+              // Add sky layer for atmospheric effect
+              map.addLayer({
+                'id': 'sky',
+                'type': 'sky',
+                'paint': {
+                  'sky-type': 'atmosphere',
+                  'sky-atmosphere-sun': [0.0, 0.0],
+                  'sky-atmosphere-sun-intensity': 15
+                }
+              });
+            });
+
+            // Add map style switcher
+            const layerStyles = [
+              { name: 'Satellite Streets', style: 'mapbox://styles/mapbox/satellite-streets-v12' },
+              { name: 'Satellite', style: 'mapbox://styles/mapbox/satellite-v9' },
+              { name: 'Outdoors', style: 'mapbox://styles/mapbox/outdoors-v12' },
+              { name: 'Light', style: 'mapbox://styles/mapbox/light-v11' },
+              { name: 'Dark', style: 'mapbox://styles/mapbox/dark-v11' },
+              { name: 'Streets', style: 'mapbox://styles/mapbox/streets-v12' },
+              { name: 'Navigation', style: 'mapbox://styles/mapbox/navigation-day-v1' },
+              { name: 'Navigation Night', style: 'mapbox://styles/mapbox/navigation-night-v1' }
+            ];
+
+            // Create layer switcher container
+            const layerSwitcher = document.createElement('div');
+            layerSwitcher.className = 'layer-switcher';
+            layerSwitcher.style.top = '80px'; // Position below info panel
+
+            // Add layer buttons
+            layerStyles.forEach((layerStyle, index) => {
+              const button = document.createElement('button');
+              button.className = 'layer-button';
+              if (index === 0) button.classList.add('active');
+              button.textContent = layerStyle.name;
+              button.dataset.style = layerStyle.style;
+              
+              button.addEventListener('click', () => {
+                // Update active button
+                document.querySelectorAll('.layer-button').forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                
+                // Change map style
+                map.setStyle(layerStyle.style);
+                
+                // Re-add terrain and sky after style change
+                setTimeout(() => {
+                  if (map.getSource('mapbox-dem')) {
+                    map.setTerrain({ 'source': 'mapbox-dem', 'exaggeration': 1.5 });
+                    
+                    map.addLayer({
+                      'id': 'sky',
+                      'type': 'sky',
+                      'paint': {
+                        'sky-type': 'atmosphere',
+                        'sky-atmosphere-sun': [0.0, 0.0],
+                        'sky-atmosphere-sun-intensity': 15
+                      }
+                    });
+                  }
+                }, 500);
+              });
+              
+              layerSwitcher.appendChild(button);
+            });
+
+            // Add layer switcher to map
+            map.getContainer().appendChild(layerSwitcher);
           </script>
         </body>
         </html>
         """
         
-        # Display the Mapbox HTML
-        st.components.v1.html(mapbox_html, height=550)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    elif st.session_state.current_step == 4:
-        # During analysis, show loading state
-        st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Analysis in Progress</h3></div>', unsafe_allow_html=True)
-        
-        # Show loading animation with analysis details
-        st.markdown(f"""
-        <div style="text-align: center; padding: 100px 0;">
-            <div style="font-size: 64px; margin-bottom: 20px; animation: spin 2s linear infinite;">🌱</div>
-            <div style="color: #00ff88; font-size: 18px; margin-bottom: 10px;">Processing Vegetation Data</div>
-            <div style="color: #666666; font-size: 14px;">Analyzing {st.session_state.selected_area_name}</div>
+        # Display the full-screen map
+        st.components.v1.html(mapbox_html_full, height=700)
+
+    # Footer
+    st.markdown("""
+    <div style="text-align: center; color: #666666; font-size: 12px; padding: 30px 0 20px 0; border-top: 1px solid #222222; margin-top: 20px;">
+        <p style="margin: 5px 0;">KHISBA GIS • Comprehensive Climate & Soil Analysis Platform</p>
+        <p style="margin: 5px 0;">Climate Analysis • Soil Analysis • Vegetation Indices • 3D Mapping • Guided Workflow</p>
+        <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
+            <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">🌡️ Climate Data</span>
+            <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">🌱 Soil Analysis</span>
+            <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">🌿 Vegetation</span>
+            <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">3D Mapbox</span>
+            <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">v3.0</span>
         </div>
-        
-        <style>
-        @keyframes spin {{
-            0% {{ transform: rotate(0deg); }}
-            100% {{ transform: rotate(360deg); }}
-        }}
-        </style>
-        """, unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    elif st.session_state.current_step == 5:
-        # Show analysis results
-        st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">📊 Vegetation & Climate Analysis Results</h3></div>', unsafe_allow_html=True)
-        
-        if st.session_state.analysis_results:
-            # Show selected area info
-            st.markdown(f"""
-            <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin: 10px 20px; border-left: 4px solid #00ff88;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <div style="color: #00ff88; font-weight: 600; font-size: 16px;">{st.session_state.selected_area_name}</div>
-                        <div style="color: #cccccc; font-size: 12px; margin-top: 5px;">
-                            {st.session_state.analysis_parameters['start_date']} to {st.session_state.analysis_parameters['end_date']} • 
-                            {st.session_state.analysis_parameters['collection_choice']} • 
-                            {len(st.session_state.analysis_parameters['selected_indices'])} vegetation indices analyzed •
-                            Climate Analysis: {'Yes' if st.session_state.climate_data is not None else 'No'}
-                        </div>
-                    </div>
-                    <div style="background: #00ff88; color: #000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">
-                        ✅ Complete
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # CLIMATE DATA SECTION
-            if st.session_state.climate_data is not None:
-                climate_df = st.session_state.climate_data
-                
-                st.markdown("""
-                <div style="margin: 20px;">
-                    <h3 style="color: #00ff88;">🌤️ Climate Analysis</h3>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Create temperature chart
-                fig_temp = go.Figure()
-                
-                fig_temp.add_trace(go.Scatter(
-                    x=climate_df['date'],
-                    y=climate_df['temperature'],
-                    mode='lines+markers',
-                    name='Temperature',
-                    line=dict(color='#ff5555', width=3),
-                    marker=dict(size=8, color='#ffffff', line=dict(width=1, color='#ff5555'))
-                ))
-                
-                fig_temp.update_layout(
-                    title="<b>Daily Temperature (°C)</b>",
-                    plot_bgcolor='#0a0a0a',
-                    paper_bgcolor='#0a0a0a',
-                    font=dict(color='#ffffff'),
-                    xaxis=dict(
-                        title="Date",
-                        gridcolor='#222222',
-                        tickcolor='#444444',
-                        showgrid=True
-                    ),
-                    yaxis=dict(
-                        title="Temperature (°C)",
-                        gridcolor='#222222',
-                        tickcolor='#444444',
-                        showgrid=True
-                    ),
-                    height=300,
-                    margin=dict(l=50, r=50, t=50, b=50),
-                    hovermode='x unified',
-                    showlegend=True
-                )
-                
-                st.plotly_chart(fig_temp, use_container_width=True, key="temperature_chart")
-                
-                # Create precipitation chart
-                fig_precip = go.Figure()
-                
-                fig_precip.add_trace(go.Bar(
-                    x=climate_df['date'],
-                    y=climate_df['precipitation'],
-                    name='Precipitation',
-                    marker_color='#5555ff'
-                ))
-                
-                fig_precip.update_layout(
-                    title="<b>Daily Precipitation (mm)</b>",
-                    plot_bgcolor='#0a0a0a',
-                    paper_bgcolor='#0a0a0a',
-                    font=dict(color='#ffffff'),
-                    xaxis=dict(
-                        title="Date",
-                        gridcolor='#222222',
-                        tickcolor='#444444',
-                        showgrid=True
-                    ),
-                    yaxis=dict(
-                        title="Precipitation (mm)",
-                        gridcolor='#222222',
-                        tickcolor='#444444',
-                        showgrid=True
-                    ),
-                    height=300,
-                    margin=dict(l=50, r=50, t=50, b=50),
-                    hovermode='x unified',
-                    showlegend=True
-                )
-                
-                st.plotly_chart(fig_precip, use_container_width=True, key="precipitation_chart")
-                
-                # Climate statistics
-                st.markdown("""
-                <div style="margin: 20px;">
-                    <h4>📊 Climate Statistics</h4>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Calculate statistics
-                if not climate_df.empty:
-                    temp_mean = climate_df['temperature'].mean()
-                    temp_max = climate_df['temperature'].max()
-                    temp_min = climate_df['temperature'].min()
-                    precip_total = climate_df['precipitation'].sum()
-                    precip_mean = climate_df['precipitation'].mean()
-                    precip_max = climate_df['precipitation'].max()
-                    
-                    # Find hottest and wettest days
-                    hottest_day = climate_df.loc[climate_df['temperature'].idxmax()]
-                    wettest_day = climate_df.loc[climate_df['precipitation'].idxmax()]
-                    
-                    # Display statistics in columns
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown(f"""
-                        <div style="background: rgba(255, 85, 85, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid #ff5555; margin-bottom: 10px;">
-                            <div style="color: #ff5555; font-weight: 600; margin-bottom: 10px;">🌡️ Temperature</div>
-                            <div style="color: #cccccc; font-size: 14px;">
-                                <div>Mean: <strong>{temp_mean:.2f}°C</strong></div>
-                                <div>Max: <strong>{temp_max:.2f}°C</strong></div>
-                                <div>Min: <strong>{temp_min:.2f}°C</strong></div>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    with col2:
-                        st.markdown(f"""
-                        <div style="background: rgba(85, 85, 255, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid #5555ff; margin-bottom: 10px;">
-                            <div style="color: #5555ff; font-weight: 600; margin-bottom: 10px;">🌧️ Precipitation</div>
-                            <div style="color: #cccccc; font-size: 14px;">
-                                <div>Total: <strong>{precip_total:.1f} mm</strong></div>
-                                <div>Mean: <strong>{precip_mean:.2f} mm/day</strong></div>
-                                <div>Max: <strong>{precip_max:.1f} mm/day</strong></div>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    # Extreme days
-                    st.markdown(f"""
-                    <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid #00ff88; margin-top: 10px;">
-                        <div style="color: #00ff88; font-weight: 600; margin-bottom: 10px;">📅 Extreme Days</div>
-                        <div style="color: #cccccc; font-size: 14px;">
-                            <div>🔥 Hottest day: <strong>{hottest_day['date'].strftime('%Y-%m-%d')}</strong> ({hottest_day['temperature']:.1f}°C)</div>
-                            <div>💧 Wettest day: <strong>{wettest_day['date'].strftime('%Y-%m-%d')}</strong> ({wettest_day['precipitation']:.1f}mm)</div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            # VEGETATION INDICES SECTION
-            st.markdown("""
-            <div style="margin: 20px;">
-                <h3 style="color: #00ff88;">🌿 Vegetation Indices</h3>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Create charts for each vegetation index
-            for index, data in st.session_state.analysis_results.items():
-                if data['dates'] and data['values']:
-                    try:
-                        # Create Plotly chart
-                        fig = go.Figure()
-                        
-                        fig.add_trace(go.Scatter(
-                            x=data['dates'],
-                            y=data['values'],
-                            mode='lines+markers',
-                            name=index,
-                            line=dict(color='#00ff88', width=3),
-                            marker=dict(size=8, color='#ffffff', line=dict(width=1, color='#00ff88'))
-                        ))
-                        
-                        # Add trend line if enough data points
-                        if len(data['values']) > 1:
-                            import numpy as np
-                            x_numeric = list(range(len(data['dates'])))
-                            z = np.polyfit(x_numeric, data['values'], 1)
-                            p = np.poly1d(z)
-                            fig.add_trace(go.Scatter(
-                                x=data['dates'],
-                                y=p(x_numeric),
-                                mode='lines',
-                                name='Trend',
-                                line=dict(color='#ffaa00', width=2, dash='dash')
-                            ))
-                        
-                        fig.update_layout(
-                            title=f"<b>{index}</b> - Vegetation Index Over Time",
-                            plot_bgcolor='#0a0a0a',
-                            paper_bgcolor='#0a0a0a',
-                            font=dict(color='#ffffff'),
-                            xaxis=dict(
-                                title="Date",
-                                gridcolor='#222222',
-                                tickcolor='#444444',
-                                showgrid=True
-                            ),
-                            yaxis=dict(
-                                title=f"{index} Value",
-                                gridcolor='#222222',
-                                tickcolor='#444444',
-                                range=[min(data['values'])*0.9 if data['values'] else 0, max(data['values'])*1.1 if data['values'] else 1],
-                                showgrid=True
-                            ),
-                            height=300,
-                            margin=dict(l=50, r=50, t=50, b=50),
-                            hovermode='x unified',
-                            showlegend=True,
-                            legend=dict(
-                                orientation="h",
-                                yanchor="bottom",
-                                y=1.02,
-                                xanchor="right",
-                                x=1
-                            )
-                        )
-                        
-                        st.plotly_chart(fig, use_container_width=True, key=f"chart_{index}")
-                        
-                    except Exception as e:
-                        st.warning(f"Could not display chart for {index}: {str(e)}")
-            
-            # Summary statistics for vegetation indices
-            st.markdown('<div style="padding: 0 20px;"><h4>📈 Vegetation Indices Summary</h4></div>', unsafe_allow_html=True)
-            
-            summary_data = []
-            for index, data in st.session_state.analysis_results.items():
-                if data['values']:
-                    values = data['values']
-                    if values:
-                        current = values[-1] if values else 0
-                        previous = values[-2] if len(values) > 1 else current
-                        change = ((current - previous) / previous * 100) if previous != 0 else 0
-                        
-                        summary_data.append({
-                            'Index': index,
-                            'Current': round(current, 4),
-                            'Previous': round(previous, 4),
-                            'Change (%)': f"{change:+.2f}%",
-                            'Min': round(min(values), 4),
-                            'Max': round(max(values), 4),
-                            'Avg': round(sum(values) / len(values), 4)
-                        })
-            
-            if summary_data:
-                df = pd.DataFrame(summary_data)
-                st.dataframe(
-                    df,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Change (%)": st.column_config.TextColumn(
-                            "Change",
-                            help="Percentage change from previous period",
-                        )
-                    }
-                )
-        else:
-            st.markdown("""
-            <div style="text-align: center; padding: 100px 0;">
-                <div style="font-size: 64px; margin-bottom: 20px;">📊</div>
-                <div style="color: #666666; font-size: 16px; margin-bottom: 10px;">No Results Available</div>
-                <div style="color: #444444; font-size: 14px;">Please run an analysis to see results</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-
-# Footer
-st.markdown("""
-<div style="text-align: center; color: #666666; font-size: 12px; padding: 30px 0 20px 0; border-top: 1px solid #222222; margin-top: 20px;">
-    <p style="margin: 5px 0;">KHISBA GIS • Interactive 3D Global Vegetation & Climate Analytics Platform</p>
-    <p style="margin: 5px 0;">Climate Analysis • Auto Results Display • Cool 3D Map • Guided Workflow</p>
-    <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">🌡️ Climate Data</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">3D Mapbox</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">Auto Results</span>
-        <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">v2.3</span>
     </div>
-</div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-# Update status indicators with JavaScript
-st.markdown(f"""
-<script>
-    // Update Earth Engine status
-    document.getElementById('ee_status').className = 'status-dot ' + 
-        ({'true' if st.session_state.ee_initialized else 'false'} ? 'active' : '');
-    
-    // Update area status
-    document.getElementById('area_status').className = 'status-dot ' + 
-        ({'true' if st.session_state.selected_area_name else 'false'} ? 'active' : '');
-    
-    // Update analysis status
-    document.getElementById('analysis_status').className = 'status-dot ' + 
-        ({'true' if st.session_state.analysis_results else 'false'} ? 'active' : '');
-</script>
-""", unsafe_allow_html=True) 
+if __name__ == "__main__":
+    main()
