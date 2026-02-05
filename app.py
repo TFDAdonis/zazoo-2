@@ -1952,4 +1952,4 @@ st.markdown(f"""
     document.getElementById('analysis_status').className = 'status-dot ' + 
         ({'true' if st.session_state.analysis_results else 'false'} ? 'active' : '');
 </script>
-""", unsafe_allow_html=True) xx
+""", unsafe_allow_html=True) 
