@@ -342,16 +342,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Earth Engine Auto-Authentication
+# Earth Engine Auto-Authentication - FIXED VERSION
 def auto_initialize_earth_engine():
     """Automatically initialize Earth Engine with service account credentials"""
     try:
-        service_account_info = {
-            "type": "service_account",
-            "project_id": "citric-hawk-457513-i6",
-            "private_key_id": "8984179a69969591194d8f8097e48cd9789f5ea2",
-            "private_key": """-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiGw0BAQEFAASCBKcwggSjAgEAAoIBAQDFQOtXKWE+7mEY
+        # Fixed private key - properly formatted with actual newlines
+        private_key = """-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDFQOtXKWE+7mEY
 JUTNzx3h+QvvDCvZ2B6XZTofknuAFPW2LqAzZustznJJFkCmO3Nutct+W/iDQCG0
 1DjOQcbcr/jWr+mnRLVOkUkQc/kzZ8zaMQqU8HpXjS1mdhpsrbUaRKoEgfo3I3Bp
 dFcJ/caC7TSr8VkGnZcPEZyXVsj8dLSEzomdkX+mDlJlgCrNfu3Knu+If5lXh3Me
@@ -377,7 +374,13 @@ yrZYfqDFnRUYma+4Y5Xn71JOjm9NItHsW8Oj2CG/BNOQk1MwKJjqHovBeSJmIzF8
 3aeOMGVHB2pHYosTgslD9Yp+hyVHqSdyCplHzWB3d8roIecW4MEb0mDxlaTdZfmR
 dtBYiTzMxLezHsRZ4KP4NtGAE3iTL1b6DXuoI84+H/HaQ1EB79+YV9ZTAabt1b7o
 e5aU1RW6tlG8nzHHwK2FeyI=
------END PRIVATE KEY-----""",
+-----END PRIVATE KEY-----"""
+        
+        service_account_info = {
+            "type": "service_account",
+            "project_id": "citric-hawk-457513-i6",
+            "private_key_id": "8984179a69969591194d8f8097e48cd9789f5ea2",
+            "private_key": private_key,
             "client_email": "cc-365@citric-hawk-457513-i6.iam.gserviceaccount.com",
             "client_id": "105264622264803277310",
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -538,6 +541,8 @@ if 'auto_show_results' not in st.session_state:
     st.session_state.auto_show_results = False
 if 'climate_data' not in st.session_state:
     st.session_state.climate_data = None
+if 'ee_initialized' not in st.session_state:
+    st.session_state.ee_initialized = False
 
 # Page configuration
 st.set_page_config(
@@ -701,74 +706,71 @@ with col1:
         </div>
         """, unsafe_allow_html=True)
         
-        # Try to auto-initialize Earth Engine
-        if 'ee_initialized' not in st.session_state:
-            with st.spinner("Initializing Earth Engine..."):
-                if auto_initialize_earth_engine():
-                    st.session_state.ee_initialized = True
-                else:
-                    st.session_state.ee_initialized = False
+        # Initialize variables
+        selected_country = None
+        selected_admin1 = None
+        selected_admin2 = None
         
-        if st.session_state.get('ee_initialized'):
+        # Try to auto-initialize Earth Engine if not already done
+        if not st.session_state.ee_initialized:
+            with st.spinner("Initializing Earth Engine..."):
+                st.session_state.ee_initialized = auto_initialize_earth_engine()
+        
+        if st.session_state.ee_initialized:
             try:
                 # Get countries
                 countries_fc = get_admin_boundaries(0)
                 if countries_fc:
                     country_names = get_boundary_names(countries_fc, 0)
-                    selected_country = st.selectbox(
-                        "🌍 Country",
-                        options=["Select a country"] + country_names,
-                        index=0,
-                        help="Choose a country for analysis",
-                        key="country_select"
-                    )
-                    
-                    if selected_country and selected_country != "Select a country":
-                        # Get country code
-                        country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
+                    if country_names:
+                        selected_country = st.selectbox(
+                            "🌍 Country",
+                            options=["Select a country"] + country_names,
+                            index=0,
+                            help="Choose a country for analysis",
+                            key="country_select"
+                        )
                         
-                        # Get admin1 regions for selected country
-                        admin1_fc = get_admin_boundaries(1, country_feature.get('ADM0_CODE').getInfo())
-                        if admin1_fc:
-                            admin1_names = get_boundary_names(admin1_fc, 1)
-                            selected_admin1 = st.selectbox(
-                                "🏛️ State/Province",
-                                options=["Select state/province"] + admin1_names,
-                                index=0,
-                                help="Choose a state or province",
-                                key="admin1_select"
-                            )
+                        if selected_country and selected_country != "Select a country":
+                            # Get country code
+                            country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
                             
-                            if selected_admin1 and selected_admin1 != "Select state/province":
-                                # Get admin1 code
-                                admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
-                                
-                                # Get admin2 regions for selected admin1
-                                admin2_fc = get_admin_boundaries(2, None, admin1_feature.get('ADM1_CODE').getInfo())
-                                if admin2_fc:
-                                    admin2_names = get_boundary_names(admin2_fc, 2)
-                                    selected_admin2 = st.selectbox(
-                                        "🏘️ Municipality",
-                                        options=["Select municipality"] + admin2_names,
+                            # Get admin1 regions for selected country
+                            admin1_fc = get_admin_boundaries(1, country_feature.get('ADM0_CODE').getInfo())
+                            if admin1_fc:
+                                admin1_names = get_boundary_names(admin1_fc, 1)
+                                if admin1_names:
+                                    selected_admin1 = st.selectbox(
+                                        "🏛️ State/Province",
+                                        options=["Select state/province"] + admin1_names,
                                         index=0,
-                                        help="Choose a municipality",
-                                        key="admin2_select"
+                                        help="Choose a state or province",
+                                        key="admin1_select"
                                     )
-                                else:
-                                    selected_admin2 = None
+                                    
+                                    if selected_admin1 and selected_admin1 != "Select state/province":
+                                        # Get admin1 code
+                                        admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
+                                        
+                                        # Get admin2 regions for selected admin1
+                                        admin2_fc = get_admin_boundaries(2, None, admin1_feature.get('ADM1_CODE').getInfo())
+                                        if admin2_fc:
+                                            admin2_names = get_boundary_names(admin2_fc, 2)
+                                            if admin2_names:
+                                                selected_admin2 = st.selectbox(
+                                                    "🏘️ Municipality",
+                                                    options=["Select municipality"] + admin2_names,
+                                                    index=0,
+                                                    help="Choose a municipality",
+                                                    key="admin2_select"
+                                                )
                             else:
+                                selected_admin1 = None
                                 selected_admin2 = None
-                        else:
-                            selected_admin1 = None
-                            selected_admin2 = None
                     else:
-                        selected_admin1 = None
-                        selected_admin2 = None
+                        st.warning("No countries found. Please check Earth Engine connection.")
                 else:
                     st.error("Failed to load countries. Please check Earth Engine connection.")
-                    selected_country = None
-                    selected_admin1 = None
-                    selected_admin2 = None
                     
             except Exception as e:
                 st.error(f"Error loading boundaries: {str(e)}")
@@ -778,6 +780,7 @@ with col1:
         else:
             st.warning("Earth Engine not initialized. Please wait...")
         
+        # Only show confirmation button if country is selected
         if selected_country and selected_country != "Select a country":
             try:
                 # Determine geometry
@@ -1935,18 +1938,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Update status indicators with JavaScript
-st.markdown("""
+st.markdown(f"""
 <script>
     // Update Earth Engine status
     document.getElementById('ee_status').className = 'status-dot ' + 
-        (""" + ("true" if st.session_state.get('ee_initialized') else "false") + """ ? 'active' : '');
+        ({'true' if st.session_state.ee_initialized else 'false'} ? 'active' : '');
     
     // Update area status
     document.getElementById('area_status').className = 'status-dot ' + 
-        (""" + ("true" if st.session_state.selected_area_name else "false") + """ ? 'active' : '');
+        ({'true' if st.session_state.selected_area_name else 'false'} ? 'active' : '');
     
     // Update analysis status
     document.getElementById('analysis_status').className = 'status-dot ' + 
-        (""" + ("true" if st.session_state.analysis_results else "false") + """ ? 'active' : '');
+        ({'true' if st.session_state.analysis_results else 'false'} ? 'active' : '');
 </script>
 """, unsafe_allow_html=True)
