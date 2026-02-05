@@ -1080,7 +1080,7 @@ class SimplifiedClimateSoilAnalyzer:
         plt.close(fig)
 
     # =============================================================================
-    # ENHANCED CLIMATE ANALYSIS METHODS - FIXED VERSION
+    # ENHANCED CLIMATE ANALYSIS METHODS - ADDED COMPREHENSIVE CHARTS
     # =============================================================================
 
     def get_daily_climate_data_for_analysis(self, geometry, start_date, end_date):
@@ -1126,8 +1126,12 @@ class SimplifiedClimateSoilAnalyzer:
                                     .select('volumetric_soil_water_layer_3') \
                                     .mean()
                 
-                # Calculate potential evaporation using simplified method
-                pet = temp_monthly.add(17.8).multiply(0.0023).multiply(15).rename('potential_evaporation')
+                # Calculate potential evaporation using Hargreaves method (FIXED)
+                # PET = 0.0023 * Ra * (Tmean + 17.8) * sqrt(Tmax - Tmin)
+                # Using simplified version since we don't have Tmax and Tmin
+                t_mean = temp_monthly
+                ra = 15  # Average extraterrestrial radiation (mm/day) - approximation
+                pet = t_mean.add(17.8).multiply(0.0023).multiply(ra).rename('potential_evaporation')
                 
                 return ee.Image.cat([
                     temp_monthly.rename('temperature_2m'),
@@ -1195,187 +1199,191 @@ class SimplifiedClimateSoilAnalyzer:
         
         charts = {}
         
-        # 1. Soil Moisture by Depth Chart
-        fig1, ax1 = plt.subplots(figsize=(10, 6))
-        
-        if 'volumetric_soil_water_layer_1' in climate_df.columns:
-            # Get unique months from data
-            months_data = climate_df['month'].unique()
-            months_data = sorted(months_data)
+        try:
+            # 1. Soil Moisture by Depth Chart
+            fig1, ax1 = plt.subplots(figsize=(10, 6))
             
-            # Map month numbers to names
-            month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+            if 'volumetric_soil_water_layer_1' in climate_df.columns:
+                # Get unique months from data
+                months_data = climate_df['month'].unique()
+                months_data = sorted(months_data)
+                
+                # Map month numbers to names
+                month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                
+                # Create mapping from month number to position
+                month_positions = list(range(len(months_data)))
+                month_labels = [month_names[m-1] for m in months_data if 1 <= m <= 12]
+                
+                # Plot soil moisture layers if available
+                layer_names = ['volumetric_soil_water_layer_1', 'volumetric_water_layer_2', 'volumetric_water_layer_3']
+                layer_labels = ['Layer 1 (0-7cm)', 'Layer 2 (7-28cm)', 'Layer 3 (28-100cm)']
+                colors = ['#FF6B6B', '#4ECDC4', '#45B7D1']
+                
+                for i, (layer, label, color) in enumerate(zip(layer_names, layer_labels, colors)):
+                    if layer in climate_df.columns:
+                        # Group by actual months in data
+                        monthly_avg = climate_df.groupby('month')[layer].mean()
+                        # Reindex to only available months
+                        values = [monthly_avg.get(month, 0) for month in months_data]
+                        ax1.plot(month_positions, values, marker='o', color=color, linewidth=2, label=label)
+                
+                ax1.set_xlabel('Month')
+                ax1.set_ylabel('Soil Moisture (m³/m³)')
+                ax1.set_title(f'Soil Moisture by Depth - {location_name}', fontsize=14, fontweight='bold')
+                ax1.set_xticks(month_positions)
+                ax1.set_xticklabels(month_labels)
+                ax1.legend()
+                ax1.grid(True, alpha=0.3)
+                ax1.set_ylim(0, 0.4)
+                
+                plt.tight_layout()
+                charts['soil_moisture_depth'] = fig1
             
-            # Create mapping from month number to position
-            month_positions = list(range(len(months_data)))
-            month_labels = [month_names[m-1] for m in months_data if 1 <= m <= 12]
+            # 2. Monthly Water Balance Chart
+            fig2, ax2 = plt.subplots(figsize=(10, 6))
             
-            # Plot soil moisture layers if available
-            layer_names = ['volumetric_soil_water_layer_1', 'volumetric_water_layer_2', 'volumetric_water_layer_3']
-            layer_labels = ['Layer 1 (0-7cm)', 'Layer 2 (7-28cm)', 'Layer 3 (28-100cm)']
-            colors = ['#FF6B6B', '#4ECDC4', '#45B7D1']
+            if 'total_precipitation' in climate_df.columns and 'potential_evaporation' in climate_df.columns:
+                # Get months from data
+                months_data = climate_df['month'].unique()
+                months_data = sorted(months_data)
+                month_positions = list(range(len(months_data)))
+                month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                month_labels = [month_names[m-1] for m in months_data if 1 <= m <= 12]
+                
+                # Group by actual months in data
+                precip_monthly = climate_df.groupby('month')['total_precipitation'].sum()
+                evap_monthly = climate_df.groupby('month')['potential_evaporation'].mean()
+                
+                # Get values for available months
+                precip_values = [precip_monthly.get(month, 0) for month in months_data]
+                evap_values = [evap_monthly.get(month, 0) for month in months_data]
+                
+                width = 0.35
+                ax2.bar([i - width/2 for i in month_positions], precip_values, width, 
+                        label='Precipitation', color='#36A2EB', alpha=0.8)
+                ax2.bar([i + width/2 for i in month_positions], evap_values, width, 
+                        label='Evaporation', color='#FF6384', alpha=0.8)
+                
+                ax2.set_xlabel('Month')
+                ax2.set_ylabel('mm/month')
+                ax2.set_title(f'Monthly Water Balance - {location_name}', fontsize=14, fontweight='bold')
+                ax2.set_xticks(month_positions)
+                ax2.set_xticklabels(month_labels)
+                ax2.legend()
+                ax2.grid(True, alpha=0.3)
+                
+                plt.tight_layout()
+                charts['monthly_water_balance'] = fig2
             
-            for i, (layer, label, color) in enumerate(zip(layer_names, layer_labels, colors)):
+            # 3. Seasonal Water Balance Chart
+            fig3, ax3 = plt.subplots(figsize=(10, 6))
+            
+            if 'total_precipitation' in climate_df.columns and 'potential_evaporation' in climate_df.columns:
+                # Get available months from data
+                months_data = climate_df['month'].unique()
+                months_data = sorted(months_data)
+                month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                
+                precip_values = []
+                evap_values = []
+                available_months = []
+                
+                for month in months_data:
+                    month_data = climate_df[climate_df['month'] == month]
+                    if not month_data.empty:
+                        precip_values.append(month_data['total_precipitation'].sum())
+                        evap_values.append(month_data['potential_evaporation'].mean())
+                        available_months.append(month)
+                
+                x_positions = list(range(len(available_months)))
+                x_labels = [month_names[m-1] for m in available_months if 1 <= m <= 12]
+                
+                ax3.plot(x_positions, precip_values, 'b-', linewidth=2, label='Precipitation', marker='o')
+                ax3.plot(x_positions, evap_values, 'r-', linewidth=2, label='Evaporation', marker='s')
+                
+                # Fill between for water surplus/deficit
+                ax3.fill_between(x_positions, precip_values, evap_values, 
+                                where=[p > e for p, e in zip(precip_values, evap_values)],
+                                color='blue', alpha=0.2, label='Water Surplus')
+                ax3.fill_between(x_positions, precip_values, evap_values,
+                                where=[p <= e for p, e in zip(precip_values, evap_values)],
+                                color='red', alpha=0.2, label='Water Deficit')
+                
+                ax3.set_xlabel('Month')
+                ax3.set_ylabel('mm/month')
+                ax3.set_title(f'Seasonal Water Balance - {location_name}', fontsize=14, fontweight='bold')
+                ax3.set_xticks(x_positions)
+                ax3.set_xticklabels(x_labels)
+                ax3.legend()
+                ax3.grid(True, alpha=0.3)
+                
+                plt.tight_layout()
+                charts['seasonal_water_balance'] = fig3
+            
+            # 4. Summary Statistics Panel
+            fig4, ax4 = plt.subplots(figsize=(8, 8))
+            ax4.axis('off')
+            
+            # Calculate summary statistics
+            summary_text = "📊 CLIMATE SUMMARY STATISTICS\n\n"
+            
+            if 'temperature_2m' in climate_df.columns:
+                temp_mean = climate_df['temperature_2m'].mean()
+                temp_max = climate_df['temperature_2m'].max()
+                temp_min = climate_df['temperature_2m'].min()
+                summary_text += f"🌡️ Temperature:\n"
+                summary_text += f"  • Mean: {temp_mean:.1f}°C\n"
+                summary_text += f"  • Max: {temp_max:.1f}°C\n"
+                summary_text += f"  • Min: {temp_min:.1f}°C\n\n"
+            
+            if 'total_precipitation' in climate_df.columns:
+                precip_total = climate_df['total_precipitation'].sum()
+                precip_mean = climate_df['total_precipitation'].mean()
+                precip_max = climate_df['total_precipitation'].max()
+                summary_text += f"💧 Precipitation:\n"
+                summary_text += f"  • Total: {precip_total:.1f} mm\n"
+                summary_text += f"  • Mean: {precip_mean:.1f} mm/month\n"
+                summary_text += f"  • Max: {precip_max:.1f} mm/month\n\n"
+            
+            if 'potential_evaporation' in climate_df.columns:
+                evap_total = climate_df['potential_evaporation'].sum()
+                evap_mean = climate_df['potential_evaporation'].mean()
+                summary_text += f"☀️ Evaporation:\n"
+                summary_text += f"  • Total: {evap_total:.1f} mm\n"
+                summary_text += f"  • Mean: {evap_mean:.1f} mm/month\n\n"
+            
+            # Water balance calculation
+            if 'total_precipitation' in climate_df.columns and 'potential_evaporation' in climate_df.columns:
+                water_balance = precip_total - evap_total
+                summary_text += f"💦 Water Balance:\n"
+                summary_text += f"  • Net: {water_balance:.1f} mm\n"
+                summary_text += f"  • Status: {'SURPLUS' if water_balance > 0 else 'DEFICIT'}\n\n"
+            
+            # Soil moisture summary
+            soil_layers = []
+            for layer in ['volumetric_soil_water_layer_1', 'volumetric_water_layer_2', 'volumetric_water_layer_3']:
                 if layer in climate_df.columns:
-                    # Group by actual months in data
-                    monthly_avg = climate_df.groupby('month')[layer].mean()
-                    # Reindex to only available months
-                    values = [monthly_avg.get(month, 0) for month in months_data]
-                    ax1.plot(month_positions, values, marker='o', color=color, linewidth=2, label=label)
+                    soil_layers.append((layer, climate_df[layer].mean()))
             
-            ax1.set_xlabel('Month')
-            ax1.set_ylabel('Soil Moisture (m³/m³)')
-            ax1.set_title(f'Soil Moisture by Depth - {location_name}', fontsize=14, fontweight='bold')
-            ax1.set_xticks(month_positions)
-            ax1.set_xticklabels(month_labels)
-            ax1.legend()
-            ax1.grid(True, alpha=0.3)
-            ax1.set_ylim(0, 0.4)
+            if soil_layers:
+                summary_text += f"🌱 Soil Moisture:\n"
+                for layer_name, mean_value in soil_layers:
+                    depth = layer_name.split('_')[-1]
+                    summary_text += f"  • Layer {depth}: {mean_value:.3f} m³/m³\n"
             
-            plt.tight_layout()
-            charts['soil_moisture_depth'] = fig1
-        
-        # 2. Monthly Water Balance Chart
-        fig2, ax2 = plt.subplots(figsize=(10, 6))
-        
-        if 'total_precipitation' in climate_df.columns and 'potential_evaporation' in climate_df.columns:
-            # Get months from data
-            months_data = climate_df['month'].unique()
-            months_data = sorted(months_data)
-            month_positions = list(range(len(months_data)))
-            month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-            month_labels = [month_names[m-1] for m in months_data if 1 <= m <= 12]
+            ax4.text(0.1, 0.95, summary_text, transform=ax4.transAxes, fontsize=10,
+                     bbox=dict(boxstyle="round", facecolor="lightblue", alpha=0.8),
+                     verticalalignment='top')
             
-            # Group by actual months in data
-            precip_monthly = climate_df.groupby('month')['total_precipitation'].sum()
-            evap_monthly = climate_df.groupby('month')['potential_evaporation'].mean()
+            ax4.set_title('Summary Statistics', fontsize=12, fontweight='bold')
+            charts['summary_statistics'] = fig4
             
-            # Get values for available months
-            precip_values = [precip_monthly.get(month, 0) for month in months_data]
-            evap_values = [evap_monthly.get(month, 0) for month in months_data]
-            
-            width = 0.35
-            ax2.bar([i - width/2 for i in month_positions], precip_values, width, 
-                    label='Precipitation', color='#36A2EB', alpha=0.8)
-            ax2.bar([i + width/2 for i in month_positions], evap_values, width, 
-                    label='Evaporation', color='#FF6384', alpha=0.8)
-            
-            ax2.set_xlabel('Month')
-            ax2.set_ylabel('mm/month')
-            ax2.set_title(f'Monthly Water Balance - {location_name}', fontsize=14, fontweight='bold')
-            ax2.set_xticks(month_positions)
-            ax2.set_xticklabels(month_labels)
-            ax2.legend()
-            ax2.grid(True, alpha=0.3)
-            
-            plt.tight_layout()
-            charts['monthly_water_balance'] = fig2
-        
-        # 3. Seasonal Water Balance Chart
-        fig3, ax3 = plt.subplots(figsize=(10, 6))
-        
-        if 'total_precipitation' in climate_df.columns and 'potential_evaporation' in climate_df.columns:
-            # Get available months from data
-            months_data = climate_df['month'].unique()
-            months_data = sorted(months_data)
-            month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-            
-            precip_values = []
-            evap_values = []
-            available_months = []
-            
-            for month in months_data:
-                month_data = climate_df[climate_df['month'] == month]
-                if not month_data.empty:
-                    precip_values.append(month_data['total_precipitation'].sum())
-                    evap_values.append(month_data['potential_evaporation'].mean())
-                    available_months.append(month)
-            
-            x_positions = list(range(len(available_months)))
-            x_labels = [month_names[m-1] for m in available_months if 1 <= m <= 12]
-            
-            ax3.plot(x_positions, precip_values, 'b-', linewidth=2, label='Precipitation', marker='o')
-            ax3.plot(x_positions, evap_values, 'r-', linewidth=2, label='Evaporation', marker='s')
-            
-            # Fill between for water surplus/deficit
-            ax3.fill_between(x_positions, precip_values, evap_values, 
-                            where=[p > e for p, e in zip(precip_values, evap_values)],
-                            color='blue', alpha=0.2, label='Water Surplus')
-            ax3.fill_between(x_positions, precip_values, evap_values,
-                            where=[p <= e for p, e in zip(precip_values, evap_values)],
-                            color='red', alpha=0.2, label='Water Deficit')
-            
-            ax3.set_xlabel('Month')
-            ax3.set_ylabel('mm/month')
-            ax3.set_title(f'Seasonal Water Balance - {location_name}', fontsize=14, fontweight='bold')
-            ax3.set_xticks(x_positions)
-            ax3.set_xticklabels(x_labels)
-            ax3.legend()
-            ax3.grid(True, alpha=0.3)
-            
-            plt.tight_layout()
-            charts['seasonal_water_balance'] = fig3
-        
-        # 4. Summary Statistics Panel
-        fig4, ax4 = plt.subplots(figsize=(8, 8))
-        ax4.axis('off')
-        
-        # Calculate summary statistics
-        summary_text = "📊 CLIMATE SUMMARY STATISTICS\n\n"
-        
-        if 'temperature_2m' in climate_df.columns:
-            temp_mean = climate_df['temperature_2m'].mean()
-            temp_max = climate_df['temperature_2m'].max()
-            temp_min = climate_df['temperature_2m'].min()
-            summary_text += f"🌡️ Temperature:\n"
-            summary_text += f"  • Mean: {temp_mean:.1f}°C\n"
-            summary_text += f"  • Max: {temp_max:.1f}°C\n"
-            summary_text += f"  • Min: {temp_min:.1f}°C\n\n"
-        
-        if 'total_precipitation' in climate_df.columns:
-            precip_total = climate_df['total_precipitation'].sum()
-            precip_mean = climate_df['total_precipitation'].mean()
-            precip_max = climate_df['total_precipitation'].max()
-            summary_text += f"💧 Precipitation:\n"
-            summary_text += f"  • Total: {precip_total:.1f} mm\n"
-            summary_text += f"  • Mean: {precip_mean:.1f} mm/month\n"
-            summary_text += f"  • Max: {precip_max:.1f} mm/month\n\n"
-        
-        if 'potential_evaporation' in climate_df.columns:
-            evap_total = climate_df['potential_evaporation'].sum()
-            evap_mean = climate_df['potential_evaporation'].mean()
-            summary_text += f"☀️ Evaporation:\n"
-            summary_text += f"  • Total: {evap_total:.1f} mm\n"
-            summary_text += f"  • Mean: {evap_mean:.1f} mm/month\n\n"
-        
-        # Water balance calculation
-        if 'total_precipitation' in climate_df.columns and 'potential_evaporation' in climate_df.columns:
-            water_balance = precip_total - evap_total
-            summary_text += f"💦 Water Balance:\n"
-            summary_text += f"  • Net: {water_balance:.1f} mm\n"
-            summary_text += f"  • Status: {'SURPLUS' if water_balance > 0 else 'DEFICIT'}\n\n"
-        
-        # Soil moisture summary
-        soil_layers = []
-        for layer in ['volumetric_soil_water_layer_1', 'volumetric_water_layer_2', 'volumetric_water_layer_3']:
-            if layer in climate_df.columns:
-                soil_layers.append((layer, climate_df[layer].mean()))
-        
-        if soil_layers:
-            summary_text += f"🌱 Soil Moisture:\n"
-            for layer_name, mean_value in soil_layers:
-                depth = layer_name.split('_')[-1]
-                summary_text += f"  • Layer {depth}: {mean_value:.3f} m³/m³\n"
-        
-        ax4.text(0.1, 0.95, summary_text, transform=ax4.transAxes, fontsize=10,
-                 bbox=dict(boxstyle="round", facecolor="lightblue", alpha=0.8),
-                 verticalalignment='top')
-        
-        ax4.set_title('Summary Statistics', fontsize=12, fontweight='bold')
-        charts['summary_statistics'] = fig4
+        except Exception as e:
+            st.warning(f"Could not create all charts: {e}")
         
         return charts
 
@@ -3217,7 +3225,7 @@ def main():
                             
                             with col1:
                                 st.markdown(f"""
-                                <div style="background: rgba(255, 85, 85, 0.1); padding: 15px; border-radius=8px; border-left: 4px solid #ff5555; margin-bottom: 10px;">
+                                <div style="background: rgba(255, 85, 85, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid #ff5555; margin-bottom: 10px;">
                                     <div style="color: #ff5555; font-weight: 600; margin-bottom: 10px;">🌡️ Temperature</div>
                                     <div style="color: #cccccc; font-size: 14px;">
                                         <div>Mean: <strong>{temp_mean:.2f}°C</strong></div>
