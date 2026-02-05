@@ -11,4 +11,6 @@ dependencies = [
     "streamlit>=1.49.1",
     "matplotlib>=3.10.6",
     "plotly>=6.3.0",
+    "scipy>=1.9.0",  # Add this line
+    "numpy>=1.24.0",  # Ensure numpy is also listed
 ]
