@@ -2336,10 +2336,7 @@ else:
                                     nir.add(red).add(0.5)
                                 ).rename('SAVI')
                                 indices.append(savi)
-                          if 'NDWI' in params['selected_indices']:
-                            ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI')
-                            indices.append(ndwi)
-                        
+                         
                         # Add other indices as needed
                         for idx in params['selected_indices']:
                             if idx not in ['NDVI', 'EVI', 'SAVI', 'NDWI']:
