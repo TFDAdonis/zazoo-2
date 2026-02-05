@@ -3361,7 +3361,3 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-if __name__ == "__main__":
-    main() Enhanced analysis error: x and y must have same first dimension, but have shapes (11,) and (12,)
-
-Enhanced analysis failed. Please try again. fix this on climate soil analysis
