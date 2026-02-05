@@ -1070,105 +1070,7 @@ class SimplifiedClimateSoilAnalyzer:
     # =============================================================================
     # ENHANCED CLIMATE ANALYSIS METHODS
     # =============================================================================
-
-    def get_daily_climate_data_for_analysis(self, geometry, start_date, end_date):
-        """Get enhanced daily climate data for comprehensive analysis"""
-        try:
-            # Use ERA5-Land for temperature and soil moisture
-            era5 = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR") \
-                .filterDate(start_date, end_date) \
-                .filterBounds(geometry)
-            
-            # Use CHIRPS for precipitation
-            chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY") \
-                .filterDate(start_date, end_date) \
-                .filterBounds(geometry)
-            
-            # Create monthly composites for analysis
-            def create_monthly_composite(year_month):
-                year_month = ee.Date(year_month)
-                month_start = year_month
-                month_end = month_start.advance(1, 'month')
-                
-                # Get monthly mean temperature
-                temp_monthly = era5.filterDate(month_start, month_end) \
-                                  .select('temperature_2m') \
-                                  .mean() \
-                                  .subtract(273.15)  # Convert to Celsius
-                
-                # Get monthly total precipitation
-                precip_monthly = chirps.filterDate(month_start, month_end) \
-                                      .select('precipitation') \
-                                      .sum()
-                
-                # Get monthly soil moisture
-                soil_moisture1 = era5.filterDate(month_start, month_end) \
-                                    .select('volumetric_soil_water_layer_1') \
-                                    .mean()
-                
-                soil_moisture2 = era5.filterDate(month_start, month_end) \
-                                    .select('volumetric_soil_water_layer_2') \
-                                    .mean()
-                
-                soil_moisture3 = era5.filterDate(month_start, month_end) \
-                                    .select('volumetric_soil_water_layer_3') \
-                                    .mean()
-                
-                # Calculate potential evaporation using simplified method
-                pet = temp_monthly.add(17.8).multiply(0.0023).multiply(15).rename('potential_evaporation')
-                
-                return ee.Image.cat([
-                    temp_monthly.rename('temperature_2m'),
-                    precip_monthly.rename('total_precipitation'),
-                    soil_moisture1.rename('volumetric_soil_water_layer_1'),
-                    soil_moisture2.rename('volumetric_water_layer_2'),
-                    soil_moisture3.rename('volumetric_water_layer_3'),
-                    pet
-                ]).set('system:time_start', month_start.millis())
-            
-            # Generate monthly sequence
-            start = ee.Date(start_date)
-            end = ee.Date(end_date)
-            months = ee.List.sequence(0, end.difference(start, 'month').subtract(1))
-            
-            monthly_collection = ee.ImageCollection(months.map(
-                lambda month: create_monthly_composite(start.advance(month, 'month'))
-            ))
-            
-            return monthly_collection
-            
-        except Exception as e:
-            st.error(f"Error getting climate data: {e}")
-            return None
-
-    def extract_monthly_statistics(self, monthly_collection, geometry):
-        """Extract monthly statistics for analysis"""
-        try:
-            # Sample at centroid
-            centroid = geometry.centroid()
-            
-            # Get time series
-            series = monthly_collection.getRegion(centroid, 10000).getInfo()
-            
-            if not series or len(series) <= 1:
-                return None
-            
-            # Process to DataFrame
-            headers = series[0]
-            data = series[1:]
-            
-            df = pd.DataFrame(data, columns=headers)
-            df['datetime'] = pd.to_datetime(df['time'], unit='ms')
-            df['month'] = df['datetime'].dt.month
-            df['month_name'] = df['datetime'].dt.strftime('%b')
-            df['year'] = df['datetime'].dt.year
-            
-            return df
-            
-        except Exception as e:
-            st.error(f"Error extracting statistics: {e}")
-            return None
-            # =============================================================================
+# =============================================================================
 # ENHANCED CLIMATE ANALYSIS METHODS - FIXED VERSION
 # =============================================================================
 
@@ -1700,7 +1602,7 @@ def display_enhanced_analysis(self, analysis_results):
                     hide_index=True
                 )
 
-
+    
 # =============================================================================
 # VEGETATION INDICES FUNCTIONS
 # =============================================================================
@@ -3460,4 +3362,6 @@ def main():
     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
-    main()
+    main() Enhanced analysis error: x and y must have same first dimension, but have shapes (11,) and (12,)
+
+Enhanced analysis failed. Please try again. fix this on climate soil analysis
