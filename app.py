@@ -475,13 +475,6 @@ SOIL_TEXTURE_CLASSES = {
     11: 'Loamy sand', 12: 'Sand'
 }
 
-# Africa bounds
-AFRICA_BOUNDS = ee.Geometry.Polygon([
-    [-25.0, -35.0], [-25.0, 37.5], [-5.5, 37.5], [-5.5, 35.5],
-    [0.0, 35.5], [5.0, 38.0], [12.0, 38.0], [32.0, 31.0],
-    [32.0, -35.0], [-25.0, -35.0]
-])
-
 # Data Sources Documentation
 DATA_SOURCES = {
     'reference_soil': {
@@ -519,11 +512,6 @@ DATA_SOURCES = {
         'citation': 'Food and Agriculture Organization of the United Nations'
     }
 }
-
-# FAO GAUL Dataset
-FAO_GAUL = ee.FeatureCollection("FAO/GAUL/2015/level0")
-FAO_GAUL_ADMIN1 = ee.FeatureCollection("FAO/GAUL/2015/level1")
-FAO_GAUL_ADMIN2 = ee.FeatureCollection("FAO/GAUL/2015/level2")
 
 # =============================================================================
 # ENHANCED SIMPLIFIED CLIMATE & SOIL ANALYZER CLASS
@@ -568,6 +556,32 @@ class EnhancedClimateSoilAnalyzer:
 
         self.current_soil_data = None
         self.analysis_results = {}
+        
+        # Initialize EE objects as None
+        self.africa_bounds = None
+        self.fao_gaul = None
+        self.fao_gaul_admin1 = None
+        self.fao_gaul_admin2 = None
+        
+    def initialize_ee_objects(self):
+        """Initialize Earth Engine objects after EE is initialized"""
+        try:
+            if ee.data._initialized:
+                self.africa_bounds = ee.Geometry.Polygon([
+                    [-25.0, -35.0], [-25.0, 37.5], [-5.5, 37.5], [-5.5, 35.5],
+                    [0.0, 35.5], [5.0, 38.0], [12.0, 38.0], [32.0, 31.0],
+                    [32.0, -35.0], [-25.0, -35.0]
+                ])
+                
+                self.fao_gaul = ee.FeatureCollection("FAO/GAUL/2015/level0")
+                self.fao_gaul_admin1 = ee.FeatureCollection("FAO/GAUL/2015/level1")
+                self.fao_gaul_admin2 = ee.FeatureCollection("FAO/GAUL/2015/level2")
+                
+                return True
+            return False
+        except Exception as e:
+            st.error(f"Failed to initialize EE objects: {e}")
+            return False
 
     # =============================================================================
     # CLIMATE ANALYSIS METHODS
@@ -724,7 +738,7 @@ class EnhancedClimateSoilAnalyzer:
         """Get geometry from administrative selection"""
         try:
             if municipality != 'Select Municipality':
-                feature = FAO_GAUL_ADMIN2.filter(ee.Filter.eq('ADM0_NAME', country)) \
+                feature = self.fao_gaul_admin2.filter(ee.Filter.eq('ADM0_NAME', country)) \
                                .filter(ee.Filter.eq('ADM1_NAME', region)) \
                                .filter(ee.Filter.eq('ADM2_NAME', municipality)) \
                                .first()
@@ -733,7 +747,7 @@ class EnhancedClimateSoilAnalyzer:
                 return geometry, location_name
 
             elif region != 'Select Region':
-                feature = FAO_GAUL_ADMIN1.filter(ee.Filter.eq('ADM0_NAME', country)) \
+                feature = self.fao_gaul_admin1.filter(ee.Filter.eq('ADM0_NAME', country)) \
                                .filter(ee.Filter.eq('ADM1_NAME', region)) \
                                .first()
                 geometry = feature.geometry()
@@ -741,7 +755,7 @@ class EnhancedClimateSoilAnalyzer:
                 return geometry, location_name
 
             elif country != 'Select Country':
-                feature = FAO_GAUL.filter(ee.Filter.eq('ADM0_NAME', country)).first()
+                feature = self.fao_gaul.filter(ee.Filter.eq('ADM0_NAME', country)).first()
                 geometry = feature.geometry()
                 location_name = f"{country}"
                 return geometry, location_name
@@ -873,7 +887,7 @@ class EnhancedClimateSoilAnalyzer:
             texture_dataset = ee.Image('OpenLandMap/SOL/SOL_TEXTURE-CLASS_USDA-TT_M/v02')
             soil_texture = texture_dataset.select('b0')
 
-            is_in_africa = AFRICA_BOUNDS.intersects(geometry, 100).getInfo()
+            is_in_africa = self.africa_bounds.intersects(geometry, 100).getInfo()
 
             if is_in_africa:
                 soc_stock = converted_africa.select(0).clip(geometry).rename('soc_stock')
@@ -1793,17 +1807,17 @@ def analyze_daily_climate_data(study_roi, start_date, end_date):
 # HELPER FUNCTIONS
 # =============================================================================
 
-def get_admin_boundaries(level, country_code=None, admin1_code=None):
+def get_admin_boundaries(analyzer, level, country_code=None, admin1_code=None):
     try:
         if level == 0:
-            return ee.FeatureCollection("FAO/GAUL/2015/level0")
+            return analyzer.fao_gaul
         elif level == 1:
-            admin1 = ee.FeatureCollection("FAO/GAUL/2015/level1")
+            admin1 = analyzer.fao_gaul_admin1
             if country_code:
                 return admin1.filter(ee.Filter.eq('ADM0_CODE', country_code))
             return admin1
         elif level == 2:
-            admin2 = ee.FeatureCollection("FAO/GAUL/2015/level2")
+            admin2 = analyzer.fao_gaul_admin2
             if admin1_code:
                 return admin2.filter(ee.Filter.eq('ADM1_CODE', admin1_code))
             elif country_code:
@@ -1885,6 +1899,8 @@ def main():
         st.session_state.soil_results = None
     if 'climate_soil_results' not in st.session_state:
         st.session_state.climate_soil_results = None
+    if 'enhanced_analyzer' not in st.session_state:
+        st.session_state.enhanced_analyzer = None
 
     # Initialize Earth Engine
     if not st.session_state.ee_initialized:
@@ -1892,6 +1908,12 @@ def main():
             st.session_state.ee_initialized = auto_initialize_earth_engine()
             if st.session_state.ee_initialized:
                 st.success("✅ Earth Engine initialized successfully!")
+                # Create and initialize the analyzer
+                st.session_state.enhanced_analyzer = EnhancedClimateSoilAnalyzer()
+                if st.session_state.enhanced_analyzer.initialize_ee_objects():
+                    st.success("✅ Earth Engine objects initialized!")
+                else:
+                    st.error("❌ Failed to initialize Earth Engine objects")
             else:
                 st.error("❌ Earth Engine initialization failed")
 
@@ -1993,9 +2015,9 @@ def main():
             </div>
             """, unsafe_allow_html=True)
             
-            if st.session_state.ee_initialized:
+            if st.session_state.ee_initialized and st.session_state.enhanced_analyzer:
                 try:
-                    countries_fc = get_admin_boundaries(0)
+                    countries_fc = get_admin_boundaries(st.session_state.enhanced_analyzer, 0)
                     if countries_fc:
                         country_names = get_boundary_names(countries_fc, 0)
                         if country_names:
@@ -2009,7 +2031,7 @@ def main():
                             
                             if selected_country and selected_country != "Select a country":
                                 country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
-                                admin1_fc = get_admin_boundaries(1, country_feature.get('ADM0_CODE').getInfo())
+                                admin1_fc = get_admin_boundaries(st.session_state.enhanced_analyzer, 1, country_feature.get('ADM0_CODE').getInfo())
                                 
                                 if admin1_fc:
                                     admin1_names = get_boundary_names(admin1_fc, 1)
@@ -2024,7 +2046,7 @@ def main():
                                         
                                         if selected_admin1 and selected_admin1 != "Select state/province":
                                             admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
-                                            admin2_fc = get_admin_boundaries(2, None, admin1_feature.get('ADM1_CODE').getInfo())
+                                            admin2_fc = get_admin_boundaries(st.session_state.enhanced_analyzer, 2, None, admin1_feature.get('ADM1_CODE').getInfo())
                                             
                                             if admin2_fc:
                                                 admin2_names = get_boundary_names(admin2_fc, 2)
@@ -2400,7 +2422,7 @@ def main():
                     with col_next:
                         if st.button("🚀 Run Climate & Soil Analysis", type="primary", use_container_width=True):
                             with st.spinner("Running Comprehensive Climate & Soil Analysis..."):
-                                analyzer = EnhancedClimateSoilAnalyzer()
+                                analyzer = st.session_state.enhanced_analyzer
                                 
                                 # Extract country, region, municipality from selected area name
                                 area_parts = st.session_state.selected_area_name.split(',')
@@ -2543,7 +2565,7 @@ def main():
                 st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Step 5: Climate & Soil Analysis Results</h3></div>', unsafe_allow_html=True)
                 
                 if st.session_state.climate_soil_results:
-                    analyzer = EnhancedClimateSoilAnalyzer()
+                    analyzer = st.session_state.enhanced_analyzer
                     
                     # Check analysis type
                     analysis_type_result = st.session_state.climate_soil_results.get('analysis_type', 'basic')
