@@ -2692,489 +2692,292 @@ def main():
                   width: 100%; 
                   border-radius: 8px;
                 }}
-                
-                /* Single Layer Button with Dropdown */
-                .layer-container {{
+                .map-overlay {{
                   position: absolute;
-                  top: 10px;
-                  right: 10px;
-                  z-index: 1000;
-                }}
-                
-                .layer-main-btn {{
-                  background: rgba(10, 10, 10, 0.95);
-                  color: #ffffff;
-                  border: 2px solid #222222;
-                  border-radius: 6px;
-                  padding: 10px 15px;
-                  font-family: 'Inter', sans-serif;
-                  font-size: 12px;
-                  font-weight: 500;
-                  cursor: pointer;
-                  transition: all 0.2s ease;
-                  display: flex;
-                  align-items: center;
-                  gap: 8px;
-                  min-width: 140px;
-                }}
-                
-                .layer-main-btn:hover {{
-                  background: rgba(17, 17, 17, 0.95);
-                  border-color: #00ff88;
-                }}
-                
-                .layer-main-btn.active {{
-                  background: #00ff88;
-                  color: #000000;
-                  border-color: #00ff88;
-                  font-weight: bold;
-                }}
-                
-                .layer-dropdown {{
-                  display: none;
-                  position: absolute;
-                  top: 100%;
-                  right: 0;
-                  background: rgba(10, 10, 10, 0.95);
-                  border: 2px solid #222222;
-                  border-radius: 6px;
-                  margin-top: 5px;
-                  min-width: 140px;
-                  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
-                }}
-                
-                .layer-dropdown.show {{
-                  display: block;
-                }}
-                
-                .layer-option {{
-                  background: transparent;
-                  color: #ffffff;
-                  border: none;
-                  padding: 10px 15px;
-                  font-family: 'Inter', sans-serif;
-                  font-size: 12px;
-                  cursor: pointer;
-                  text-align: left;
-                  width: 100%;
-                  transition: all 0.2s ease;
-                  display: flex;
-                  align-items: center;
-                  gap: 8px;
-                }}
-                
-                .layer-option:hover {{
-                  background: rgba(17, 17, 17, 0.95);
-                  color: #00ff88;
-                }}
-                
-                .layer-option.active {{
-                  background: #00ff88;
-                  color: #000000;
-                  font-weight: bold;
-                }}
-                
-                /* Map Controls Container */
-                .map-controls {{
-                  position: absolute;
-                  bottom: 10px;
-                  right: 10px;
-                  display: flex;
-                  gap: 5px;
-                  z-index: 1000;
-                }}
-                
-                .control-btn {{
-                  background: rgba(10, 10, 10, 0.95);
-                  color: #ffffff;
-                  border: 2px solid #222222;
-                  border-radius: 6px;
-                  padding: 8px 12px;
-                  font-family: 'Inter', sans-serif;
-                  font-size: 11px;
-                  cursor: pointer;
-                  transition: all 0.2s ease;
-                  display: flex;
-                  align-items: center;
-                  gap: 5px;
-                }}
-                
-                .control-btn:hover {{
-                  background: rgba(17, 17, 17, 0.95);
-                  border-color: #00ff88;
-                }}
-                
-                .coordinates-display {{
-                  position: absolute;
-                  bottom: 10px;
-                  left: 10px;
-                  background: rgba(10, 10, 10, 0.95);
+                  top: 20px;
+                  right: 20px;
+                  background: rgba(10, 10, 10, 0.9);
                   color: white;
-                  padding: 8px 12px;
-                  border-radius: 6px;
-                  border: 2px solid #222222;
-                  font-family: 'Inter', monospace;
-                  font-size: 11px;
+                  padding: 15px;
+                  border-radius: 8px;
+                  border: 1px solid #222222;
+                  max-width: 250px;
                   z-index: 1000;
-                  display: flex;
-                  gap: 15px;
+                  font-family: 'Inter', sans-serif;
                 }}
-                
-                .coordinate-item {{
-                  display: flex;
-                  flex-direction: column;
-                }}
-                
-                .coordinate-label {{
-                  color: #999999;
-                  font-size: 9px;
-                  margin-bottom: 2px;
-                }}
-                
-                .coordinate-value {{
+                .overlay-title {{
                   color: #00ff88;
                   font-weight: 600;
-                  font-size: 11px;
+                  margin-bottom: 10px;
+                  font-size: 14px;
                 }}
-                
-                .selected-area-badge {{
+                .overlay-text {{
+                  color: #cccccc;
+                  font-size: 12px;
+                  line-height: 1.4;
+                }}
+                .coordinates-display {{
                   position: absolute;
-                  top: 10px;
-                  left: 10px;
-                  background: rgba(10, 10, 10, 0.95);
+                  bottom: 20px;
+                  left: 20px;
+                  background: rgba(10, 10, 10, 0.9);
                   color: white;
                   padding: 10px 15px;
                   border-radius: 6px;
-                  border: 2px solid #00ff88;
-                  font-family: 'Inter', sans-serif;
+                  border: 1px solid #222222;
+                  font-family: monospace;
+                  font-size: 12px;
                   z-index: 1000;
-                  max-width: 250px;
-                  box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
                 }}
-                
+                .selected-area {{
+                  position: absolute;
+                  top: 20px;
+                  left: 20px;
+                  background: rgba(10, 10, 10, 0.9);
+                  color: white;
+                  padding: 15px;
+                  border-radius: 8px;
+                  border: 1px solid #222222;
+                  max-width: 300px;
+                  z-index: 1000;
+                  font-family: 'Inter', sans-serif;
+                }}
                 .area-title {{
                   color: #00ff88;
                   font-weight: 600;
-                  font-size: 12px;
-                  margin-bottom: 5px;
-                  display: flex;
-                  align-items: center;
-                  gap: 5px;
+                  margin-bottom: 10px;
+                  font-size: 14px;
                 }}
-                
                 .area-details {{
                   color: #cccccc;
-                  font-size: 10px;
-                  line-height: 1.3;
+                  font-size: 12px;
+                  line-height: 1.4;
                 }}
-                
-                .area-status {{
-                  display: inline-block;
+                .layer-switcher {{
+                  position: absolute;
+                  top: 20px;
+                  right: 20px;
+                  background: rgba(10, 10, 10, 0.9);
+                  border: 1px solid #222222;
+                  border-radius: 8px;
+                  overflow: hidden;
+                  z-index: 1000;
+                }}
+                .layer-button {{
+                  display: block;
+                  width: 120px;
+                  padding: 10px;
+                  background: #0a0a0a;
+                  color: #ffffff;
+                  border: none;
+                  border-bottom: 1px solid #222222;
+                  cursor: pointer;
+                  font-size: 12px;
+                  text-align: left;
+                  transition: all 0.2s;
+                }}
+                .layer-button:hover {{
+                  background: #111111;
+                }}
+                .layer-button.active {{
                   background: #00ff88;
                   color: #000000;
-                  padding: 2px 8px;
-                  border-radius: 10px;
-                  font-size: 9px;
                   font-weight: bold;
-                  margin-top: 5px;
                 }}
-                
-                /* Map controls styling */
+                .layer-button:last-child {{
+                  border-bottom: none;
+                }}
                 .mapboxgl-ctrl-group {{
-                  background: rgba(10, 10, 10, 0.9) !important;
-                  border: 2px solid #222222 !important;
-                  border-radius: 6px !important;
-                }}
-                
-                .mapboxgl-ctrl button {{
-                  background-color: transparent !important;
-                  color: #ffffff !important;
-                }}
-                
-                .mapboxgl-ctrl button:hover {{
-                  background-color: rgba(17, 17, 17, 0.9) !important;
-                }}
-                
-                .mapboxgl-popup {{
-                  font-family: 'Inter', sans-serif;
-                }}
-                
-                .mapboxgl-popup-content {{
                   background: #0a0a0a !important;
+                  border: 1px solid #222222 !important;
+                }}
+                .mapboxgl-ctrl button {{
+                  background-color: #0a0a0a !important;
                   color: #ffffff !important;
-                  border: 2px solid #222222 !important;
-                  border-radius: 6px !important;
-                  padding: 15px !important;
                 }}
-                
-                .mapboxgl-popup-close-button {{
-                  color: #ffffff !important;
-                  font-size: 16px !important;
-                  padding: 5px 8px !important;
-                }}
-                
-                .mapboxgl-popup-close-button:hover {{
-                  color: #00ff88 !important;
-                  background-color: transparent !important;
-                }}
-                
-                .mapboxgl-popup-tip {{
-                  border-top-color: #222222 !important;
-                  border-bottom-color: #222222 !important;
+                .mapboxgl-ctrl button:hover {{
+                  background-color: #111111 !important;
                 }}
               </style>
             </head>
             <body>
               <div id="map"></div>
               
-              <!-- Single Layer Button with Dropdown -->
-              <div class="layer-container">
-                <button class="layer-main-btn" id="layerMainBtn">
-                  <span>🗺️ Map Layers</span>
-                  <span style="margin-left: auto;">▼</span>
-                </button>
-                <div class="layer-dropdown" id="layerDropdown">
-                  <button class="layer-option active" data-style="mapbox://styles/mapbox/satellite-streets-v12">
-                    🛰️ Satellite View
-                  </button>
-                  <button class="layer-option" data-style="mapbox://styles/mapbox/outdoors-v12">
-                    🗺️ Outdoors View
-                  </button>
-                  <button class="layer-option" data-style="mapbox://styles/mapbox/light-v11">
-                    ☀️ Light View
-                  </button>
-                  <button class="layer-option" data-style="mapbox://styles/mapbox/dark-v11">
-                    🌙 Dark View
-                  </button>
-                  <button class="layer-option" data-style="mapbox://styles/mapbox/streets-v12">
-                    🏙️ Streets View
-                  </button>
+              <div class="map-overlay">
+                <div class="overlay-title">🌍 KHISBA GIS</div>
+                <div class="overlay-text">
+                  • Drag to rotate the globe<br>
+                  • Scroll to zoom in/out<br>
+                  • Right-click to pan<br>
+                  • Selected area highlighted in green
                 </div>
               </div>
               
-              <!-- Coordinates Display -->
+              <div class="layer-switcher">
+                <button class="layer-button" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite Streets</button>
+                <button class="layer-button" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
+                <button class="layer-button active" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
+                <button class="layer-button" data-style="mapbox://styles/mapbox/light-v11">Light</button>
+                <button class="layer-button" data-style="mapbox://styles/mapbox/dark-v11">Dark</button>
+              </div>
+              
               <div class="coordinates-display">
-                <div class="coordinate-item">
-                  <div class="coordinate-label">LATITUDE</div>
-                  <div class="coordinate-value" id="lat-display">0.00°</div>
-                </div>
-                <div class="coordinate-item">
-                  <div class="coordinate-label">LONGITUDE</div>
-                  <div class="coordinate-value" id="lon-display">0.00°</div>
-                </div>
+                <div>Lat: <span id="lat-display">0.00°</span></div>
+                <div>Lon: <span id="lon-display">0.00°</span></div>
               </div>
               
-              <!-- Selected Area Badge -->
               {f'''
-              <div class="selected-area-badge">
-                <div class="area-title">
-                  <span style="font-size: 14px;">📍</span>
-                  SELECTED AREA
-                </div>
+              <div class="selected-area">
+                <div class="area-title">📍 Selected Area</div>
                 <div class="area-details">
                   <strong>{st.session_state.selected_area_name if hasattr(st.session_state, 'selected_area_name') else 'None'}</strong><br>
                   Level: {st.session_state.selected_area_level if hasattr(st.session_state, 'selected_area_level') else 'None'}<br>
-                  Coordinates: {map_center[1]:.4f}°, {map_center[0]:.4f}°
+                  Coordinates: {map_center[1]:.4f}°, {map_center[0]:.4f}°<br>
+                  Status: <span style="color: #00ff88;">Ready for Analysis</span>
                 </div>
-                <div class="area-status">READY</div>
               </div>
               ''' if st.session_state.selected_area_name else ''}
-              
-              <!-- Map Controls -->
-              <div class="map-controls">
-                <button class="control-btn" onclick="resetView()">
-                  <span style="font-size: 12px;">↺</span> Reset
-                </button>
-                <button class="control-btn" onclick="toggle3D()">
-                  <span style="font-size: 12px;">📐</span> 3D
-                </button>
-                <button class="control-btn" onclick="toggleFullscreen()">
-                  <span style="font-size: 12px;">⛶</span> Full
-                </button>
-              </div>
               
               <script>
                 mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
 
-                // Initialize map
                 const map = new mapboxgl.Map({{
                   container: 'map',
-                  style: 'mapbox://styles/mapbox/satellite-streets-v12',
+                  style: 'mapbox://styles/mapbox/outdoors-v12',
                   center: {map_center},
                   zoom: {map_zoom},
                   pitch: 45,
                   bearing: 0
                 }});
 
-                // Add default controls
-                map.addControl(new mapboxgl.NavigationControl({{
-                  showCompass: true,
-                  showZoom: true,
-                  visualizePitch: true
-                }}), 'top-right');
-                
+                map.addControl(new mapboxgl.NavigationControl());
                 map.addControl(new mapboxgl.ScaleControl({{
-                  unit: 'metric',
-                  maxWidth: 100
+                  unit: 'metric'
                 }}));
+                map.addControl(new mapboxgl.FullscreenControl());
 
-                // Layer dropdown functionality
-                const layerMainBtn = document.getElementById('layerMainBtn');
-                const layerDropdown = document.getElementById('layerDropdown');
-                const layerOptions = document.querySelectorAll('.layer-option');
-                
-                // Toggle dropdown visibility
-                layerMainBtn.addEventListener('click', (e) => {{
-                  e.stopPropagation();
-                  layerDropdown.classList.toggle('show');
-                }});
-                
-                // Close dropdown when clicking outside
-                document.addEventListener('click', (e) => {{
-                  if (!layerContainer.contains(e.target)) {{
-                    layerDropdown.classList.remove('show');
-                  }}
-                }});
-                
-                // Handle layer selection
-                layerOptions.forEach(option => {{
-                  option.addEventListener('click', (e) => {{
-                    e.stopPropagation();
+                const layerButtons = document.querySelectorAll('.layer-button');
+                layerButtons.forEach(button => {{
+                  button.addEventListener('click', () => {{
+                    layerButtons.forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                    map.setStyle(button.dataset.style);
                     
-                    // Update active state
-                    layerOptions.forEach(opt => opt.classList.remove('active'));
-                    option.classList.add('active');
-                    
-                    // Update main button text
-                    const layerText = option.textContent.trim();
-                    layerMainBtn.innerHTML = `<span>${{layerText}}</span><span style="margin-left: auto;">▼</span>`;
-                    
-                    // Change map style
-                    map.setStyle(option.dataset.style);
-                    
-                    // Close dropdown
-                    layerDropdown.classList.remove('show');
-                    
-                    // Re-add selected area after style change
                     setTimeout(() => {{
                       {f'''
                       if ({bounds_data}) {{
-                        addSelectedArea();
+                        const bounds = {bounds_data};
+                        
+                        if (map.getSource('selected-area')) {{
+                          map.removeLayer('selected-area-fill');
+                          map.removeLayer('selected-area-border');
+                          map.removeSource('selected-area');
+                        }}
+                        
+                        map.addSource('selected-area', {{
+                          'type': 'geojson',
+                          'data': {{
+                            'type': 'Feature',
+                            'geometry': {{
+                              'type': 'Polygon',
+                              'coordinates': [[
+                                [bounds[0][1], bounds[0][0]],
+                                [bounds[1][1], bounds[0][0]],
+                                [bounds[1][1], bounds[1][0]],
+                                [bounds[0][1], bounds[1][0]],
+                                [bounds[0][1], bounds[0][0]]
+                              ]]
+                            }}
+                          }}
+                        }});
+
+                        map.addLayer({{
+                          'id': 'selected-area-fill',
+                          'type': 'fill',
+                          'source': 'selected-area',
+                          'layout': {{}},
+                          'paint': {{
+                            'fill-color': '#00ff88',
+                            'fill-opacity': 0.2
+                          }}
+                        }});
+
+                        map.addLayer({{
+                          'id': 'selected-area-border',
+                          'type': 'line',
+                          'source': 'selected-area',
+                          'layout': {{}},
+                          'paint': {{
+                            'line-color': '#00ff88',
+                            'line-width': 3,
+                            'line-opacity': 0.8
+                          }}
+                        }});
                       }}
                       ''' if bounds_data else ''}
                     }}, 500);
                   }});
                 }});
 
-                // Function to add selected area
-                function addSelectedArea() {{
-                  const bounds = {bounds_data};
-                  
-                  if (map.getSource('selected-area')) {{
-                    map.removeLayer('selected-area-fill');
-                    map.removeLayer('selected-area-border');
-                    map.removeSource('selected-area');
-                  }}
-                  
-                  map.addSource('selected-area', {{
-                    'type': 'geojson',
-                    'data': {{
-                      'type': 'Feature',
-                      'geometry': {{
-                        'type': 'Polygon',
-                        'coordinates': [[
-                          [bounds[0][1], bounds[0][0]],
-                          [bounds[1][1], bounds[0][0]],
-                          [bounds[1][1], bounds[1][0]],
-                          [bounds[0][1], bounds[1][0]],
-                          [bounds[0][1], bounds[0][0]]
-                        ]]
-                      }}
-                    }}
-                  }});
-
-                  map.addLayer({{
-                    'id': 'selected-area-fill',
-                    'type': 'fill',
-                    'source': 'selected-area',
-                    'layout': {{}},
-                    'paint': {{
-                      'fill-color': '#00ff88',
-                      'fill-opacity': 0.15,
-                      'fill-outline-color': '#00ff88'
-                    }}
-                  }});
-
-                  map.addLayer({{
-                    'id': 'selected-area-border',
-                    'type': 'line',
-                    'source': 'selected-area',
-                    'layout': {{}},
-                    'paint': {{
-                      'line-color': '#00ff88',
-                      'line-width': 3,
-                      'line-opacity': 0.8,
-                      'line-dasharray': [2, 1]
-                    }}
-                  }});
-                }}
-
-                // Control functions
-                function resetView() {{
-                  map.flyTo({{
-                    center: {map_center},
-                    zoom: {map_zoom},
-                    pitch: 45,
-                    bearing: 0,
-                    duration: 1500,
-                    essential: true
-                  }});
-                }}
-
-                function toggle3D() {{
-                  const currentPitch = map.getPitch();
-                  map.flyTo({{
-                    pitch: currentPitch === 0 ? 60 : 0,
-                    duration: 1000
-                  }});
-                }}
-
-                function toggleFullscreen() {{
-                  const container = document.getElementById('map');
-                  if (!document.fullscreenElement) {{
-                    container.requestFullscreen().catch(err => {{
-                      console.log('Fullscreen failed:', err);
-                    }});
-                  }} else {{
-                    document.exitFullscreen();
-                  }}
-                }}
-
-                // Map load event
                 map.on('load', () => {{
-                  // Update coordinates on mouse move
                   map.on('mousemove', (e) => {{
-                    document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(4) + '°';
-                    document.getElementById('lon-display').textContent = e.lngLat.lng.toFixed(4) + '°';
+                    document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(2) + '°';
+                    document.getElementById('lon-display').textContent = e.lngLat.lng.toFixed(2) + '°';
                   }});
 
-                  // Add selected area on load
                   {f'''
                   if ({bounds_data}) {{
-                    addSelectedArea();
+                    const bounds = {bounds_data};
                     
-                    // Fly to selected area
+                    map.addSource('selected-area', {{
+                      'type': 'geojson',
+                      'data': {{
+                        'type': 'Feature',
+                        'geometry': {{
+                          'type': 'Polygon',
+                          'coordinates': [[
+                            [bounds[0][1], bounds[0][0]],
+                            [bounds[1][1], bounds[0][0]],
+                            [bounds[1][1], bounds[1][0]],
+                            [bounds[0][1], bounds[1][0]],
+                            [bounds[0][1], bounds[0][0]]
+                          ]]
+                        }}
+                      }}
+                    }});
+
+                    map.addLayer({{
+                      'id': 'selected-area-fill',
+                      'type': 'fill',
+                      'source': 'selected-area',
+                      'layout': {{}},
+                      'paint': {{
+                        'fill-color': '#00ff88',
+                        'fill-opacity': 0.2
+                      }}
+                    }});
+
+                    map.addLayer({{
+                      'id': 'selected-area-border',
+                      'type': 'line',
+                      'source': 'selected-area',
+                      'layout': {{}},
+                      'paint': {{
+                        'line-color': '#00ff88',
+                        'line-width': 3,
+                        'line-opacity': 0.8
+                      }}
+                    }});
+
                     map.flyTo({{
                       center: {map_center},
                       zoom: {map_zoom},
-                      pitch: 45,
                       duration: 2000,
                       essential: true
                     }});
                   }}
                   ''' if bounds_data else ''}
 
-                  // Add city markers
                   const cities = [
                     {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital' }},
                     {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical capital' }},
@@ -3184,97 +2987,31 @@ def main():
                   ];
 
                   cities.forEach(city => {{
-                    // Create custom marker
                     const el = document.createElement('div');
-                    el.className = 'city-marker';
-                    el.innerHTML = `
-                      <div style="
-                        width: 20px;
-                        height: 20px;
-                        background: linear-gradient(135deg, #ffaa00, #ff5500);
-                        border-radius: 50%;
-                        border: 2px solid #ffffff;
-                        box-shadow: 0 0 10px rgba(255, 170, 0, 0.7);
-                        cursor: pointer;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 8px;
-                        color: #000000;
-                        font-weight: bold;
-                      ">
-                        ☆
-                      </div>
-                    `;
+                    el.className = 'marker';
+                    el.style.backgroundColor = '#ffaa00';
+                    el.style.width = '15px';
+                    el.style.height = '15px';
+                    el.style.borderRadius = '50%';
+                    el.style.border = '2px solid #ffffff';
+                    el.style.boxShadow = '0 0 10px rgba(255, 170, 0, 0.5)';
+                    el.style.cursor = 'pointer';
 
-                    // Create popup
                     const popup = new mapboxgl.Popup({{
                       offset: 25,
                       closeButton: true,
-                      closeOnClick: true,
-                      className: 'custom-popup'
-                    }}).setHTML(`
-                      <div style="
-                        font-family: 'Inter', sans-serif;
-                        min-width: 200px;
-                      ">
-                        <div style="
-                          display: flex;
-                          align-items: center;
-                          gap: 10px;
-                          margin-bottom: 10px;
-                        ">
-                          <div style="
-                            width: 30px;
-                            height: 30px;
-                            background: linear-gradient(135deg, #ffaa00, #ff5500);
-                            border-radius: 50%;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            font-size: 14px;
-                            color: #000000;
-                          ">
-                            ☆
-                          </div>
-                          <div>
-                            <h3 style="
-                              margin: 0;
-                              color: #00ff88;
-                              font-size: 16px;
-                            ">${{city.name}}</h3>
-                            <p style="
-                              margin: 2px 0 0 0;
-                              color: #999999;
-                              font-size: 12px;
-                            ">${{city.country}}</p>
-                          </div>
-                        </div>
-                        <p style="
-                          margin: 10px 0 0 0;
-                          color: #cccccc;
-                          font-size: 12px;
-                          line-height: 1.4;
-                        ">${{city.info}}</p>
-                      </div>
-                    `);
+                      closeOnClick: false
+                    }}).setHTML(
+                      `<h3>${{city.name}}</h3>
+                       <p><strong>Country:</strong> ${{city.country}}</p>
+                       <p>${{city.info}}</p>`
+                    );
 
-                    // Add marker to map
                     new mapboxgl.Marker(el)
                       .setLngLat(city.coordinates)
                       .setPopup(popup)
                       .addTo(map);
                   }});
-                }});
-
-                // Fullscreen change event
-                document.addEventListener('fullscreenchange', () => {{
-                  const fullscreenBtn = document.querySelector('.control-btn:nth-child(3)');
-                  if (document.fullscreenElement) {{
-                    fullscreenBtn.innerHTML = '<span style="font-size: 12px;">⛶</span> Exit';
-                  }} else {{
-                    fullscreenBtn.innerHTML = '<span style="font-size: 12px;">⛶</span> Full';
-                  }}
                 }});
               </script>
             </body>
@@ -3466,7 +3203,7 @@ def main():
                                     name=index_name,
                                     line=dict(color='#00ff88', width=3),
                                     marker=dict(size=8, color='#ffffff', line=dict(width=1, color='#00ff88'))
-                                }))
+                                ))
                                 
                                 # Add trend line if enough data points
                                 if len(data['values']) > 1:
@@ -3610,4 +3347,4 @@ def main():
     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
-    main()
+    main() 
