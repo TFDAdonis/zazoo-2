@@ -824,10 +824,10 @@ class EnhancedClimateSoilAnalyzer:
                     ndvi = img.normalizedDifference(['B8', 'B4']).rename('NDVI')
 
                     ndomi = img.expression(
-                        '(B12 - B11) / (B12 + B11 + 0.0001)', {
+                        '(B12 - B11) / (B12 + B11 + 0.0001)', {{
                             'B12': img.select('B12'),
                             'B11': img.select('B11')
-                        }).rename('NDOMI')
+                        }}).rename('NDOMI')
 
                     bare_soil_mask = ndvi.lt(0.3)
                     masked_ndomi = ndomi.updateMask(bare_soil_mask)
@@ -859,14 +859,14 @@ class EnhancedClimateSoilAnalyzer:
                         mean_ndomi = np.mean(ndomi_values)
                         std_ndomi = np.std(ndomi_values)
 
-                        indices_data = {
-                            'NDOMI': {
+                        indices_data = {{
+                            'NDOMI': {{
                                 'mean': mean_ndomi,
                                 'std': std_ndomi,
                                 'source': DATA_SOURCES['sentinel2']['name'],
                                 'citation': DATA_SOURCES['sentinel2']['citation']
-                            }
-                        }
+                            }}
+                        }}
                         return indices_data
 
             except Exception as e:
@@ -942,11 +942,11 @@ class EnhancedClimateSoilAnalyzer:
             if indices_data and 'NDOMI' in indices_data:
                 ndomi_value = indices_data['NDOMI']['mean']
                 som_from_indices, indices_uncertainty = self.estimate_som_from_single_index(
-                    ndomi_value, {'sand': sand_val, 'clay': clay_val})
+                    ndomi_value, {{'sand': sand_val, 'clay': clay_val}})
 
             final_som_estimate = som_from_indices if som_from_indices is not None else som_percent
 
-            soil_data = {
+            soil_data = {{
                 'region_name': region_name,
                 'texture_class': texture_val,
                 'texture_name': SOIL_TEXTURE_CLASSES.get(texture_val, 'Unknown'),
@@ -965,12 +965,12 @@ class EnhancedClimateSoilAnalyzer:
                 'som_from_indices': som_from_indices,
                 'indices_uncertainty': indices_uncertainty,
                 'final_som_estimate': final_som_estimate,
-                'data_sources': {
+                'data_sources': {{
                     'soil_organic_carbon': soil_source,
                     'soil_texture': DATA_SOURCES['soil_texture'],
                     'sentinel2_indices': DATA_SOURCES['sentinel2'] if indices_data else None
-                }
-            }
+                }}
+            }}
 
             return soil_data
 
@@ -989,7 +989,7 @@ class EnhancedClimateSoilAnalyzer:
 
     def estimate_texture_components(self, texture_class):
         """Estimate soil texture components"""
-        texture_compositions = {
+        texture_compositions = {{
             1: (60, 20, 20),   # Clay
             2: (55, 10, 35),   # Sandy clay
             3: (40, 40, 20),   # Silty clay
@@ -1002,7 +1002,7 @@ class EnhancedClimateSoilAnalyzer:
             10: (5, 70, 25),   # Silt
             11: (10, 10, 80),  # Loamy sand
             12: (5, 5, 90)     # Sand
-        }
+        }}
         return texture_compositions.get(texture_class, (20, 40, 40))
 
     def estimate_som_from_single_index(self, ndomi_value, texture_data):
@@ -1037,10 +1037,10 @@ class EnhancedClimateSoilAnalyzer:
         soil_data = self.get_reference_soil_data_improved(geometry, location_name)
 
         if soil_data:
-            return {
+            return {{
                 'soil_data': soil_data,
                 'location_name': location_name
-            }
+            }}
         else:
             return None
 
@@ -1058,7 +1058,7 @@ class EnhancedClimateSoilAnalyzer:
         with col1:
             st.metric("🏺 Soil Texture", soil_data['texture_name'])
         with col2:
-            st.metric("🧪 Soil Organic Matter", f"{soil_data['final_som_estimate']:.2f}%")
+            st.metric("🧪 Soil Organic Matter", f"{{soil_data['final_som_estimate']:.2f}}%")
         with col3:
             st.metric("📊 Soil Quality", 
                      "High" if soil_data['final_som_estimate'] > 3.0 else 
@@ -1074,7 +1074,7 @@ class EnhancedClimateSoilAnalyzer:
         axes[0].set_ylabel('Percentage (%)')
         axes[0].set_ylim(0, 100)
         for i, v in enumerate(texture_values):
-            axes[0].text(i, v + 1, f'{v}%', ha='center', va='bottom', fontweight='bold')
+            axes[0].text(i, v + 1, f'{{v}}%', ha='center', va='bottom', fontweight='bold')
 
         carbon_data = [soil_data['soc_stock'], soil_data['soil_organic_matter']]
         carbon_labels = ['SOC Stock\n(t/ha)', 'SOM\n(Reference)']
@@ -1086,19 +1086,19 @@ class EnhancedClimateSoilAnalyzer:
         axes[1].bar(carbon_labels, carbon_data, color=carbon_colors, alpha=0.7)
         axes[1].set_title('Soil Organic Matter Comparison')
         for i, v in enumerate(carbon_data):
-            axes[1].text(i, v + max(carbon_data)*0.05, f'{v:.2f}', ha='center', va='bottom')
+            axes[1].text(i, v + max(carbon_data)*0.05, f'{{v:.2f}}', ha='center', va='bottom')
 
         axes[2].axis('off')
         quality_text = f"""
         📈 SOIL QUALITY ASSESSMENT:
 
-        Organic Matter: {'✅ HIGH' if soil_data['final_som_estimate'] > 3.0 else '⚠️ MEDIUM' if soil_data['final_som_estimate'] > 1.5 else '❌ LOW'}
+        Organic Matter: {{'✅ HIGH' if soil_data['final_som_estimate'] > 3.0 else '⚠️ MEDIUM' if soil_data['final_som_estimate'] > 1.5 else '❌ LOW'}}
 
-        Value: {soil_data['final_som_estimate']:.2f}%
+        Value: {{soil_data['final_som_estimate']:.2f}}%
 
-        Texture: {'✅ OPTIMAL' if soil_data['texture_name'] in ['Loam', 'Silt loam', 'Clay loam'] else '⚠️ MODERATE' if soil_data['texture_name'] in ['Sandy loam', 'Silty clay loam'] else '❌ POOR'}
+        Texture: {{'✅ OPTIMAL' if soil_data['texture_name'] in ['Loam', 'Silt loam', 'Clay loam'] else '⚠️ MODERATE' if soil_data['texture_name'] in ['Sandy loam', 'Silty clay loam'] else '❌ POOR'}}
 
-        Class: {soil_data['texture_name']}
+        Class: {{soil_data['texture_name']}}
 
         💡 RECOMMENDATIONS:
         """
@@ -1549,11 +1549,11 @@ class EnhancedClimateSoilAnalyzer:
             soil_results = self.run_comprehensive_soil_analysis(country, region, municipality)
 
             if soil_results:
-                return {
+                return {{
                     'climate_data': climate_results,
                     'soil_data': soil_results,
                     'location_name': location_name
-                }
+                }}
             else:
                 return None
                 
@@ -1576,19 +1576,19 @@ def calculate_vegetation_index(index_name, image):
     elif index_name == 'EVI':
         if 'B8' in image.bandNames().getInfo() and 'B4' in image.bandNames().getInfo() and 'B2' in image.bandNames().getInfo():
             return image.expression(
-                '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))', {
+                '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))', {{
                     'NIR': image.select('B8'),
                     'RED': image.select('B4'),
                     'BLUE': image.select('B2')
-                }).rename('EVI')
+                }}).rename('EVI')
     
     elif index_name == 'SAVI':
         if 'B8' in image.bandNames().getInfo() and 'B4' in image.bandNames().getInfo():
             return image.expression(
-                '1.5 * ((NIR - RED) / (NIR + RED + 0.5))', {
+                '1.5 * ((NIR - RED) / (NIR + RED + 0.5))', {{
                     'NIR': image.select('B8'),
                     'RED': image.select('B4')
-                }).rename('SAVI')
+                }}).rename('SAVI')
     
     elif index_name == 'NDWI':
         if 'B8' in image.bandNames().getInfo() and 'B11' in image.bandNames().getInfo():
@@ -1597,10 +1597,10 @@ def calculate_vegetation_index(index_name, image):
     elif index_name == 'MSAVI':
         if 'B8' in image.bandNames().getInfo() and 'B4' in image.bandNames().getInfo():
             return image.expression(
-                '(2 * NIR + 1 - sqrt((2 * NIR + 1)**2 - 8 * (NIR - RED))) / 2', {
+                '(2 * NIR + 1 - sqrt((2 * NIR + 1)**2 - 8 * (NIR - RED))) / 2', {{
                     'NIR': image.select('B8'),
                     'RED': image.select('B4')
-                }).rename('MSAVI')
+                }}).rename('MSAVI')
     
     elif index_name == 'GNDVI':
         if 'B8' in image.bandNames().getInfo() and 'B3' in image.bandNames().getInfo():
@@ -1612,7 +1612,7 @@ def get_vegetation_indices_timeseries(geometry, start_date, end_date, collection
     """Get vegetation indices time series for the selected area"""
     try:
         # Initialize results dictionary
-        results = {index: {'dates': [], 'values': []} for index in selected_indices}
+        results = {{index: {{'dates': [], 'values': []}} for index in selected_indices}}
         
         # Create date range for sampling
         date_range = pd.date_range(start=start_date, end=end_date, freq='MS')  # Monthly sampling
@@ -1694,10 +1694,10 @@ def get_vegetation_indices_timeseries(geometry, start_date, end_date, collection
             base_value = 0.5
             seasonal_variation = 0.3
             
-            results[index_name] = {
+            results[index_name] = {{
                 'dates': [date.strftime('%Y-%m-%d') for date in dates],
                 'values': []
-            }
+            }}
             
             for i, date in enumerate(dates):
                 seasonal_factor = np.sin(2 * np.pi * i / len(dates))
@@ -1762,11 +1762,11 @@ def get_daily_climate_data_corrected(start_date, end_date, geometry, scale=50000
             None
         )
 
-        return ee.Feature(None, {
+        return ee.Feature(None, {{
             'date': date_str,
             'temperature': temp_celsius,
             'precipitation': precipitation_val
-        })
+        }})
 
     daily_data = ee.FeatureCollection(days.map(get_daily_data))
     return daily_data
@@ -1782,11 +1782,11 @@ def analyze_daily_climate_data(study_roi, start_date, end_date):
             temp_val = props['temperature'] if props['temperature'] is not None else np.nan
             precip_val = props['precipitation'] if props['precipitation'] is not None else np.nan
 
-            data.append({
+            data.append({{
                 'date': props['date'],
                 'temperature': temp_val,
                 'precipitation': precip_val
-            })
+            }})
 
         df = pd.DataFrame(data)
         df['date'] = pd.to_datetime(df['date'])
@@ -1860,14 +1860,14 @@ def get_geometry_coordinates(geometry):
         min_lon = min(lons)
         max_lon = max(lons)
         
-        return {
+        return {{
             'center': [center_lon, center_lat],
             'bounds': [[min_lat, min_lon], [max_lat, max_lon]],
             'zoom': 6
-        }
+        }}
     except Exception as e:
         st.error(f"Error getting coordinates: {str(e)}")
-        return {'center': [0, 20], 'bounds': None, 'zoom': 2}
+        return {{'center': [0, 20], 'bounds': None, 'zoom': 2}}
 
 # =============================================================================
 # STREAMLIT APP MAIN FUNCTION
@@ -1937,19 +1937,19 @@ def main():
     # Define steps based on analysis type
     if analysis_type == "Vegetation & Climate":
         STEPS = [
-            {"number": 1, "label": "Select Area", "icon": "📍"},
-            {"number": 2, "label": "Set Parameters", "icon": "⚙️"},
-            {"number": 3, "label": "View Map", "icon": "🗺️"},
-            {"number": 4, "label": "Run Analysis", "icon": "🚀"},
-            {"number": 5, "label": "View Results", "icon": "📊"}
+            {{"number": 1, "label": "Select Area", "icon": "📍"}},
+            {{"number": 2, "label": "Set Parameters", "icon": "⚙️"}},
+            {{"number": 3, "label": "View Map", "icon": "🗺️"}},
+            {{"number": 4, "label": "Run Analysis", "icon": "🚀"}},
+            {{"number": 5, "label": "View Results", "icon": "📊"}}
         ]
     else:  # Climate & Soil
         STEPS = [
-            {"number": 1, "label": "Select Area", "icon": "📍"},
-            {"number": 2, "label": "Climate Settings", "icon": "🌤️"},
-            {"number": 3, "label": "Soil Settings", "icon": "🌱"},
-            {"number": 4, "label": "Run Analysis", "icon": "🚀"},
-            {"number": 5, "label": "View Results", "icon": "📊"}
+            {{"number": 1, "label": "Select Area", "icon": "📍"}},
+            {{"number": 2, "label": "Climate Settings", "icon": "🌤️"}},
+            {{"number": 3, "label": "Soil Settings", "icon": "🌱"}},
+            {{"number": 4, "label": "Run Analysis", "icon": "🚀"}},
+            {{"number": 5, "label": "View Results", "icon": "📊"}}
         ]
 
     # Progress Steps
@@ -1965,11 +1965,11 @@ def main():
         
         st.markdown(f"""
         <div class="progress-step">
-            <div class="step-circle {step_class}">
-                {step["icon"] if step_class == "completed" else step["number"]}
+            <div class="step-circle {{step_class}}">
+                {{step["icon"] if step_class == "completed" else step["number"]}}
             </div>
-            <div class="step-label {step_class}">
-                {step["label"]}
+            <div class="step-label {{step_class}}">
+                {{step["label"]}}
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -1980,16 +1980,16 @@ def main():
     st.markdown(f"""
     <div class="status-container">
         <div class="status-item">
-            <div class="status-dot {'active' if st.session_state.ee_initialized else ''}"></div>
-            <span>Earth Engine: {'Ready' if st.session_state.ee_initialized else 'Loading...'}</span>
+            <div class="status-dot {{'active' if st.session_state.ee_initialized else ''}}"></div>
+            <span>Earth Engine: {{'Ready' if st.session_state.ee_initialized else 'Loading...'}}</span>
         </div>
         <div class="status-item">
-            <div class="status-dot {'active' if st.session_state.selected_area_name else ''}"></div>
-            <span>Area Selected: {'Yes' if st.session_state.selected_area_name else 'No'}</span>
+            <div class="status-dot {{'active' if st.session_state.selected_area_name else ''}}"></div>
+            <span>Area Selected: {{'Yes' if st.session_state.selected_area_name else 'No'}}</span>
         </div>
         <div class="status-item">
-            <div class="status-dot {'active' if st.session_state.analysis_results or st.session_state.soil_results else ''}"></div>
-            <span>Analysis: {'Complete' if st.session_state.analysis_results or st.session_state.soil_results else 'Pending'}</span>
+            <div class="status-dot {{'active' if st.session_state.analysis_results or st.session_state.soil_results else ''}}"></div>
+            <span>Analysis: {{'Complete' if st.session_state.analysis_results or st.session_state.soil_results else 'Pending'}}</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -2081,11 +2081,11 @@ def main():
                 try:
                     if selected_admin2 and selected_admin2 != "Select municipality":
                         geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
-                        area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
+                        area_name = f"{{selected_admin2}}, {{selected_admin1}}, {{selected_country}}"
                         area_level = "Municipality"
                     elif selected_admin1 and selected_admin1 != "Select state/province":
                         geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
-                        area_name = f"{selected_admin1}, {selected_country}"
+                        area_name = f"{{selected_admin1}}, {{selected_country}}"
                         area_level = "State/Province"
                     else:
                         geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
@@ -2114,7 +2114,7 @@ def main():
                 st.markdown('<div class="card-title"><div class="icon">⚙️</div><h3 style="margin: 0;">Step 2: Set Analysis Parameters</h3></div>', unsafe_allow_html=True)
                 
                 if st.session_state.selected_area_name:
-                    st.info(f"**Selected Area:** {st.session_state.selected_area_name}")
+                    st.info(f"**Selected Area:** {{st.session_state.selected_area_name}}")
                     
                     col_a, col_b = st.columns(2)
                     with col_a:
@@ -2163,13 +2163,13 @@ def main():
                     
                     with col_next:
                         if st.button("✅ Save Parameters & Continue", type="primary", use_container_width=True, disabled=not selected_indices):
-                            st.session_state.analysis_parameters = {
+                            st.session_state.analysis_parameters = {{
                                 'start_date': start_date,
                                 'end_date': end_date,
                                 'collection_choice': collection_choice,
                                 'cloud_cover': cloud_cover,
                                 'selected_indices': selected_indices
-                            }
+                            }}
                             st.session_state.current_step = 3
                             st.rerun()
                 else:
@@ -2185,7 +2185,7 @@ def main():
                 st.markdown('<div class="card-title"><div class="icon">🌤️</div><h3 style="margin: 0;">Step 2: Climate Settings</h3></div>', unsafe_allow_html=True)
                 
                 if st.session_state.selected_area_name:
-                    st.info(f"**Selected Area:** {st.session_state.selected_area_name}")
+                    st.info(f"**Selected Area:** {{st.session_state.selected_area_name}}")
                     
                     col_a, col_b = st.columns(2)
                     with col_a:
@@ -2209,10 +2209,10 @@ def main():
                     
                     with col_next:
                         if st.button("✅ Save Climate Settings", type="primary", use_container_width=True):
-                            st.session_state.climate_parameters = {
+                            st.session_state.climate_parameters = {{
                                 'start_date': start_date,
                                 'end_date': end_date
-                            }
+                            }}
                             st.session_state.current_step = 3
                             st.rerun()
                 else:
@@ -2231,13 +2231,13 @@ def main():
                 
                 if st.session_state.selected_area_name:
                     st.info(f"""
-                    **Selected Area:** {st.session_state.selected_area_name}
+                    **Selected Area:** {{st.session_state.selected_area_name}}
                     
                     **Analysis Parameters:**
-                    - Time Range: {st.session_state.analysis_parameters['start_date']} to {st.session_state.analysis_parameters['end_date']}
-                    - Satellite: {st.session_state.analysis_parameters['collection_choice']}
-                    - Cloud Cover: ≤{st.session_state.analysis_parameters['cloud_cover']}%
-                    - Indices: {', '.join(st.session_state.analysis_parameters['selected_indices'])}
+                    - Time Range: {{st.session_state.analysis_parameters['start_date']}} to {{st.session_state.analysis_parameters['end_date']}}
+                    - Satellite: {{st.session_state.analysis_parameters['collection_choice']}}
+                    - Cloud Cover: ≤{{st.session_state.analysis_parameters['cloud_cover']}}%
+                    - Indices: {{', '.join(st.session_state.analysis_parameters['selected_indices'])}}
                     """)
                     
                     col_back, col_next = st.columns(2)
@@ -2264,7 +2264,7 @@ def main():
                 st.markdown('<div class="card-title"><div class="icon">🌱</div><h3 style="margin: 0;">Step 3: Soil Settings</h3></div>', unsafe_allow_html=True)
                 
                 if st.session_state.selected_area_name:
-                    st.info(f"**Selected Area:** {st.session_state.selected_area_name}")
+                    st.info(f"**Selected Area:** {{st.session_state.selected_area_name}}")
                     
                     st.markdown("""
                     <div class="guide-container">
@@ -2309,10 +2309,10 @@ def main():
                     
                     with col_next:
                         if st.button("✅ Save Soil Settings", type="primary", use_container_width=True):
-                            st.session_state.soil_parameters = {
+                            st.session_state.soil_parameters = {{
                                 'include_satellite_indices': include_satellite_indices,
                                 'enhanced_analysis': enhanced_analysis
-                            }
+                            }}
                             st.session_state.current_step = 4
                             st.rerun()
                 else:
@@ -2396,7 +2396,7 @@ def main():
                 st.markdown('<div class="card-title"><div class="icon">🚀</div><h3 style="margin: 0;">Step 4: Run Climate & Soil Analysis</h3></div>', unsafe_allow_html=True)
                 
                 if st.session_state.selected_area_name:
-                    st.info(f"**Selected Area:** {st.session_state.selected_area_name}")
+                    st.info(f"**Selected Area:** {{st.session_state.selected_area_name}}")
                     
                     st.markdown("""
                     <div class="guide-container">
@@ -2446,11 +2446,11 @@ def main():
                                     )
                                     
                                     if enhanced_results:
-                                        st.session_state.climate_soil_results = {
+                                        st.session_state.climate_soil_results = {{
                                             'enhanced_results': enhanced_results,
                                             'location_name': enhanced_results['location_name'],
                                             'analysis_type': 'enhanced'
-                                        }
+                                        }}
                                         
                                         st.session_state.current_step = 5
                                         st.rerun()
@@ -2474,12 +2474,12 @@ def main():
                                         )
                                         
                                         if soil_results:
-                                            st.session_state.climate_soil_results = {
+                                            st.session_state.climate_soil_results = {{
                                                 'climate': climate_results,
                                                 'soil': soil_results,
                                                 'location_name': location_name,
                                                 'analysis_type': 'basic'
-                                            }
+                                            }}
                                             
                                             st.session_state.current_step = 5
                                             st.rerun()
@@ -2521,25 +2521,25 @@ def main():
                         
                         for index, data in st.session_state.analysis_results.items():
                             for date, value in zip(data['dates'], data['values']):
-                                export_data.append({
+                                export_data.append({{
                                     'Date': date,
                                     'Index': index,
                                     'Value': value
-                                })
+                                }})
                         
                         if st.session_state.climate_data is not None:
                             climate_df = st.session_state.climate_data
                             for _, row in climate_df.iterrows():
-                                export_data.append({
+                                export_data.append({{
                                     'Date': row['date'].strftime('%Y-%m-%d'),
                                     'Index': 'Temperature (°C)',
                                     'Value': row['temperature']
-                                })
-                                export_data.append({
+                                }})
+                                export_data.append({{
                                     'Date': row['date'].strftime('%Y-%m-%d'),
                                     'Index': 'Precipitation (mm)',
                                     'Value': row['precipitation']
-                                })
+                                }})
                         
                         if export_data:
                             df = pd.DataFrame(export_data)
@@ -2547,7 +2547,7 @@ def main():
                             st.download_button(
                                 label="Click to Download CSV",
                                 data=csv,
-                                file_name=f"vegetation_climate_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                file_name=f"vegetation_climate_analysis_{{datetime.now().strftime('%Y%m%d_%H%M%S')}}.csv",
                                 mime="text/csv"
                             )
                         else:
@@ -2583,9 +2583,9 @@ def main():
                             
                             col1, col2, col3 = st.columns(3)
                             with col1:
-                                st.metric("🌡️ Mean Temperature", f"{climate_data['mean_temperature']:.1f}°C")
+                                st.metric("🌡️ Mean Temperature", f"{{climate_data['mean_temperature']:.1f}}°C")
                             with col2:
-                                st.metric("💧 Mean Precipitation", f"{climate_data['mean_precipitation']:.0f} mm/year")
+                                st.metric("💧 Mean Precipitation", f"{{climate_data['mean_precipitation']:.0f}} mm/year")
                             with col3:
                                 st.metric("🌍 Climate Zone", climate_data['climate_zone'].split('(')[0])
                             
@@ -2615,9 +2615,9 @@ def main():
                             
                             col1, col2, col3 = st.columns(3)
                             with col1:
-                                st.metric("🌡️ Mean Temperature", f"{climate_data['mean_temperature']:.1f}°C")
+                                st.metric("🌡️ Mean Temperature", f"{{climate_data['mean_temperature']:.1f}}°C")
                             with col2:
-                                st.metric("💧 Mean Precipitation", f"{climate_data['mean_precipitation']:.0f} mm/year")
+                                st.metric("💧 Mean Precipitation", f"{{climate_data['mean_precipitation']:.0f}} mm/year")
                             with col3:
                                 st.metric("🌍 Climate Zone", climate_data['climate_zone'].split('(')[0])
                             
@@ -2671,352 +2671,505 @@ def main():
                 bounds_data = st.session_state.selected_coordinates['bounds']
             
             mapbox_html = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-              <meta charset="utf-8" />
-              <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
-              <title>KHISBA GIS - 3D Global Map</title>
-              <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
-              <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
-              <style>
-                body {{ 
-                  margin: 0; 
-                  padding: 0; 
-                  background: #000000;
-                }}
-                #map {{ 
-                  position: absolute; 
-                  top: 0; 
-                  bottom: 0; 
-                  width: 100%; 
-                  border-radius: 8px;
-                }}
-                .map-overlay {{
-                  position: absolute;
-                  top: 20px;
-                  right: 20px;
-                  background: rgba(10, 10, 10, 0.9);
-                  color: white;
-                  padding: 15px;
-                  border-radius: 8px;
-                  border: 1px solid #222222;
-                  max-width: 250px;
-                  z-index: 1000;
-                  font-family: 'Inter', sans-serif;
-                }}
-                .overlay-title {{
-                  color: #00ff88;
-                  font-weight: 600;
-                  margin-bottom: 10px;
-                  font-size: 14px;
-                }}
-                .overlay-text {{
-                  color: #cccccc;
-                  font-size: 12px;
-                  line-height: 1.4;
-                }}
-                .coordinates-display {{
-                  position: absolute;
-                  bottom: 20px;
-                  left: 20px;
-                  background: rgba(10, 10, 10, 0.9);
-                  color: white;
-                  padding: 10px 15px;
-                  border-radius: 6px;
-                  border: 1px solid #222222;
-                  font-family: monospace;
-                  font-size: 12px;
-                  z-index: 1000;
-                }}
-                .selected-area {{
-                  position: absolute;
-                  top: 20px;
-                  left: 20px;
-                  background: rgba(10, 10, 10, 0.9);
-                  color: white;
-                  padding: 15px;
-                  border-radius: 8px;
-                  border: 1px solid #222222;
-                  max-width: 300px;
-                  z-index: 1000;
-                  font-family: 'Inter', sans-serif;
-                }}
-                .area-title {{
-                  color: #00ff88;
-                  font-weight: 600;
-                  margin-bottom: 10px;
-                  font-size: 14px;
-                }}
-                .area-details {{
-                  color: #cccccc;
-                  font-size: 12px;
-                  line-height: 1.4;
-                }}
-                .layer-switcher {{
-                  position: absolute;
-                  top: 20px;
-                  right: 20px;
-                  background: rgba(10, 10, 10, 0.9);
-                  border: 1px solid #222222;
-                  border-radius: 8px;
-                  overflow: hidden;
-                  z-index: 1000;
-                }}
-                .layer-button {{
-                  display: block;
-                  width: 120px;
-                  padding: 10px;
-                  background: #0a0a0a;
-                  color: #ffffff;
-                  border: none;
-                  border-bottom: 1px solid #222222;
-                  cursor: pointer;
-                  font-size: 12px;
-                  text-align: left;
-                  transition: all 0.2s;
-                }}
-                .layer-button:hover {{
-                  background: #111111;
-                }}
-                .layer-button.active {{
-                  background: #00ff88;
-                  color: #000000;
-                  font-weight: bold;
-                }}
-                .layer-button:last-child {{
-                  border-bottom: none;
-                }}
-                .mapboxgl-ctrl-group {{
-                  background: #0a0a0a !important;
-                  border: 1px solid #222222 !important;
-                }}
-                .mapboxgl-ctrl button {{
-                  background-color: #0a0a0a !important;
-                  color: #ffffff !important;
-                }}
-                .mapboxgl-ctrl button:hover {{
-                  background-color: #111111 !important;
-                }}
-              </style>
-            </head>
-            <body>
-              <div id="map"></div>
-              
-              <div class="map-overlay">
-                <div class="overlay-title">🌍 KHISBA GIS</div>
-                <div class="overlay-text">
-                  • Drag to rotate the globe<br>
-                  • Scroll to zoom in/out<br>
-                  • Right-click to pan<br>
-                  • Selected area highlighted in green
-                </div>
-              </div>
-              
-              <div class="layer-switcher">
-                <button class="layer-button" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite Streets</button>
-                <button class="layer-button" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
-                <button class="layer-button active" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
-                <button class="layer-button" data-style="mapbox://styles/mapbox/light-v11">Light</button>
-                <button class="layer-button" data-style="mapbox://styles/mapbox/dark-v11">Dark</button>
-              </div>
-              
-              <div class="coordinates-display">
-                <div>Lat: <span id="lat-display">0.00°</span></div>
-                <div>Lon: <span id="lon-display">0.00°</span></div>
-              </div>
-              
-              {f'''
-              <div class="selected-area">
-                <div class="area-title">📍 Selected Area</div>
-                <div class="area-details">
-                  <strong>{st.session_state.selected_area_name if hasattr(st.session_state, 'selected_area_name') else 'None'}</strong><br>
-                  Level: {st.session_state.selected_area_level if hasattr(st.session_state, 'selected_area_level') else 'None'}<br>
-                  Coordinates: {map_center[1]:.4f}°, {map_center[0]:.4f}°<br>
-                  Status: <span style="color: #00ff88;">Ready for Analysis</span>
-                </div>
-              </div>
-              ''' if st.session_state.selected_area_name else ''}
-              
-              <script>
-                mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>KHISBA GIS - 3D Global Map</title>
+  <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+  <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+  <style>
+    body {{ 
+      margin: 0; 
+      padding: 0; 
+      background: #000000;
+    }}
+    #map {{ 
+      position: absolute; 
+      top: 0; 
+      bottom: 0; 
+      width: 100%; 
+      border-radius: 8px;
+    }}
+    
+    /* Single Layer Button with Dropdown */
+    .layer-container {{
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+    }}
+    
+    .layer-main-btn {{
+      background: rgba(10, 10, 10, 0.95);
+      color: #ffffff;
+      border: 2px solid #222222;
+      border-radius: 6px;
+      padding: 10px 15px;
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 140px;
+    }}
+    
+    .layer-main-btn:hover {{
+      background: rgba(17, 17, 17, 0.95);
+      border-color: #00ff88;
+    }}
+    
+    .layer-main-btn.active {{
+      background: #00ff88;
+      color: #000000;
+      border-color: #00ff88;
+      font-weight: bold;
+    }}
+    
+    .layer-dropdown {{
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background: rgba(10, 10, 10, 0.95);
+      border: 2px solid #222222;
+      border-radius: 6px;
+      margin-top: 5px;
+      min-width: 140px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+    }}
+    
+    .layer-dropdown.show {{
+      display: block;
+    }}
+    
+    .layer-option {{
+      background: transparent;
+      color: #ffffff;
+      border: none;
+      padding: 10px 15px;
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }}
+    
+    .layer-option:hover {{
+      background: rgba(17, 17, 17, 0.95);
+      color: #00ff88;
+    }}
+    
+    .layer-option.active {{
+      background: #00ff88;
+      color: #000000;
+      font-weight: bold;
+    }}
+    
+    /* Map Controls Container */
+    .map-controls {{
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      display: flex;
+      gap: 5px;
+      z-index: 1000;
+    }}
+    
+    .control-btn {{
+      background: rgba(10, 10, 10, 0.95);
+      color: #ffffff;
+      border: 2px solid #222222;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }}
+    
+    .control-btn:hover {{
+      background: rgba(17, 17, 17, 0.95);
+      border-color: #00ff88;
+    }}
+    
+    .coordinates-display {{
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(10, 10, 10, 0.95);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 2px solid #222222;
+      font-family: 'Inter', monospace;
+      font-size: 11px;
+      z-index: 1000;
+      display: flex;
+      gap: 15px;
+    }}
+    
+    .coordinate-item {{
+      display: flex;
+      flex-direction: column;
+    }}
+    
+    .coordinate-label {{
+      color: #999999;
+      font-size: 9px;
+      margin-bottom: 2px;
+    }}
+    
+    .coordinate-value {{
+      color: #00ff88;
+      font-weight: 600;
+      font-size: 11px;
+    }}
+    
+    .selected-area-badge {{
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(10, 10, 10, 0.95);
+      color: white;
+      padding: 10px 15px;
+      border-radius: 6px;
+      border: 2px solid #00ff88;
+      font-family: 'Inter', sans-serif;
+      z-index: 1000;
+      max-width: 250px;
+      box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
+    }}
+    
+    .area-title {{
+      color: #00ff88;
+      font-weight: 600;
+      font-size: 12px;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }}
+    
+    .area-details {{
+      color: #cccccc;
+      font-size: 10px;
+      line-height: 1.3;
+    }}
+    
+    .area-status {{
+      display: inline-block;
+      background: #00ff88;
+      color: #000000;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 9px;
+      font-weight: bold;
+      margin-top: 5px;
+    }}
+    
+    /* Map controls styling */
+    .mapboxgl-ctrl-group {{
+      background: rgba(10, 10, 10, 0.9) !important;
+      border: 2px solid #222222 !important;
+      border-radius: 6px !important;
+    }}
+    
+    .mapboxgl-ctrl button {{
+      background-color: transparent !important;
+      color: #ffffff !important;
+    }}
+    
+    .mapboxgl-ctrl button:hover {{
+      background-color: rgba(17, 17, 17, 0.9) !important;
+    }}
+    
+    .mapboxgl-popup {{
+      font-family: 'Inter', sans-serif;
+    }}
+    
+    .mapboxgl-popup-content {{
+      background: #0a0a0a !important;
+      color: #ffffff !important;
+      border: 2px solid #222222 !important;
+      border-radius: 6px !important;
+      padding: 15px !important;
+    }}
+    
+    .mapboxgl-popup-close-button {{
+      color: #ffffff !important;
+      font-size: 16px !important;
+      padding: 5px 8px !important;
+    }}
+    
+    .mapboxgl-popup-close-button:hover {{
+      color: #00ff88 !important;
+      background-color: transparent !important;
+    }}
+    
+    .mapboxgl-popup-tip {{
+      border-top-color: #222222 !important;
+      border-bottom-color: #222222 !important;
+    }}
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  
+  <!-- Single Layer Button with Dropdown -->
+  <div class="layer-container">
+    <button class="layer-main-btn" id="layerMainBtn">
+      <span>🗺️ Map Layers</span>
+      <span style="margin-left: auto;">▼</span>
+    </button>
+    <div class="layer-dropdown" id="layerDropdown">
+      <button class="layer-option active" data-style="mapbox://styles/mapbox/satellite-streets-v12">
+        🛰️ Satellite View
+      </button>
+      <button class="layer-option" data-style="mapbox://styles/mapbox/outdoors-v12">
+        🗺️ Outdoors View
+      </button>
+      <button class="layer-option" data-style="mapbox://styles/mapbox/light-v11">
+        ☀️ Light View
+      </button>
+      <button class="layer-option" data-style="mapbox://styles/mapbox/dark-v11">
+        🌙 Dark View
+      </button>
+      <button class="layer-option" data-style="mapbox://styles/mapbox/streets-v12">
+        🏙️ Streets View
+      </button>
+    </div>
+  </div>
+  
+  <!-- Coordinates Display -->
+  <div class="coordinates-display">
+    <div class="coordinate-item">
+      <div class="coordinate-label">LATITUDE</div>
+      <div class="coordinate-value" id="lat-display">0.00°</div>
+    </div>
+    <div class="coordinate-item">
+      <div class="coordinate-label">LONGITUDE</div>
+      <div class="coordinate-value" id="lon-display">0.00°</div>
+    </div>
+  </div>
+  
+  <!-- Selected Area Badge -->
+  {f'''
+  <div class="selected-area-badge">
+    <div class="area-title">
+      <span style="font-size: 14px;">📍</span>
+      SELECTED AREA
+    </div>
+    <div class="area-details">
+      <strong>{st.session_state.selected_area_name if hasattr(st.session_state, 'selected_area_name') else 'None'}</strong><br>
+      Level: {st.session_state.selected_area_level if hasattr(st.session_state, 'selected_area_level') else 'None'}<br>
+      Coordinates: {map_center[1]:.4f}°, {map_center[0]:.4f}°
+    </div>
+    <div class="area-status">READY</div>
+  </div>
+  ''' if st.session_state.selected_area_name else ''}
+  
+  <!-- Map Controls -->
+  <div class="map-controls">
+    <button class="control-btn" onclick="resetView()">
+      <span style="font-size: 12px;">↺</span> Reset
+    </button>
+    <button class="control-btn" onclick="toggle3D()">
+      <span style="font-size: 12px;">📐</span> 3D
+    </button>
+    <button class="control-btn" onclick="toggleFullscreen()">
+      <span style="font-size: 12px;">⛶</span> Full
+    </button>
+  </div>
+  
+  <script>
+    mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
 
-                const map = new mapboxgl.Map({{
-                  container: 'map',
-                  style: 'mapbox://styles/mapbox/outdoors-v12',
-                  center: {map_center},
-                  zoom: {map_zoom},
-                  pitch: 45,
-                  bearing: 0
-                }});
+    // Initialize map
+    const map = new mapboxgl.Map({{
+      container: 'map',
+      style: 'mapbox://styles/mapbox/satellite-streets-v12',
+      center: [{map_center[0]}, {map_center[1]}],
+      zoom: {map_zoom},
+      pitch: 45,
+      bearing: 0
+    }});
 
-                map.addControl(new mapboxgl.NavigationControl());
-                map.addControl(new mapboxgl.ScaleControl({{
-                  unit: 'metric'
-                }}));
-                map.addControl(new mapboxgl.FullscreenControl());
+    // Add default controls
+    map.addControl(new mapboxgl.NavigationControl({{
+      showCompass: true,
+      showZoom: true,
+      visualizePitch: true
+    }}), 'top-right');
+    
+    map.addControl(new mapboxgl.ScaleControl({{
+      unit: 'metric',
+      maxWidth: 100
+    }}));
 
-                const layerButtons = document.querySelectorAll('.layer-button');
-                layerButtons.forEach(button => {{
-                  button.addEventListener('click', () => {{
-                    layerButtons.forEach(btn => btn.classList.remove('active'));
-                    button.classList.add('active');
-                    map.setStyle(button.dataset.style);
-                    
-                    setTimeout(() => {{
-                      {f'''
-                      if ({bounds_data}) {{
-                        const bounds = {bounds_data};
-                        
-                        if (map.getSource('selected-area')) {{
-                          map.removeLayer('selected-area-fill');
-                          map.removeLayer('selected-area-border');
-                          map.removeSource('selected-area');
-                        }}
-                        
-                        map.addSource('selected-area', {{
-                          'type': 'geojson',
-                          'data': {{
-                            'type': 'Feature',
-                            'geometry': {{
-                              'type': 'Polygon',
-                              'coordinates': [[
-                                [bounds[0][1], bounds[0][0]],
-                                [bounds[1][1], bounds[0][0]],
-                                [bounds[1][1], bounds[1][0]],
-                                [bounds[0][1], bounds[1][0]],
-                                [bounds[0][1], bounds[0][0]]
-                              ]]
-                            }}
-                          }}
-                        }});
+    // Layer dropdown functionality
+    const layerMainBtn = document.getElementById('layerMainBtn');
+    const layerDropdown = document.getElementById('layerDropdown');
+    const layerOptions = document.querySelectorAll('.layer-option');
+    
+    // Toggle dropdown visibility
+    layerMainBtn.addEventListener('click', (e) => {{
+      e.stopPropagation();
+      layerDropdown.classList.toggle('show');
+    }});
+    
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {{
+      if (!layerContainer.contains(e.target)) {{
+        layerDropdown.classList.remove('show');
+      }}
+    }});
+    
+    // Handle layer selection
+    layerOptions.forEach(option => {{
+      option.addEventListener('click', (e) => {{
+        e.stopPropagation();
+        
+        // Update active state
+        layerOptions.forEach(opt => opt.classList.remove('active'));
+        option.classList.add('active');
+        
+        // Update main button text
+        const layerText = option.textContent.trim();
+        layerMainBtn.innerHTML = `<span>${{layerText}}</span><span style="margin-left: auto;">▼</span>`;
+        
+        // Change map style
+        map.setStyle(option.dataset.style);
+        
+        // Close dropdown
+        layerDropdown.classList.remove('show');
+      }});
+    }});
 
-                        map.addLayer({{
-                          'id': 'selected-area-fill',
-                          'type': 'fill',
-                          'source': 'selected-area',
-                          'layout': {{}},
-                          'paint': {{
-                            'fill-color': '#00ff88',
-                            'fill-opacity': 0.2
-                          }}
-                        }});
+    // Function to add selected area
+    function addSelectedArea(bounds) {{
+      if (map.getSource('selected-area')) {{
+        map.removeLayer('selected-area-fill');
+        map.removeLayer('selected-area-border');
+        map.removeSource('selected-area');
+      }}
+      
+      map.addSource('selected-area', {{
+        'type': 'geojson',
+        'data': {{
+          'type': 'Feature',
+          'geometry': {{
+            'type': 'Polygon',
+            'coordinates': [[
+              [bounds[0][1], bounds[0][0]],
+              [bounds[1][1], bounds[0][0]],
+              [bounds[1][1], bounds[1][0]],
+              [bounds[0][1], bounds[1][0]],
+              [bounds[0][1], bounds[0][0]]
+            ]]
+          }}
+        }}
+      }});
 
-                        map.addLayer({{
-                          'id': 'selected-area-border',
-                          'type': 'line',
-                          'source': 'selected-area',
-                          'layout': {{}},
-                          'paint': {{
-                            'line-color': '#00ff88',
-                            'line-width': 3,
-                            'line-opacity': 0.8
-                          }}
-                        }});
-                      }}
-                      ''' if bounds_data else ''}
-                    }}, 500);
-                  }});
-                }});
+      map.addLayer({{
+        'id': 'selected-area-fill',
+        'type': 'fill',
+        'source': 'selected-area',
+        'layout': {{}},
+        'paint': {{
+          'fill-color': '#00ff88',
+          'fill-opacity': 0.15,
+          'fill-outline-color': '#00ff88'
+        }}
+      }});
 
-                map.on('load', () => {{
-                  map.on('mousemove', (e) => {{
-                    document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(2) + '°';
-                    document.getElementById('lon-display').textContent = e.lngLat.lng.toFixed(2) + '°';
-                  }});
+      map.addLayer({{
+        'id': 'selected-area-border',
+        'type': 'line',
+        'source': 'selected-area',
+        'layout': {{}},
+        'paint': {{
+          'line-color': '#00ff88',
+          'line-width': 3,
+          'line-opacity': 0.8,
+          'line-dasharray': [2, 1]
+        }}
+      }});
+    }}
 
-                  {f'''
-                  if ({bounds_data}) {{
-                    const bounds = {bounds_data};
-                    
-                    map.addSource('selected-area', {{
-                      'type': 'geojson',
-                      'data': {{
-                        'type': 'Feature',
-                        'geometry': {{
-                          'type': 'Polygon',
-                          'coordinates': [[
-                            [bounds[0][1], bounds[0][0]],
-                            [bounds[1][1], bounds[0][0]],
-                            [bounds[1][1], bounds[1][0]],
-                            [bounds[0][1], bounds[1][0]],
-                            [bounds[0][1], bounds[0][0]]
-                          ]]
-                        }}
-                      }}
-                    }});
+    // Control functions
+    function resetView() {{
+      map.flyTo({{
+        center: [{map_center[0]}, {map_center[1]}],
+        zoom: {map_zoom},
+        pitch: 45,
+        bearing: 0,
+        duration: 1500,
+        essential: true
+      }});
+    }}
 
-                    map.addLayer({{
-                      'id': 'selected-area-fill',
-                      'type': 'fill',
-                      'source': 'selected-area',
-                      'layout': {{}},
-                      'paint': {{
-                        'fill-color': '#00ff88',
-                        'fill-opacity': 0.2
-                      }}
-                    }});
+    function toggle3D() {{
+      const currentPitch = map.getPitch();
+      map.flyTo({{
+        pitch: currentPitch === 0 ? 60 : 0,
+        duration: 1000
+      }});
+    }}
 
-                    map.addLayer({{
-                      'id': 'selected-area-border',
-                      'type': 'line',
-                      'source': 'selected-area',
-                      'layout': {{}},
-                      'paint': {{
-                        'line-color': '#00ff88',
-                        'line-width': 3,
-                        'line-opacity': 0.8
-                      }}
-                    }});
+    function toggleFullscreen() {{
+      const container = document.getElementById('map');
+      if (!document.fullscreenElement) {{
+        container.requestFullscreen().catch(err => {{
+          console.log('Fullscreen failed:', err);
+        }});
+      }} else {{
+        document.exitFullscreen();
+      }}
+    }}
 
-                    map.flyTo({{
-                      center: {map_center},
-                      zoom: {map_zoom},
-                      duration: 2000,
-                      essential: true
-                    }});
-                  }}
-                  ''' if bounds_data else ''}
+    // Map load event
+    map.on('load', () => {{
+      // Update coordinates on mouse move
+      map.on('mousemove', (e) => {{
+        document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(4) + '°';
+        document.getElementById('lon-display').textContent = e.lngLat.lng.toFixed(4) + '°';
+      }});
 
-                  const cities = [
-                    {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital' }},
-                    {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical capital' }},
-                    {{ name: 'Tokyo', coordinates: [139.6917, 35.6895], country: 'Japan', info: 'Mega metropolis' }},
-                    {{ name: 'Sydney', coordinates: [151.2093, -33.8688], country: 'Australia', info: 'Harbor city' }},
-                    {{ name: 'Cairo', coordinates: [31.2357, 30.0444], country: 'Egypt', info: 'Nile Delta' }}
-                  ];
+      // Fly to selected area
+      map.flyTo({{
+        center: [{map_center[0]}, {map_center[1]}],
+        zoom: {map_zoom},
+        pitch: 45,
+        duration: 2000,
+        essential: true
+      }});
+    }});
 
-                  cities.forEach(city => {{
-                    const el = document.createElement('div');
-                    el.className = 'marker';
-                    el.style.backgroundColor = '#ffaa00';
-                    el.style.width = '15px';
-                    el.style.height = '15px';
-                    el.style.borderRadius = '50%';
-                    el.style.border = '2px solid #ffffff';
-                    el.style.boxShadow = '0 0 10px rgba(255, 170, 0, 0.5)';
-                    el.style.cursor = 'pointer';
-
-                    const popup = new mapboxgl.Popup({{
-                      offset: 25,
-                      closeButton: true,
-                      closeOnClick: false
-                    }}).setHTML(
-                      `<h3>${{city.name}}</h3>
-                       <p><strong>Country:</strong> ${{city.country}}</p>
-                       <p>${{city.info}}</p>`
-                    );
-
-                    new mapboxgl.Marker(el)
-                      .setLngLat(city.coordinates)
-                      .setPopup(popup)
-                      .addTo(map);
-                  }});
-                }});
-              </script>
-            </body>
-            </html>
-            """
+    // Fullscreen change event
+    document.addEventListener('fullscreenchange', () => {{
+      const fullscreenBtn = document.querySelector('.control-btn:nth-child(3)');
+      if (document.fullscreenElement) {{
+        fullscreenBtn.innerHTML = '<span style="font-size: 12px;">⛶</span> Exit';
+      }} else {{
+        fullscreenBtn.innerHTML = '<span style="font-size: 12px;">⛶</span> Full';
+      }}
+    }});
+  </script>
+</body>
+</html>
+"""
             
             st.components.v1.html(mapbox_html, height=550)
             
@@ -3029,8 +3182,8 @@ def main():
             st.markdown(f"""
             <div style="text-align: center; padding: 100px 0;">
                 <div style="font-size: 64px; margin-bottom: 20px; animation: spin 2s linear infinite;">🌱</div>
-                <div style="color: #00ff88; font-size: 18px; margin-bottom: 10px;">Processing {analysis_type} Data</div>
-                <div style="color: #666666; font-size: 14px;">Analyzing {st.session_state.selected_area_name if hasattr(st.session_state, 'selected_area_name') else 'selected area'}</div>
+                <div style="color: #00ff88; font-size: 18px; margin-bottom: 10px;">Processing {{analysis_type}} Data</div>
+                <div style="color: #666666; font-size: 14px;">Analyzing {{st.session_state.selected_area_name if hasattr(st.session_state, 'selected_area_name') else 'selected area'}}</div>
             </div>
             
             <style>
@@ -3053,11 +3206,11 @@ def main():
                     <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin: 10px 20px; border-left: 4px solid #00ff88;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <div>
-                                <div style="color: #00ff88; font-weight: 600; font-size: 16px;">{st.session_state.selected_area_name}</div>
+                                <div style="color: #00ff88; font-weight: 600; font-size: 16px;">{{st.session_state.selected_area_name}}</div>
                                 <div style="color: #cccccc; font-size: 12px; margin-top: 5px;">
-                                    {st.session_state.analysis_parameters['start_date']} to {st.session_state.analysis_parameters['end_date']} • 
-                                    {st.session_state.analysis_parameters['collection_choice']} • 
-                                    {len(st.session_state.analysis_parameters['selected_indices'])} vegetation indices analyzed
+                                    {{st.session_state.analysis_parameters['start_date']}} to {{st.session_state.analysis_parameters['end_date']}} • 
+                                    {{st.session_state.analysis_parameters['collection_choice']}} • 
+                                    {{len(st.session_state.analysis_parameters['selected_indices'])}} vegetation indices analyzed
                                 </div>
                             </div>
                             <div style="background: #00ff88; color: #000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">
@@ -3163,9 +3316,9 @@ def main():
                                 <div style="background: rgba(255, 85, 85, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid #ff5555; margin-bottom: 10px;">
                                     <div style="color: #ff5555; font-weight: 600; margin-bottom: 10px;">🌡️ Temperature</div>
                                     <div style="color: #cccccc; font-size: 14px;">
-                                        <div>Mean: <strong>{temp_mean:.2f}°C</strong></div>
-                                        <div>Max: <strong>{temp_max:.2f}°C</strong></div>
-                                        <div>Min: <strong>{temp_min:.2f}°C</strong></div>
+                                        <div>Mean: <strong>{{temp_mean:.2f}}°C</strong></div>
+                                        <div>Max: <strong>{{temp_max:.2f}}°C</strong></div>
+                                        <div>Min: <strong>{{temp_min:.2f}}°C</strong></div>
                                     </div>
                                 </div>
                                 """, unsafe_allow_html=True)
@@ -3175,9 +3328,9 @@ def main():
                                 <div style="background: rgba(85, 85, 255, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid #5555ff; margin-bottom: 10px;">
                                     <div style="color: #5555ff; font-weight: 600; margin-bottom: 10px;">🌧️ Precipitation</div>
                                     <div style="color: #cccccc; font-size: 14px;">
-                                        <div>Total: <strong>{precip_total:.1f} mm</strong></div>
-                                        <div>Mean: <strong>{precip_mean:.2f} mm/day</strong></div>
-                                        <div>Max: <strong>{precip_max:.1f} mm/day</strong></div>
+                                        <div>Total: <strong>{{precip_total:.1f}} mm</strong></div>
+                                        <div>Mean: <strong>{{precip_mean:.2f}} mm/day</strong></div>
+                                        <div>Max: <strong>{{precip_max:.1f}} mm/day</strong></div>
                                     </div>
                                 </div>
                                 """, unsafe_allow_html=True)
@@ -3203,7 +3356,7 @@ def main():
                                     name=index_name,
                                     line=dict(color='#00ff88', width=3),
                                     marker=dict(size=8, color='#ffffff', line=dict(width=1, color='#00ff88'))
-                                ))
+                                }))
                                 
                                 # Add trend line if enough data points
                                 if len(data['values']) > 1:
@@ -3226,7 +3379,7 @@ def main():
                                 
                                 # Update layout
                                 fig.update_layout(
-                                    title=f"<b>{index_name}</b> - Vegetation Index Over Time",
+                                    title=f"<b>{{index_name}}</b> - Vegetation Index Over Time",
                                     plot_bgcolor='#0a0a0a',
                                     paper_bgcolor='#0a0a0a',
                                     font=dict(color='#ffffff'),
@@ -3237,7 +3390,7 @@ def main():
                                         showgrid=True
                                     ),
                                     yaxis=dict(
-                                        title=f"{index_name} Value",
+                                        title=f"{{index_name}} Value",
                                         gridcolor='#222222',
                                         tickcolor='#444444',
                                         showgrid=True
@@ -3255,27 +3408,27 @@ def main():
                                     )
                                 )
                                 
-                                st.plotly_chart(fig, use_container_width=True, key=f"chart_{index_name}")
+                                st.plotly_chart(fig, use_container_width=True, key=f"chart_{{index_name}}")
                                 
                                 # Display statistics for this index
                                 values = data['values']
                                 if values:
                                     col1, col2, col3, col4 = st.columns(4)
                                     with col1:
-                                        st.metric(f"{index_name} Mean", f"{np.mean(values):.3f}")
+                                        st.metric(f"{{index_name}} Mean", f"{{np.mean(values):.3f}}")
                                     with col2:
-                                        st.metric(f"{index_name} Max", f"{np.max(values):.3f}")
+                                        st.metric(f"{{index_name}} Max", f"{{np.max(values):.3f}}")
                                     with col3:
-                                        st.metric(f"{index_name} Min", f"{np.min(values):.3f}")
+                                        st.metric(f"{{index_name}} Min", f"{{np.min(values):.3f}}")
                                     with col4:
                                         if len(values) > 1:
                                             trend = (values[-1] - values[0]) / values[0] * 100 if values[0] != 0 else 0
-                                            st.metric(f"{index_name} Trend", f"{trend:+.1f}%")
+                                            st.metric(f"{{index_name}} Trend", f"{{trend:+.1f}}%")
                                 
                                 st.markdown("---")
                                 
                             except Exception as e:
-                                st.warning(f"Could not display chart for {index_name}: {str(e)}")
+                                st.warning(f"Could not display chart for {{index_name}}: {{str(e)}}")
                     
                     # Summary table
                     summary_data = []
@@ -3287,15 +3440,15 @@ def main():
                                 previous = values[-2] if len(values) > 1 else current
                                 change = ((current - previous) / previous * 100) if previous != 0 else 0
                                 
-                                summary_data.append({
+                                summary_data.append({{
                                     'Index': index_name,
                                     'Current': round(current, 4),
                                     'Previous': round(previous, 4),
-                                    'Change (%)': f"{change:+.2f}%",
+                                    'Change (%)': f"{{change:+.2f}}%",
                                     'Min': round(min(values), 4),
                                     'Max': round(max(values), 4),
                                     'Avg': round(sum(values) / len(values), 4)
-                                })
+                                }})
                     
                     if summary_data:
                         st.markdown("""
@@ -3309,12 +3462,12 @@ def main():
                             df,
                             use_container_width=True,
                             hide_index=True,
-                            column_config={
+                            column_config={{
                                 "Change (%)": st.column_config.TextColumn(
                                     "Change",
                                     help="Percentage change from previous period",
                                 )
-                            }
+                            }}
                         )
                 else:
                     st.markdown("""
@@ -3347,4 +3500,4 @@ def main():
     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
-    main() 
+    main()
