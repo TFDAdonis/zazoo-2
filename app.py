@@ -485,29 +485,59 @@ def get_accuracy_badge(dataset_name, region_type="general"):
     
     return f'<span class="accuracy-badge {info["color"]}">🎯 {info["text"]}</span>'
 
+def get_region_type(location_name):
+    """Determine region type for accuracy assessment"""
+    if not location_name:
+        return "general"
+    
+    location_lower = location_name.lower()
+    
+    if any(x in location_lower for x in ['sidi', 'algeria', 'morocco', 'tunisia', 'libya', 'egypt', 'north africa']):
+        return "Semi-arid"
+    elif any(x in location_lower for x in ['sahara', 'desert', 'sahel']):
+        return "Arid"
+    elif any(x in location_lower for x in ['amazon', 'congo', 'rainforest', 'equatorial']):
+        return "Humid"
+    elif any(x in location_lower for x in ['europe', 'france', 'germany', 'uk', 'italy', 'spain']):
+        return "Humid"
+    else:
+        return "general"
+
 def validate_temperature_data(df, location_name):
     """Validate temperature data and convert if needed"""
     warnings_list = []
     
     if df is not None and not df.empty:
-        # Check for Kelvin values (should be 250-320K for Earth temperatures)
+        # Check for Kelvin values in temperature_2m
         if 'temperature_2m' in df.columns:
-            temp_values = df['temperature_2m'].dropna()
+            temp_col = 'temperature_2m'
+            temp_values = df[temp_col].dropna()
+            
             if len(temp_values) > 0:
                 mean_temp = temp_values.mean()
                 
                 # If values are in Kelvin range (250-320), convert to Celsius
                 if 250 < mean_temp < 320:
-                    df['temperature_2m'] = df['temperature_2m'] - 273.15
+                    df[temp_col] = df[temp_col] - 273.15
                     warnings_list.append("✅ Temperature converted from Kelvin to Celsius")
                 
-                # Check if converted values are realistic
-                max_temp = temp_values.max()
-                if 'sidi' in location_name.lower() or 'algeria' in location_name.lower() or 'africa' in location_name.lower():
-                    if max_temp < 30 and max_temp > 0:
-                        warnings_list.append(f"⚠️ July max temperature ({max_temp:.1f}°C) seems low for this region. Expected 35-40°C")
+                # Check if converted values are realistic for the region
+                max_temp = df[temp_col].max()
+                if location_name and get_region_type(location_name) in ["Semi-arid", "Arid"]:
+                    if 0 < max_temp < 30:
+                        warnings_list.append(f"⚠️ Max temperature ({max_temp:.1f}°C) seems low for this region. Expected 35-40°C in summer")
                     elif max_temp > 50:
                         warnings_list.append(f"⚠️ Unusually high temperature detected: {max_temp:.1f}°C")
+        
+        # Also check temperature column if it exists
+        if 'temperature' in df.columns:
+            temp_values = df['temperature'].dropna()
+            if len(temp_values) > 0:
+                mean_temp = temp_values.mean()
+                if 250 < mean_temp < 320:
+                    df['temperature'] = df['temperature'] - 273.15
+                    if 'temperature_max' in df.columns:
+                        df['temperature_max'] = df['temperature_max'] - 273.15
     
     return df, warnings_list
 
@@ -516,17 +546,29 @@ def validate_precipitation_data(df, location_name, scale_factor=1.0):
     warnings_list = []
     
     if df is not None and not df.empty:
-        if 'total_precipitation' in df.columns or 'precipitation' in df.columns:
-            precip_col = 'total_precipitation' if 'total_precipitation' in df.columns else 'precipitation'
-            total_precip = df[precip_col].sum()
+        # Find precipitation column
+        precip_col = None
+        for col in ['total_precipitation', 'precipitation']:
+            if col in df.columns:
+                precip_col = col
+                break
+        
+        if precip_col:
+            # Store original for comparison if calibration is applied
+            if scale_factor != 1.0 and 'original_precipitation' not in df.columns:
+                df['original_precipitation'] = df[precip_col].copy()
+                df[precip_col] = df[precip_col] * scale_factor
+                total_orig = df['original_precipitation'].sum()
+                total_calib = df[precip_col].sum()
+                warnings_list.append(f"💧 Precipitation calibrated: {total_orig:.0f}mm → {total_calib:.0f}mm (×{scale_factor})")
             
-            # Apply calibration for arid/semi-arid regions
-            if 'sidi' in location_name.lower() or 'algeria' in location_name.lower() or 'north africa' in location_name.lower():
+            # Auto-calibration for known regions if no manual scale set
+            elif scale_factor == 1.0 and location_name and get_region_type(location_name) == "Semi-arid":
+                total_precip = df[precip_col].sum()
                 if total_precip > 500:  # CHIRPS overestimation threshold
+                    df['original_precipitation'] = df[precip_col].copy()
                     df[precip_col] = df[precip_col] * 0.75
-                    warnings_list.append(f"💧 CHIRPS precipitation calibrated: original {total_precip:.0f}mm → {df[precip_col].sum():.0f}mm (×0.75 for N. Africa)")
-                else:
-                    df[precip_col] = df[precip_col] * scale_factor
+                    warnings_list.append(f"💧 CHIRPS auto-calibrated for N. Africa: {total_precip:.0f}mm → {df[precip_col].sum():.0f}mm (×0.75)")
             
             # Check for unrealistic values
             max_daily = df[precip_col].max()
@@ -534,21 +576,6 @@ def validate_precipitation_data(df, location_name, scale_factor=1.0):
                 warnings_list.append(f"⚠️ Unusually high daily precipitation: {max_daily:.0f}mm")
     
     return df, warnings_list
-
-def get_region_type(location_name):
-    """Determine region type for accuracy assessment"""
-    location_lower = location_name.lower()
-    
-    if 'sidi' in location_lower or 'algeria' in location_lower or 'morocco' in location_lower or 'tunisia' in location_lower:
-        return "Semi-arid"
-    elif 'sahara' in location_lower or 'desert' in location_lower:
-        return "Arid"
-    elif 'amazon' in location_lower or 'congo' in location_lower or 'rainforest' in location_lower:
-        return "Humid"
-    elif 'europe' in location_lower or 'france' in location_lower or 'germany' in location_lower:
-        return "Humid"
-    else:
-        return "general"
 
 # =============================================================================
 # CORRECTED CLIMATE DATA FUNCTIONS WITH PROPER CONVERSION
@@ -581,7 +608,6 @@ def get_daily_climate_data_corrected(start_date, end_date, geometry, scale=50000
         temp_image = temperature.filterDate(date, date.advance(1, 'day')).first()
         
         # CRITICAL FIX: Convert from Kelvin to Celsius
-        # Kelvin to Celsius: °C = K - 273.15
         temp_kelvin = ee.Algorithms.If(
             temp_image,
             temp_image.select('temperature_2m').reduceRegion(
@@ -683,6 +709,10 @@ def analyze_daily_climate_data(study_roi, start_date, end_date, location_name=""
         
         # Filter out unrealistic temperatures (should be Celsius now)
         df = df[(df['temperature'] > -50) & (df['temperature'] < 60)]
+        
+        # Validate and correct
+        df, _ = validate_temperature_data(df, location_name)
+        df, _ = validate_precipitation_data(df, location_name, precip_scale)
         
         return df
         
@@ -828,7 +858,7 @@ class EnhancedClimateSoilAnalyzer:
 
         except Exception as e:
             # Fallback values for Sidi Bel Abbès, Algeria
-            if 'sidi' in location_name.lower():
+            if location_name and 'sidi' in location_name.lower():
                 return {
                     'climate_zone': "Mediterranean",
                     'climate_class': 6,
@@ -1118,7 +1148,7 @@ class EnhancedClimateSoilAnalyzer:
                 precip_monthly = chirps.filterDate(month_start, month_end) \
                                       .select('precipitation') \
                                       .sum() \
-                                      .multiply(precip_scale)
+                                      .multiply(precip_scale)  # Apply calibration factor
                 
                 # Soil moisture is already in m³/m³, no conversion needed
                 soil_moisture_1 = era5.filterDate(month_start, month_end) \
@@ -1149,7 +1179,7 @@ class EnhancedClimateSoilAnalyzer:
                 
                 return ee.Image.cat([
                     temp_monthly.rename('temperature_2m'),  # Now in Celsius
-                    precip_monthly.rename('total_precipitation'),
+                    precip_monthly.rename('total_precipitation'),  # Calibrated
                     soil_moisture_1.rename('soil_moisture_1'),  # 0-7cm
                     soil_moisture_2.rename('soil_moisture_2'),  # 7-28cm
                     soil_moisture_3.rename('soil_moisture_3'),  # 28-100cm
@@ -1167,6 +1197,7 @@ class EnhancedClimateSoilAnalyzer:
             return monthly_collection
             
         except Exception as e:
+            st.error(f"Error in get_daily_climate_data_for_analysis: {e}")
             return None
 
     def extract_monthly_statistics(self, monthly_collection, geometry):
@@ -1591,12 +1622,12 @@ class EnhancedClimateSoilAnalyzer:
                 
                 # Accuracy note for CHIRPS
                 region_type = get_region_type(location_name)
-                if region_type == "Semi-arid" or region_type == "Arid":
+                if region_type in ["Semi-arid", "Arid"]:
                     st.markdown(f"""
                     <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem;">
                         <p style="color: #FFAA44; margin: 0; font-size: 0.8rem;">
                         <strong>⚠️ CHIRPS Accuracy Note:</strong> In {region_type.lower()} regions, CHIRPS overestimates precipitation by 20-40%. 
-                        Data has been calibrated with a 0.75x factor for North Africa.
+                        Data has been calibrated with a {precip_scale}x factor.
                         </p>
                     </div>
                     """, unsafe_allow_html=True)
@@ -1717,22 +1748,27 @@ class EnhancedClimateSoilAnalyzer:
             geometry, location_name = self.get_geometry_from_selection(country, region, municipality)
 
             if not geometry:
+                st.error("Could not get geometry for selected location")
                 return None
 
+            # Get climate classification
             climate_results = self.get_accurate_climate_classification(geometry, location_name)
+            
+            # Get soil data
             soil_results = self.run_comprehensive_soil_analysis(country, region, municipality)
             
             # Get climate data for enhanced charts
             end_date = datetime.now().strftime('%Y-%m-%d')
             start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
             
+            # Pass precip_scale to the method
             monthly_collection = self.get_daily_climate_data_for_analysis(geometry, start_date, end_date, precip_scale)
             climate_df = None
             if monthly_collection:
                 climate_df = self.extract_monthly_statistics(monthly_collection, geometry)
                 
-                # Validate and correct temperature
-                if climate_df is not None:
+                # Validate and correct data
+                if climate_df is not None and not climate_df.empty:
                     climate_df, _ = validate_temperature_data(climate_df, location_name)
                     climate_df, _ = validate_precipitation_data(climate_df, location_name, precip_scale)
 
@@ -1744,9 +1780,16 @@ class EnhancedClimateSoilAnalyzer:
                     'location_name': location_name
                 }
             else:
-                return None
+                st.warning("Soil data could not be retrieved")
+                return {
+                    'climate_data': climate_results,
+                    'soil_data': None,
+                    'climate_df': climate_df,
+                    'location_name': location_name
+                }
                 
         except Exception as e:
+            st.error(f"Analysis error: {str(e)}")
             return None
 
 # =============================================================================
@@ -1755,28 +1798,33 @@ class EnhancedClimateSoilAnalyzer:
 
 def calculate_vegetation_index(index_name, image):
     """Calculate specific vegetation indices from Sentinel-2 or Landsat images"""
-    if index_name == 'NDVI':
-        if 'B8' in image.bandNames().getInfo() and 'B4' in image.bandNames().getInfo():
-            return image.normalizedDifference(['B8', 'B4']).rename('NDVI')
-        elif 'SR_B5' in image.bandNames().getInfo() and 'SR_B4' in image.bandNames().getInfo():
-            return image.normalizedDifference(['SR_B5', 'SR_B4']).rename('NDVI')
-    
-    elif index_name == 'EVI':
-        if 'B8' in image.bandNames().getInfo() and 'B4' in image.bandNames().getInfo() and 'B2' in image.bandNames().getInfo():
-            return image.expression(
-                '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))', {
-                    'NIR': image.select('B8'),
-                    'RED': image.select('B4'),
-                    'BLUE': image.select('B2')
-                }).rename('EVI')
-    
-    elif index_name == 'SAVI':
-        if 'B8' in image.bandNames().getInfo() and 'B4' in image.bandNames().getInfo():
-            return image.expression(
-                '1.5 * ((NIR - RED) / (NIR + RED + 0.5))', {
-                    'NIR': image.select('B8'),
-                    'RED': image.select('B4')
-                }).rename('SAVI')
+    try:
+        band_names = image.bandNames().getInfo()
+        
+        if index_name == 'NDVI':
+            if 'B8' in band_names and 'B4' in band_names:
+                return image.normalizedDifference(['B8', 'B4']).rename('NDVI')
+            elif 'SR_B5' in band_names and 'SR_B4' in band_names:
+                return image.normalizedDifference(['SR_B5', 'SR_B4']).rename('NDVI')
+        
+        elif index_name == 'EVI':
+            if 'B8' in band_names and 'B4' in band_names and 'B2' in band_names:
+                return image.expression(
+                    '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))', {
+                        'NIR': image.select('B8'),
+                        'RED': image.select('B4'),
+                        'BLUE': image.select('B2')
+                    }).rename('EVI')
+        
+        elif index_name == 'SAVI':
+            if 'B8' in band_names and 'B4' in band_names:
+                return image.expression(
+                    '1.5 * ((NIR - RED) / (NIR + RED + 0.5))', {
+                        'NIR': image.select('B8'),
+                        'RED': image.select('B4')
+                    }).rename('SAVI')
+    except:
+        pass
     
     return None
 
@@ -1853,7 +1901,8 @@ def create_modern_vegetation_chart(results, index_name, location_name):
     data = results[index_name]
     
     # Get accuracy badge based on dataset
-    dataset = "Sentinel-2" if "Sentinel-2" in st.session_state.get('analysis_parameters', {}).get('collection_choice', '') else "Landsat-8"
+    collection_choice = st.session_state.get('analysis_parameters', {}).get('collection_choice', 'Sentinel-2')
+    dataset = collection_choice
     accuracy_badge = get_accuracy_badge(dataset, index_name)
     
     fig = go.Figure()
