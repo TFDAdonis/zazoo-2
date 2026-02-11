@@ -572,6 +572,25 @@ def get_daily_climate_data_corrected(start_date, end_date, geometry, scale=5000,
             None
         )
         
+        # Min temperature conversion
+        temp_min_kelvin = ee.Algorithms.If(
+            temp_image,
+            temp_image.select('temperature_2m_min').reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=scale,
+                maxPixels=1e9,
+                bestEffort=True
+            ).get('temperature_2m_min'),
+            None
+        )
+        
+        temp_min_celsius = ee.Algorithms.If(
+            temp_min_kelvin,
+            ee.Number(temp_min_kelvin).subtract(273.15),
+            None
+        )
+        
         # Precipitation with calibration
         precip_image = precipitation.filterDate(date, date.advance(1, 'day')).first()
         precip_mm = ee.Algorithms.If(
@@ -596,6 +615,7 @@ def get_daily_climate_data_corrected(start_date, end_date, geometry, scale=5000,
             'date': date_str,
             'temperature': temp_celsius,
             'temperature_max': temp_max_celsius,
+            'temperature_min': temp_min_celsius,
             'precipitation': precip_calibrated
         })
     
@@ -623,6 +643,7 @@ def analyze_daily_climate_data(study_roi, start_date, end_date, location_name=""
             # Handle null values properly
             temp_val = props.get('temperature')
             temp_max_val = props.get('temperature_max')
+            temp_min_val = props.get('temperature_min')
             precip_val = props.get('precipitation')
             
             # Only add if we have temperature data
@@ -631,6 +652,7 @@ def analyze_daily_climate_data(study_roi, start_date, end_date, location_name=""
                     'date': props['date'],
                     'temperature': float(temp_val) if temp_val is not None else np.nan,
                     'temperature_max': float(temp_max_val) if temp_max_val is not None else np.nan,
+                    'temperature_min': float(temp_min_val) if temp_min_val is not None else np.nan,
                     'precipitation': float(precip_val) if precip_val is not None else 0
                 })
         
@@ -852,6 +874,795 @@ class EnhancedClimateSoilAnalyzer:
                 }
 
     # =============================================================================
+    # ENHANCED CLIMATE CHARTS WITH ALL ORIGINAL FEATURES
+    # =============================================================================
+
+    def get_daily_climate_data_for_analysis(self, geometry, start_date, end_date, precip_scale=1.0):
+        """Get enhanced daily climate data with GUARANTEED Kelvin → Celsius conversion"""
+        try:
+            era5 = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR") \
+                .filterDate(start_date, end_date) \
+                .filterBounds(geometry)
+            
+            chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY") \
+                .filterDate(start_date, end_date) \
+                .filterBounds(geometry)
+            
+            def create_monthly_composite(year_month):
+                year_month = ee.Date(year_month)
+                month_start = year_month
+                month_end = month_start.advance(1, 'month')
+                
+                # CRITICAL FIX: Get Kelvin, then SUBTRACT 273.15 for Celsius
+                temp_kelvin = era5.filterDate(month_start, month_end) \
+                                 .select('temperature_2m') \
+                                 .mean()
+                
+                # GUARANTEED CONVERSION
+                temp_celsius = temp_kelvin.subtract(273.15)
+                
+                # Precipitation with calibration
+                precip_raw = chirps.filterDate(month_start, month_end) \
+                                  .select('precipitation') \
+                                  .sum()
+                
+                precip_calibrated = precip_raw.multiply(precip_scale)
+                
+                # Soil moisture (no conversion needed)
+                soil_moisture_1 = era5.filterDate(month_start, month_end) \
+                                     .select('volumetric_soil_water_layer_1') \
+                                     .mean()
+                
+                soil_moisture_2 = era5.filterDate(month_start, month_end) \
+                                     .select('volumetric_soil_water_layer_2') \
+                                     .mean()
+                
+                soil_moisture_3 = era5.filterDate(month_start, month_end) \
+                                     .select('volumetric_soil_water_layer_3') \
+                                     .mean()
+                
+                # Convert max/min temperatures
+                temp_max_kelvin = era5.filterDate(month_start, month_end) \
+                                     .select('temperature_2m_max') \
+                                     .max()
+                
+                temp_max_celsius = temp_max_kelvin.subtract(273.15)
+                
+                temp_min_kelvin = era5.filterDate(month_start, month_end) \
+                                     .select('temperature_2m_min') \
+                                     .min()
+                
+                temp_min_celsius = temp_min_kelvin.subtract(273.15)
+                
+                temp_range = temp_max_celsius.subtract(temp_min_celsius)
+                pet = temp_celsius.add(17.8).multiply(temp_range.sqrt()).multiply(0.0023).multiply(30).rename('potential_evaporation')
+                
+                return ee.Image.cat([
+                    temp_celsius.rename('temperature_2m'),  # GUARANTEED CELSIUS
+                    precip_calibrated.rename('total_precipitation'),
+                    soil_moisture_1.rename('soil_moisture_1'),
+                    soil_moisture_2.rename('soil_moisture_2'),
+                    soil_moisture_3.rename('soil_moisture_3'),
+                    pet.rename('potential_evaporation'),
+                    temp_max_celsius.rename('temperature_max'),
+                    temp_min_celsius.rename('temperature_min')
+                ]).set('system:time_start', month_start.millis())
+            
+            start = ee.Date(start_date)
+            end = ee.Date(end_date)
+            months = ee.List.sequence(0, end.difference(start, 'month').subtract(1))
+            
+            monthly_collection = ee.ImageCollection(months.map(
+                lambda month: create_monthly_composite(start.advance(month, 'month'))
+            ))
+            
+            return monthly_collection
+            
+        except Exception as e:
+            st.error(f"Error in get_daily_climate_data_for_analysis: {e}")
+            return None
+
+    def extract_monthly_statistics(self, monthly_collection, geometry):
+        """Extract monthly statistics for analysis with all soil layers"""
+        try:
+            centroid = geometry.centroid()
+            series = monthly_collection.getRegion(centroid, 10000).getInfo()
+            
+            if not series or len(series) <= 1:
+                return None
+            
+            headers = series[0]
+            data = series[1:]
+            
+            df = pd.DataFrame(data, columns=headers)
+            df['datetime'] = pd.to_datetime(df['time'], unit='ms')
+            df['month'] = df['datetime'].dt.month
+            df['month_name'] = df['datetime'].dt.strftime('%b')
+            df['year'] = df['datetime'].dt.year
+            
+            # Rename columns for clarity
+            column_mapping = {
+                'soil_moisture_1': 'soil_moisture_0_7cm',
+                'soil_moisture_2': 'soil_moisture_7_28cm',
+                'soil_moisture_3': 'soil_moisture_28_100cm',
+                'temperature_2m': 'temperature_2m',
+                'total_precipitation': 'total_precipitation',
+                'potential_evaporation': 'potential_evaporation',
+                'temperature_max': 'temperature_max',
+                'temperature_min': 'temperature_min'
+            }
+            df = df.rename(columns=column_mapping)
+            
+            required_columns = ['temperature_2m', 'total_precipitation', 'potential_evaporation', 
+                               'soil_moisture_0_7cm', 'soil_moisture_7_28cm', 'soil_moisture_28_100cm',
+                               'temperature_max', 'temperature_min']
+            for col in required_columns:
+                if col in df.columns:
+                    df[col] = df[col].fillna(0)
+            
+            return df
+            
+        except Exception as e:
+            return None
+
+    def create_modern_climate_charts(self, climate_df, location_name):
+        """Create modern, smooth climate charts with accuracy indicators - FULLY RESTORED"""
+        charts = {}
+        
+        if climate_df is None or climate_df.empty:
+            return charts
+        
+        region_type = get_region_type(location_name)
+        temp_accuracy_badge = get_accuracy_badge("ERA5-Land", region_type)
+        precip_accuracy_badge = get_accuracy_badge("CHIRPS", region_type)
+        
+        # 1. Temperature Chart (Monthly)
+        fig_temp = go.Figure()
+        
+        fig_temp.add_trace(go.Scatter(
+            x=climate_df['month_name'],
+            y=climate_df['temperature_2m'],
+            mode='lines+markers',
+            name='Temperature',
+            line=dict(
+                color='#FF6B6B',
+                width=3,
+                shape='spline',
+                smoothing=1.3
+            ),
+            marker=dict(
+                size=8,
+                color='#FF6B6B',
+                line=dict(width=1, color='#FFFFFF')
+            ),
+            fill='tozeroy',
+            fillcolor='rgba(255, 107, 107, 0.1)'
+        ))
+        
+        fig_temp.update_layout(
+            title=dict(
+                text=f'<b>Monthly Temperature</b> {temp_accuracy_badge}',
+                font=dict(size=16, color='#FFFFFF'),
+                x=0.5
+            ),
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#FFFFFF', size=12),
+            xaxis=dict(
+                title='',
+                gridcolor='#333333',
+                tickfont=dict(size=12, color='#CCCCCC'),
+                showline=True,
+                linewidth=1,
+                linecolor='#444444'
+            ),
+            yaxis=dict(
+                title='Temperature (°C)',
+                gridcolor='#333333',
+                tickfont=dict(size=12, color='#CCCCCC'),
+                showline=True,
+                linewidth=1,
+                linecolor='#444444'
+            ),
+            height=350,
+            margin=dict(l=40, r=20, t=80, b=40),
+            hovermode='x unified',
+            showlegend=False
+        )
+        
+        charts['temperature'] = fig_temp
+        
+        # 2. Temperature Range Chart (Min/Max)
+        if 'temperature_max' in climate_df.columns and 'temperature_min' in climate_df.columns:
+            fig_temp_range = go.Figure()
+            
+            fig_temp_range.add_trace(go.Scatter(
+                x=climate_df['month_name'],
+                y=climate_df['temperature_max'],
+                mode='lines+markers',
+                name='Max Temperature',
+                line=dict(
+                    color='#FF4444',
+                    width=2,
+                    shape='spline',
+                    smoothing=1.3
+                ),
+                marker=dict(
+                    size=6,
+                    color='#FF4444'
+                )
+            ))
+            
+            fig_temp_range.add_trace(go.Scatter(
+                x=climate_df['month_name'],
+                y=climate_df['temperature_min'],
+                mode='lines+markers',
+                name='Min Temperature',
+                line=dict(
+                    color='#4A90E2',
+                    width=2,
+                    shape='spline',
+                    smoothing=1.3
+                ),
+                marker=dict(
+                    size=6,
+                    color='#4A90E2'
+                ),
+                fill='tonexty',
+                fillcolor='rgba(74, 144, 226, 0.1)'
+            ))
+            
+            fig_temp_range.update_layout(
+                title=dict(
+                    text=f'<b>Temperature Range</b> {temp_accuracy_badge}',
+                    font=dict(size=16, color='#FFFFFF'),
+                    x=0.5
+                ),
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='#FFFFFF', size=12),
+                xaxis=dict(title='', gridcolor='#333333'),
+                yaxis=dict(title='Temperature (°C)', gridcolor='#333333'),
+                height=350,
+                margin=dict(l=40, r=20, t=80, b=40),
+                hovermode='x unified',
+                legend=dict(
+                    orientation='h',
+                    yanchor='bottom',
+                    y=1.02,
+                    xanchor='center',
+                    x=0.5,
+                    font=dict(size=11, color='#FFFFFF')
+                )
+            )
+            
+            charts['temperature_range'] = fig_temp_range
+        
+        # 3. Precipitation & Evaporation Chart
+        fig_water = go.Figure()
+        
+        fig_water.add_trace(go.Bar(
+            x=climate_df['month_name'],
+            y=climate_df['total_precipitation'],
+            name='Precipitation',
+            marker_color='#4A90E2',
+            marker_line=dict(width=1, color='#FFFFFF'),
+            opacity=0.8,
+            text=[f'{v:.1f} mm' for v in climate_df['total_precipitation']],
+            textposition='outside',
+            textfont=dict(size=11, color='#CCCCCC')
+        ))
+        
+        if 'potential_evaporation' in climate_df.columns:
+            fig_water.add_trace(go.Scatter(
+                x=climate_df['month_name'],
+                y=climate_df['potential_evaporation'],
+                mode='lines+markers',
+                name='Evaporation',
+                line=dict(
+                    color='#FFAA44',
+                    width=3,
+                    shape='spline',
+                    smoothing=1.3
+                ),
+                marker=dict(
+                    size=8,
+                    color='#FFAA44',
+                    line=dict(width=1, color='#FFFFFF')
+                ),
+                yaxis='y2'
+            ))
+        
+        fig_water.update_layout(
+            title=dict(
+                text=f'<b>Water Balance</b> {precip_accuracy_badge}',
+                font=dict(size=16, color='#FFFFFF'),
+                x=0.5
+            ),
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#FFFFFF', size=12),
+            xaxis=dict(
+                title='',
+                gridcolor='#333333',
+                tickfont=dict(size=12, color='#CCCCCC')
+            ),
+            yaxis=dict(
+                title='Precipitation (mm)',
+                gridcolor='#333333',
+                tickfont=dict(size=12, color='#CCCCCC')
+            ),
+            yaxis2=dict(
+                title='Evaporation (mm)',
+                overlaying='y',
+                side='right',
+                gridcolor='#333333',
+                tickfont=dict(size=12, color='#CCCCCC')
+            ),
+            height=350,
+            margin=dict(l=40, r=40, t=80, b=40),
+            hovermode='x unified',
+            legend=dict(
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='center',
+                x=0.5,
+                font=dict(size=11, color='#FFFFFF')
+            )
+        )
+        
+        charts['water_balance'] = fig_water
+        
+        # 4. Soil Moisture Chart - ALL THREE LAYERS
+        if all(col in climate_df.columns for col in ['soil_moisture_0_7cm', 'soil_moisture_7_28cm', 'soil_moisture_28_100cm']):
+            fig_soil = go.Figure()
+            
+            # Layer 1: 0-7cm (Surface)
+            fig_soil.add_trace(go.Scatter(
+                x=climate_df['month_name'],
+                y=climate_df['soil_moisture_0_7cm'],
+                mode='lines+markers',
+                name='Surface (0-7cm)',
+                line=dict(
+                    color='#00FF88',
+                    width=3,
+                    shape='spline',
+                    smoothing=1.3
+                ),
+                marker=dict(
+                    size=8,
+                    color='#00FF88',
+                    line=dict(width=1, color='#FFFFFF')
+                ),
+                fill='tozeroy',
+                fillcolor='rgba(0, 255, 136, 0.1)'
+            ))
+            
+            # Layer 2: 7-28cm (Root zone)
+            fig_soil.add_trace(go.Scatter(
+                x=climate_df['month_name'],
+                y=climate_df['soil_moisture_7_28cm'],
+                mode='lines+markers',
+                name='Root zone (7-28cm)',
+                line=dict(
+                    color='#4A90E2',
+                    width=3,
+                    shape='spline',
+                    smoothing=1.3
+                ),
+                marker=dict(
+                    size=8,
+                    color='#4A90E2',
+                    line=dict(width=1, color='#FFFFFF')
+                ),
+                fill='tonexty',
+                fillcolor='rgba(74, 144, 226, 0.1)'
+            ))
+            
+            # Layer 3: 28-100cm (Deep storage)
+            fig_soil.add_trace(go.Scatter(
+                x=climate_df['month_name'],
+                y=climate_df['soil_moisture_28_100cm'],
+                mode='lines+markers',
+                name='Deep (28-100cm)',
+                line=dict(
+                    color='#FFAA44',
+                    width=3,
+                    shape='spline',
+                    smoothing=1.3
+                ),
+                marker=dict(
+                    size=8,
+                    color='#FFAA44',
+                    line=dict(width=1, color='#FFFFFF')
+                ),
+                fill='tonexty',
+                fillcolor='rgba(255, 170, 68, 0.1)'
+            ))
+            
+            fig_soil.update_layout(
+                title=dict(
+                    text=f'<b>Soil Moisture by Depth</b> {temp_accuracy_badge}',
+                    font=dict(size=16, color='#FFFFFF'),
+                    x=0.5
+                ),
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='#FFFFFF', size=12),
+                xaxis=dict(
+                    title='',
+                    gridcolor='#333333',
+                    tickfont=dict(size=12, color='#CCCCCC')
+                ),
+                yaxis=dict(
+                    title='Volumetric Water Content (m³/m³)',
+                    gridcolor='#333333',
+                    tickfont=dict(size=12, color='#CCCCCC'),
+                    tickformat='.2f',
+                    range=[0, max(climate_df[['soil_moisture_0_7cm', 'soil_moisture_7_28cm', 'soil_moisture_28_100cm']].max()) * 1.1]
+                ),
+                height=400,
+                margin=dict(l=40, r=20, t=80, b=40),
+                hovermode='x unified',
+                legend=dict(
+                    orientation='h',
+                    yanchor='bottom',
+                    y=1.02,
+                    xanchor='center',
+                    x=0.5,
+                    font=dict(size=11, color='#FFFFFF')
+                )
+            )
+            
+            charts['soil_moisture'] = fig_soil
+            
+            # 5. Soil Moisture Comparison Chart (Stacked Area)
+            fig_soil_comparison = go.Figure()
+            
+            fig_soil_comparison.add_trace(go.Scatter(
+                x=climate_df['month_name'],
+                y=climate_df['soil_moisture_28_100cm'],
+                mode='lines',
+                name='Deep (28-100cm)',
+                line=dict(width=0),
+                stackgroup='one',
+                fillcolor='rgba(255, 170, 68, 0.7)'
+            ))
+            
+            fig_soil_comparison.add_trace(go.Scatter(
+                x=climate_df['month_name'],
+                y=climate_df['soil_moisture_7_28cm'],
+                mode='lines',
+                name='Root zone (7-28cm)',
+                line=dict(width=0),
+                stackgroup='one',
+                fillcolor='rgba(74, 144, 226, 0.7)'
+            ))
+            
+            fig_soil_comparison.add_trace(go.Scatter(
+                x=climate_df['month_name'],
+                y=climate_df['soil_moisture_0_7cm'],
+                mode='lines',
+                name='Surface (0-7cm)',
+                line=dict(width=0),
+                stackgroup='one',
+                fillcolor='rgba(0, 255, 136, 0.7)'
+            ))
+            
+            fig_soil_comparison.update_layout(
+                title=dict(
+                    text=f'<b>Soil Moisture Distribution</b> {temp_accuracy_badge}',
+                    font=dict(size=16, color='#FFFFFF'),
+                    x=0.5
+                ),
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='#FFFFFF', size=12),
+                xaxis=dict(
+                    title='',
+                    gridcolor='#333333',
+                    tickfont=dict(size=12, color='#CCCCCC')
+                ),
+                yaxis=dict(
+                    title='Total Volumetric Water (m³/m³)',
+                    gridcolor='#333333',
+                    tickfont=dict(size=12, color='#CCCCCC'),
+                    tickformat='.2f'
+                ),
+                height=350,
+                margin=dict(l=40, r=20, t=80, b=40),
+                hovermode='x unified',
+                legend=dict(
+                    orientation='h',
+                    yanchor='bottom',
+                    y=1.02,
+                    xanchor='center',
+                    x=0.5,
+                    font=dict(size=11, color='#FFFFFF')
+                )
+            )
+            
+            charts['soil_comparison'] = fig_soil_comparison
+        
+        return charts
+
+    def display_daily_climate_charts(self, daily_df, location_name):
+        """Display daily climate data charts"""
+        if daily_df is None or daily_df.empty:
+            return
+        
+        region_type = get_region_type(location_name)
+        temp_accuracy_badge = get_accuracy_badge("ERA5-Land", region_type)
+        precip_accuracy_badge = get_accuracy_badge("CHIRPS", region_type)
+        
+        # Daily Temperature Chart
+        fig_daily_temp = go.Figure()
+        
+        fig_daily_temp.add_trace(go.Scatter(
+            x=daily_df['date'],
+            y=daily_df['temperature'],
+            mode='lines',
+            name='Daily Temperature',
+            line=dict(
+                color='#FF6B6B',
+                width=2,
+                shape='spline',
+                smoothing=1.1
+            ),
+            fill='tozeroy',
+            fillcolor='rgba(255, 107, 107, 0.05)'
+        ))
+        
+        if 'temperature_max' in daily_df.columns and 'temperature_min' in daily_df.columns:
+            fig_daily_temp.add_trace(go.Scatter(
+                x=daily_df['date'],
+                y=daily_df['temperature_max'],
+                mode='lines',
+                name='Max',
+                line=dict(color='#FF4444', width=1, dash='dot'),
+                showlegend=True
+            ))
+            
+            fig_daily_temp.add_trace(go.Scatter(
+                x=daily_df['date'],
+                y=daily_df['temperature_min'],
+                mode='lines',
+                name='Min',
+                line=dict(color='#4A90E2', width=1, dash='dot'),
+                fill='tonexty',
+                fillcolor='rgba(74, 144, 226, 0.05)',
+                showlegend=True
+            ))
+        
+        fig_daily_temp.update_layout(
+            title=dict(
+                text=f'<b>Daily Temperature</b> {temp_accuracy_badge}',
+                font=dict(size=16, color='#FFFFFF'),
+                x=0.5
+            ),
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#FFFFFF', size=12),
+            xaxis=dict(
+                title='',
+                gridcolor='#333333',
+                tickfont=dict(size=11, color='#CCCCCC')
+            ),
+            yaxis=dict(
+                title='Temperature (°C)',
+                gridcolor='#333333',
+                tickfont=dict(size=12, color='#CCCCCC')
+            ),
+            height=300,
+            margin=dict(l=40, r=20, t=60, b=40),
+            hovermode='x unified',
+            legend=dict(
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='center',
+                x=0.5,
+                font=dict(size=11, color='#FFFFFF')
+            )
+        )
+        
+        st.plotly_chart(fig_daily_temp, use_container_width=True)
+        
+        # Daily Precipitation Chart
+        fig_daily_precip = go.Figure()
+        
+        fig_daily_precip.add_trace(go.Bar(
+            x=daily_df['date'],
+            y=daily_df['precipitation'],
+            name='Daily Precipitation',
+            marker_color='#4A90E2',
+            marker_line=dict(width=0),
+            opacity=0.7
+        ))
+        
+        fig_daily_precip.update_layout(
+            title=dict(
+                text=f'<b>Daily Precipitation</b> {precip_accuracy_badge}',
+                font=dict(size=16, color='#FFFFFF'),
+                x=0.5
+            ),
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#FFFFFF', size=12),
+            xaxis=dict(
+                title='',
+                gridcolor='#333333',
+                tickfont=dict(size=11, color='#CCCCCC')
+            ),
+            yaxis=dict(
+                title='Precipitation (mm)',
+                gridcolor='#333333',
+                tickfont=dict(size=12, color='#CCCCCC')
+            ),
+            height=250,
+            margin=dict(l=40, r=20, t=60, b=40),
+            hovermode='x unified',
+            showlegend=False
+        )
+        
+        st.plotly_chart(fig_daily_precip, use_container_width=True)
+
+    def display_enhanced_climate_charts(self, location_name, climate_df, daily_df=None, precip_scale=1.0):
+        """Display enhanced climate charts with ALL original charts restored"""
+        if climate_df is None or climate_df.empty:
+            st.warning("No climate data available for this location.")
+            return
+        
+        # Create modern charts
+        charts = self.create_modern_climate_charts(climate_df, location_name)
+        
+        if charts:
+            # Create tabs for different chart categories
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(["🌡️ Temperature", "📊 Daily Data", "💧 Water", "🌱 Soil Layers", "📊 Soil Distribution"])
+            
+            with tab1:
+                # Monthly Temperature
+                st.plotly_chart(charts['temperature'], use_container_width=True)
+                
+                # Temperature Range if available
+                if 'temperature_range' in charts:
+                    st.plotly_chart(charts['temperature_range'], use_container_width=True)
+                
+                # Temperature metrics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    avg_temp = climate_df['temperature_2m'].mean()
+                    st.metric("🌡️ Average", f"{avg_temp:.1f}°C")
+                with col2:
+                    max_temp = climate_df['temperature_2m'].max()
+                    max_month = climate_df.loc[climate_df['temperature_2m'].idxmax(), 'month_name']
+                    st.metric("📈 Maximum", f"{max_temp:.1f}°C", delta=f"in {max_month}")
+                with col3:
+                    min_temp = climate_df['temperature_2m'].min()
+                    min_month = climate_df.loc[climate_df['temperature_2m'].idxmin(), 'month_name']
+                    st.metric("📉 Minimum", f"{min_temp:.1f}°C", delta=f"in {min_month}")
+                with col4:
+                    temp_range = max_temp - min_temp
+                    st.metric("📊 Range", f"{temp_range:.1f}°C")
+                
+                # Accuracy note
+                st.markdown(f"""
+                <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem;">
+                    <p style="color: #CCCCCC; margin: 0; font-size: 0.8rem;">
+                    <strong>📊 Data Source:</strong> ERA5-Land Daily Aggregated<br>
+                    <strong>✓ Temperature:</strong> Converted from Kelvin to Celsius<br>
+                    <strong>✓ Accuracy:</strong> ±1-2°C for temperature<br>
+                    <strong>✓ Period:</strong> {climate_df['month'].min()} - {climate_df['month'].max()} months
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with tab2:
+                # Daily temperature and precipitation charts
+                if daily_df is not None and not daily_df.empty:
+                    st.subheader("📅 Daily Temperature")
+                    self.display_daily_climate_charts(daily_df, location_name)
+                    
+                    # Daily statistics
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("📅 Days", f"{len(daily_df)}")
+                    with col2:
+                        st.metric("🌡️ Avg Daily", f"{daily_df['temperature'].mean():.1f}°C")
+                    with col3:
+                        st.metric("💧 Total Precip", f"{daily_df['precipitation'].sum():.0f} mm")
+                else:
+                    st.info("Daily data not available for this time period")
+            
+            with tab3:
+                # Water Balance
+                if 'water_balance' in charts:
+                    st.plotly_chart(charts['water_balance'], use_container_width=True)
+                
+                # Water balance metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    total_precip = climate_df['total_precipitation'].sum()
+                    st.metric("💧 Annual Total", f"{total_precip:.0f} mm")
+                with col2:
+                    if 'potential_evaporation' in climate_df.columns:
+                        total_evap = climate_df['potential_evaporation'].sum()
+                        st.metric("☀️ Annual Evap", f"{total_evap:.0f} mm")
+                    else:
+                        st.metric("☀️ Wet Months", f"{(climate_df['total_precipitation'] > 50).sum()}")
+                with col3:
+                    water_balance = total_precip - total_evap if 'potential_evaporation' in climate_df.columns else total_precip
+                    status = "Surplus" if water_balance > 0 else "Deficit"
+                    st.metric("💦 Net Balance", f"{water_balance:.0f} mm", delta=status, delta_color="normal")
+                
+                # Accuracy note for CHIRPS
+                region_type = get_region_type(location_name)
+                if region_type in ["Semi-arid", "Arid"]:
+                    st.markdown(f"""
+                    <div style="background: rgba(255, 170, 68, 0.1); padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem;">
+                        <p style="color: #FFAA44; margin: 0; font-size: 0.8rem;">
+                        <strong>⚠️ CHIRPS Accuracy Note:</strong><br>
+                        • Region detected: {region_type}<br>
+                        • In arid/semi-arid areas, CHIRPS may overestimate precipitation by 20-40%<br>
+                        • Calibration factor applied: ×{precip_scale}<br>
+                        • Consider using local rain gauge data for critical applications
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem;">
+                        <p style="color: #CCCCCC; margin: 0; font-size: 0.8rem;">
+                        <strong>📊 Data Source:</strong> CHIRPS Daily<br>
+                        <strong>✓ Precipitation:</strong> Satellite + Gauge data<br>
+                        <strong>✓ Accuracy:</strong> ±20-40% depending on region<br>
+                        <strong>✓ Calibration:</strong> ×{precip_scale} factor applied
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            with tab4:
+                # Soil Moisture by Layer
+                if 'soil_moisture' in charts:
+                    st.plotly_chart(charts['soil_moisture'], use_container_width=True)
+                    
+                    # Soil moisture metrics for each layer
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        avg_surface = climate_df['soil_moisture_0_7cm'].mean()
+                        st.metric("🌱 Surface (0-7cm)", f"{avg_surface:.3f} m³/m³")
+                    with col2:
+                        avg_root = climate_df['soil_moisture_7_28cm'].mean()
+                        st.metric("🌿 Root zone (7-28cm)", f"{avg_root:.3f} m³/m³")
+                    with col3:
+                        avg_deep = climate_df['soil_moisture_28_100cm'].mean()
+                        st.metric("🌳 Deep (28-100cm)", f"{avg_deep:.3f} m³/m³")
+                else:
+                    st.info("Soil moisture data not available for this location")
+            
+            with tab5:
+                # Soil Moisture Distribution
+                if 'soil_comparison' in charts:
+                    st.plotly_chart(charts['soil_comparison'], use_container_width=True)
+                    
+                    # Soil moisture summary
+                    st.markdown("""
+                    <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 12px; margin-top: 0.5rem;">
+                        <p style="color: #CCCCCC; margin: 0; font-size: 0.9rem;">
+                        <strong>📊 Soil Moisture Interpretation:</strong><br>
+                        • <span style="color: #00FF88;">Surface (0-7cm):</span> Rapid response to rainfall, high evaporation<br>
+                        • <span style="color: #4A90E2;">Root zone (7-28cm):</span> Available for plant uptake, moderate retention<br>
+                        • <span style="color: #FFAA44;">Deep (28-100cm):</span> Groundwater recharge, stable moisture
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.info("Soil moisture distribution data not available")
+        else:
+            st.warning("Could not generate climate charts.")
+
+    # =============================================================================
     # SOIL ANALYSIS METHODS
     # =============================================================================
 
@@ -1059,287 +1870,6 @@ class EnhancedClimateSoilAnalyzer:
         
         return fig_texture, fig_som
 
-    # =============================================================================
-    # CORRECTED CLIMATE ANALYSIS WITH ACTUAL DAILY DATA
-    # =============================================================================
-
-    def run_enhanced_climate_soil_analysis(self, country, region='Select Region', municipality='Select Municipality', precip_scale=1.0):
-        """Run enhanced climate and soil analysis with CORRECT values"""
-        try:
-            # Get geometry from selection
-            geometry, location_name = self.get_geometry_from_selection(country, region, municipality)
-
-            if not geometry:
-                st.error("Could not get geometry for selected location")
-                return None
-            
-            # Get the actual geometry object
-            geom = geometry
-
-            # Get climate classification from WorldClim (30-year normals)
-            climate_results = self.get_accurate_climate_classification(geom, location_name)
-            
-            # Use actual date range for current analysis
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
-            
-            # Get daily climate data with proper scale
-            daily_climate_df = analyze_daily_climate_data(
-                geom, 
-                start_date, 
-                end_date, 
-                location_name, 
-                precip_scale
-            )
-            
-            # Convert daily to monthly for visualization
-            climate_df = None
-            if daily_climate_df is not None and not daily_climate_df.empty:
-                # Add month column for grouping
-                daily_climate_df['month'] = pd.to_datetime(daily_climate_df['date']).dt.month
-                daily_climate_df['month_name'] = pd.to_datetime(daily_climate_df['date']).dt.strftime('%b')
-                
-                # Group by month to get monthly averages
-                monthly_df = daily_climate_df.groupby(['month', 'month_name']).agg({
-                    'temperature': 'mean',
-                    'temperature_max': 'max',
-                    'precipitation': 'sum'
-                }).reset_index()
-                
-                # Rename columns to match expected format
-                monthly_df = monthly_df.rename(columns={
-                    'temperature': 'temperature_2m',
-                    'temperature_max': 'temperature_max',
-                    'precipitation': 'total_precipitation'
-                })
-                
-                # Sort by month
-                monthly_df = monthly_df.sort_values('month')
-                
-                climate_df = monthly_df
-
-            # Get soil data
-            soil_results = self.run_comprehensive_soil_analysis(country, region, municipality)
-            
-            if soil_results:
-                return {
-                    'climate_data': climate_results,
-                    'soil_data': soil_results,
-                    'climate_df': climate_df,
-                    'daily_climate_df': daily_climate_df,
-                    'location_name': location_name
-                }
-            else:
-                st.warning("Soil data could not be retrieved")
-                return {
-                    'climate_data': climate_results,
-                    'soil_data': None,
-                    'climate_df': climate_df,
-                    'daily_climate_df': daily_climate_df,
-                    'location_name': location_name
-                }
-                
-        except Exception as e:
-            st.error(f"Analysis error: {str(e)}")
-            traceback.print_exc()
-            return None
-
-    def create_modern_climate_charts(self, climate_df, location_name):
-        """Create modern, smooth climate charts with accuracy indicators"""
-        charts = {}
-        
-        if climate_df is None or climate_df.empty:
-            return charts
-        
-        region_type = get_region_type(location_name)
-        temp_accuracy_badge = get_accuracy_badge("ERA5-Land", region_type)
-        precip_accuracy_badge = get_accuracy_badge("CHIRPS", region_type)
-        
-        # 1. Temperature Chart
-        fig_temp = go.Figure()
-        
-        fig_temp.add_trace(go.Scatter(
-            x=climate_df['month_name'],
-            y=climate_df['temperature_2m'],
-            mode='lines+markers',
-            name='Temperature',
-            line=dict(
-                color='#FF6B6B',
-                width=3,
-                shape='spline',
-                smoothing=1.3
-            ),
-            marker=dict(
-                size=8,
-                color='#FF6B6B',
-                line=dict(width=1, color='#FFFFFF')
-            ),
-            fill='tozeroy',
-            fillcolor='rgba(255, 107, 107, 0.1)'
-        ))
-        
-        fig_temp.update_layout(
-            title=dict(
-                text=f'<b>Monthly Temperature</b> {temp_accuracy_badge}',
-                font=dict(size=16, color='#FFFFFF'),
-                x=0.5
-            ),
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#FFFFFF', size=12),
-            xaxis=dict(
-                title='',
-                gridcolor='#333333',
-                tickfont=dict(size=12, color='#CCCCCC'),
-                showline=True,
-                linewidth=1,
-                linecolor='#444444'
-            ),
-            yaxis=dict(
-                title='Temperature (°C)',
-                gridcolor='#333333',
-                tickfont=dict(size=12, color='#CCCCCC'),
-                showline=True,
-                linewidth=1,
-                linecolor='#444444'
-            ),
-            height=350,
-            margin=dict(l=40, r=20, t=80, b=40),
-            hovermode='x unified',
-            showlegend=False
-        )
-        
-        charts['temperature'] = fig_temp
-        
-        # 2. Precipitation Chart
-        fig_precip = go.Figure()
-        
-        fig_precip.add_trace(go.Bar(
-            x=climate_df['month_name'],
-            y=climate_df['total_precipitation'],
-            name='Precipitation',
-            marker_color='#4A90E2',
-            marker_line=dict(width=1, color='#FFFFFF'),
-            opacity=0.8,
-            text=[f'{v:.1f} mm' for v in climate_df['total_precipitation']],
-            textposition='outside',
-            textfont=dict(size=11, color='#CCCCCC')
-        ))
-        
-        fig_precip.update_layout(
-            title=dict(
-                text=f'<b>Monthly Precipitation</b> {precip_accuracy_badge}',
-                font=dict(size=16, color='#FFFFFF'),
-                x=0.5
-            ),
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#FFFFFF', size=12),
-            xaxis=dict(
-                title='',
-                gridcolor='#333333',
-                tickfont=dict(size=12, color='#CCCCCC')
-            ),
-            yaxis=dict(
-                title='Precipitation (mm)',
-                gridcolor='#333333',
-                tickfont=dict(size=12, color='#CCCCCC')
-            ),
-            height=350,
-            margin=dict(l=40, r=20, t=80, b=40),
-            hovermode='x unified',
-            showlegend=False
-        )
-        
-        charts['precipitation'] = fig_precip
-        
-        return charts
-
-    def display_enhanced_climate_charts(self, location_name, climate_df, precip_scale=1.0):
-        """Display enhanced climate charts with CORRECT values"""
-        if climate_df is None or climate_df.empty:
-            st.warning("No climate data available for this location.")
-            return
-        
-        # Create modern charts
-        charts = self.create_modern_climate_charts(climate_df, location_name)
-        
-        if charts:
-            # Display charts in tabs
-            tab1, tab2 = st.tabs(["🌡️ Temperature", "💧 Precipitation"])
-            
-            with tab1:
-                st.plotly_chart(charts['temperature'], use_container_width=True)
-                
-                # Temperature metrics
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    avg_temp = climate_df['temperature_2m'].mean()
-                    st.metric("🌡️ Average", f"{avg_temp:.1f}°C")
-                with col2:
-                    max_temp = climate_df['temperature_2m'].max()
-                    max_month = climate_df.loc[climate_df['temperature_2m'].idxmax(), 'month_name']
-                    st.metric("📈 Maximum", f"{max_temp:.1f}°C", delta=f"in {max_month}")
-                with col3:
-                    min_temp = climate_df['temperature_2m'].min()
-                    min_month = climate_df.loc[climate_df['temperature_2m'].idxmin(), 'month_name']
-                    st.metric("📉 Minimum", f"{min_temp:.1f}°C", delta=f"in {min_month}")
-                
-                # Accuracy note
-                st.markdown(f"""
-                <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem;">
-                    <p style="color: #CCCCCC; margin: 0; font-size: 0.8rem;">
-                    <strong>📊 Data Source:</strong> ERA5-Land Daily Aggregated<br>
-                    <strong>✓ Temperature:</strong> Converted from Kelvin to Celsius<br>
-                    <strong>✓ Accuracy:</strong> ±1-2°C for temperature
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-            with tab2:
-                st.plotly_chart(charts['precipitation'], use_container_width=True)
-                
-                # Precipitation metrics
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    total_precip = climate_df['total_precipitation'].sum()
-                    st.metric("💧 Annual Total", f"{total_precip:.0f} mm")
-                with col2:
-                    max_precip = climate_df['total_precipitation'].max()
-                    max_precip_month = climate_df.loc[climate_df['total_precipitation'].idxmax(), 'month_name']
-                    st.metric("🌧️ Max Monthly", f"{max_precip:.0f} mm", delta=f"in {max_precip_month}")
-                with col3:
-                    dry_months = (climate_df['total_precipitation'] < 30).sum()
-                    st.metric("🏜️ Dry Months", f"{dry_months}")
-                
-                # Accuracy note for CHIRPS
-                region_type = get_region_type(location_name)
-                if region_type in ["Semi-arid", "Arid"]:
-                    st.markdown(f"""
-                    <div style="background: rgba(255, 170, 68, 0.1); padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem;">
-                        <p style="color: #FFAA44; margin: 0; font-size: 0.8rem;">
-                        <strong>⚠️ CHIRPS Accuracy Note:</strong><br>
-                        • Region detected: {region_type}<br>
-                        • In arid/semi-arid areas, CHIRPS may overestimate precipitation by 20-40%<br>
-                        • Calibration factor applied: ×{precip_scale}<br>
-                        • Consider using local rain gauge data for critical applications
-                        </p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.markdown(f"""
-                    <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem;">
-                        <p style="color: #CCCCCC; margin: 0; font-size: 0.8rem;">
-                        <strong>📊 Data Source:</strong> CHIRPS Daily<br>
-                        <strong>✓ Precipitation:</strong> Satellite + Gauge data<br>
-                        <strong>✓ Accuracy:</strong> ±20-40% depending on region<br>
-                        <strong>✓ Calibration:</strong> ×{precip_scale} factor applied
-                        </p>
-                    </div>
-                    """, unsafe_allow_html=True)
-        else:
-            st.warning("Could not generate climate charts.")
-
     def create_climate_classification_chart(self, location_name, climate_data):
         """Create modern climate classification chart with accuracy indicators"""
         
@@ -1417,6 +1947,99 @@ class EnhancedClimateSoilAnalyzer:
         )
         
         return fig_temp, fig_precip
+
+    # =============================================================================
+    # CORRECTED CLIMATE ANALYSIS WITH ACTUAL DAILY DATA
+    # =============================================================================
+
+    def run_enhanced_climate_soil_analysis(self, country, region='Select Region', municipality='Select Municipality', precip_scale=1.0):
+        """Run enhanced climate and soil analysis with CORRECT values"""
+        try:
+            # Get geometry from selection
+            geometry, location_name = self.get_geometry_from_selection(country, region, municipality)
+
+            if not geometry:
+                st.error("Could not get geometry for selected location")
+                return None
+            
+            # Get the actual geometry object
+            geom = geometry
+
+            # Get climate classification from WorldClim (30-year normals)
+            climate_results = self.get_accurate_climate_classification(geom, location_name)
+            
+            # Use actual date range for current analysis
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+            
+            # Get daily climate data with proper scale
+            daily_climate_df = analyze_daily_climate_data(
+                geom, 
+                start_date, 
+                end_date, 
+                location_name, 
+                precip_scale
+            )
+            
+            # Get monthly enhanced climate data for soil moisture and other parameters
+            monthly_collection = self.get_daily_climate_data_for_analysis(geom, start_date, end_date, precip_scale)
+            monthly_climate_df = None
+            if monthly_collection:
+                monthly_climate_df = self.extract_monthly_statistics(monthly_collection, geom)
+            
+            # Convert daily to monthly for visualization if monthly data not available
+            climate_df = monthly_climate_df
+            if climate_df is None and daily_climate_df is not None and not daily_climate_df.empty:
+                # Add month column for grouping
+                daily_climate_df['month'] = pd.to_datetime(daily_climate_df['date']).dt.month
+                daily_climate_df['month_name'] = pd.to_datetime(daily_climate_df['date']).dt.strftime('%b')
+                
+                # Group by month to get monthly averages
+                monthly_df = daily_climate_df.groupby(['month', 'month_name']).agg({
+                    'temperature': 'mean',
+                    'temperature_max': 'max',
+                    'temperature_min': 'min',
+                    'precipitation': 'sum'
+                }).reset_index()
+                
+                # Rename columns to match expected format
+                monthly_df = monthly_df.rename(columns={
+                    'temperature': 'temperature_2m',
+                    'temperature_max': 'temperature_max',
+                    'temperature_min': 'temperature_min',
+                    'precipitation': 'total_precipitation'
+                })
+                
+                # Sort by month
+                monthly_df = monthly_df.sort_values('month')
+                
+                climate_df = monthly_df
+
+            # Get soil data
+            soil_results = self.run_comprehensive_soil_analysis(country, region, municipality)
+            
+            if soil_results:
+                return {
+                    'climate_data': climate_results,
+                    'soil_data': soil_results,
+                    'climate_df': climate_df,
+                    'daily_climate_df': daily_climate_df,
+                    'location_name': location_name
+                }
+            else:
+                st.warning("Soil data could not be retrieved")
+                return {
+                    'climate_data': climate_results,
+                    'soil_data': None,
+                    'climate_df': climate_df,
+                    'daily_climate_df': daily_climate_df,
+                    'location_name': location_name
+                }
+                
+        except Exception as e:
+            st.error(f"Analysis error: {str(e)}")
+            traceback.print_exc()
+            return None
 
 # =============================================================================
 # VEGETATION INDICES FUNCTIONS
@@ -1690,6 +2313,8 @@ def main():
         st.session_state.auto_show_results = False
     if 'climate_data' not in st.session_state:
         st.session_state.climate_data = None
+    if 'daily_climate_data' not in st.session_state:
+        st.session_state.daily_climate_data = None
     if 'ee_initialized' not in st.session_state:
         st.session_state.ee_initialized = False
     if 'selected_analysis_type' not in st.session_state:
@@ -2129,7 +2754,7 @@ def main():
                 
                 if st.session_state.selected_area_name:
                     st.info(f"**Area:** {st.session_state.selected_area_name[:30]}...")
-                    st.info("**Analysis Type:** Climate Classification + Soil Properties")
+                    st.info("**Analysis Type:** Climate Classification + Soil Properties + Daily/Monthly Climate")
                     
                     col_back, col_next = st.columns(2)
                     with col_back:
@@ -2418,13 +3043,18 @@ def main():
                         
                         st.markdown('</div>', unsafe_allow_html=True)
                         
-                        # Monthly Climate Charts
+                        # Monthly Climate Charts with ALL original charts
                         if enhanced_results.get('climate_df') is not None:
                             st.markdown('<div class="card chart-container">', unsafe_allow_html=True)
-                            st.markdown('<div style="margin-bottom: 1rem;"><h3 style="margin: 0;">📊 Monthly Climate Analysis</h3></div>', unsafe_allow_html=True)
+                            st.markdown('<div style="margin-bottom: 1rem;"><h3 style="margin: 0;">📊 Detailed Climate Analysis</h3></div>', unsafe_allow_html=True)
                             
                             precip_scale = st.session_state.get('precip_scale', 1.0)
-                            analyzer.display_enhanced_climate_charts(location_name, enhanced_results['climate_df'], precip_scale)
+                            analyzer.display_enhanced_climate_charts(
+                                location_name, 
+                                enhanced_results['climate_df'], 
+                                enhanced_results.get('daily_climate_df'),
+                                precip_scale
+                            )
                             
                             st.markdown('</div>', unsafe_allow_html=True)
                         
