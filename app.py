@@ -1,360 +1,398 @@
 import streamlit as st
 import ee
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime, timedelta
 import warnings
 import json
 import plotly.graph_objects as go
-import plotly.express as px
 import traceback
 
 warnings.filterwarnings('ignore')
 
-# Set page config - mobile optimized
+# Set page config
 st.set_page_config(
     page_title="Khisba GIS - Climate & Soil Analyzer",
     page_icon="🌍",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Clean Modern Mobile-First Design
+# Custom CSS for Clean Green & Black TypeScript/React Style with Guided UI
 st.markdown("""
 <style>
-    /* Base styling - dark mode */
+    /* Base styling */
     .stApp {
-        background: #0A0A0A;
-        color: #FFFFFF;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+        background: #000000;
+        color: #ffffff;
     }
     
     /* Remove Streamlit default padding */
     .main .block-container {
-        padding-top: 0.5rem;
-        padding-bottom: 0.5rem;
-        padding-left: 0.8rem;
-        padding-right: 0.8rem;
-        max-width: 100%;
+        padding-top: 1rem;
+        padding-bottom: 1rem;
     }
     
-    /* Green accent color */
+    /* Green & Black Theme */
     :root {
-        --primary: #00FF88;
-        --primary-dark: #00CC6A;
-        --bg-dark: #0A0A0A;
-        --bg-card: #141414;
-        --bg-card-hover: #1A1A1A;
-        --border: #2A2A2A;
-        --text: #FFFFFF;
-        --text-secondary: #CCCCCC;
-        --text-muted: #999999;
+        --primary-green: #00ff88;
+        --accent-green: #00cc6a;
+        --primary-black: #000000;
+        --card-black: #0a0a0a;
+        --secondary-black: #111111;
+        --border-gray: #222222;
+        --text-white: #ffffff;
+        --text-gray: #999999;
+        --text-light-gray: #cccccc;
     }
     
     /* Typography */
     h1, h2, h3, h4, h5, h6 {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         font-weight: 600;
-        letter-spacing: -0.01em;
-        color: var(--text) !important;
-        margin-bottom: 0.5rem !important;
+        letter-spacing: -0.025em;
+        color: var(--text-white) !important;
     }
     
     h1 {
-        font-size: 1.75rem !important;
-        background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+        font-size: 2rem !important;
+        background: linear-gradient(90deg, var(--primary-green), var(--accent-green));
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
-        margin-bottom: 0.25rem !important;
+        margin-bottom: 0.5rem !important;
     }
     
-    /* Mobile-optimized cards */
-    .card {
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 1.25rem;
-        margin-bottom: 1rem;
-        transition: all 0.2s ease;
-    }
-    
-    .card:hover {
-        border-color: var(--primary);
-    }
-    
-    .card-header {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        margin-bottom: 1rem;
-        padding-bottom: 0.75rem;
-        border-bottom: 1px solid var(--border);
-    }
-    
-    .card-icon {
-        width: 36px;
-        height: 36px;
-        background: rgba(0, 255, 136, 0.1);
-        border-radius: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--primary);
-        font-size: 1.25rem;
-    }
-    
-    /* Accuracy badges */
-    .accuracy-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        padding: 0.25rem 0.6rem;
-        background: rgba(0, 0, 0, 0.3);
-        border-radius: 30px;
-        font-size: 0.7rem;
-        border: 1px solid var(--border);
-        color: var(--text-secondary);
-        margin-left: 0.5rem;
-    }
-    
-    .accuracy-high {
-        background: rgba(0, 255, 136, 0.15);
-        border-color: rgba(0, 255, 136, 0.3);
-        color: #00FF88;
-    }
-    
-    .accuracy-medium {
-        background: rgba(255, 170, 68, 0.15);
-        border-color: rgba(255, 170, 68, 0.3);
-        color: #FFAA44;
-    }
-    
-    .accuracy-low {
-        background: rgba(255, 107, 107, 0.15);
-        border-color: rgba(255, 107, 107, 0.3);
-        color: #FF6B6B;
-    }
-    
-    /* Progress steps - simplified for mobile */
-    .progress-container {
+    /* Progress Steps */
+    .progress-steps {
         display: flex;
         justify-content: space-between;
-        margin: 1rem 0 1.5rem 0;
+        margin: 20px 0;
         position: relative;
-        padding: 0 0.25rem;
     }
     
     .progress-step {
         display: flex;
         flex-direction: column;
         align-items: center;
-        flex: 1;
+        position: relative;
+        z-index: 2;
     }
     
     .step-circle {
-        width: 36px;
-        height: 36px;
+        width: 40px;
+        height: 40px;
         border-radius: 50%;
-        background: var(--bg-card);
-        border: 2px solid var(--border);
+        background: var(--secondary-black);
+        border: 2px solid var(--border-gray);
         display: flex;
         align-items: center;
         justify-content: center;
-        color: var(--text-muted);
+        color: var(--text-gray);
         font-weight: 600;
-        font-size: 0.9rem;
-        margin-bottom: 0.5rem;
+        margin-bottom: 8px;
+        transition: all 0.3s ease;
     }
     
     .step-circle.active {
-        background: var(--primary);
-        border-color: var(--primary);
-        color: var(--bg-dark);
+        background: var(--primary-green);
+        border-color: var(--primary-green);
+        color: var(--primary-black);
+        box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
     }
     
     .step-circle.completed {
-        background: var(--primary-dark);
-        border-color: var(--primary-dark);
-        color: var(--bg-dark);
+        background: var(--accent-green);
+        border-color: var(--accent-green);
+        color: var(--primary-black);
     }
     
     .step-label {
-        font-size: 0.7rem;
-        color: var(--text-muted);
+        font-size: 12px;
+        color: var(--text-gray);
         text-align: center;
-        max-width: 80px;
-        font-weight: 500;
+        max-width: 100px;
     }
     
     .step-label.active {
-        color: var(--primary);
+        color: var(--primary-green);
+        font-weight: 600;
     }
     
-    /* Guide card */
-    .guide-card {
-        background: linear-gradient(135deg, rgba(0, 255, 136, 0.08), rgba(0, 204, 106, 0.08));
-        border: 1px solid rgba(0, 255, 136, 0.2);
-        border-radius: 16px;
-        padding: 1.25rem;
-        margin-bottom: 1.25rem;
+    .progress-line {
+        position: absolute;
+        top: 20px;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: var(--border-gray);
+        z-index: 1;
+    }
+    
+    .progress-fill {
+        position: absolute;
+        top: 20px;
+        left: 0;
+        height: 2px;
+        background: var(--primary-green);
+        z-index: 1;
+        transition: width 0.3s ease;
+    }
+    
+    /* Guided Instructions */
+    .guide-container {
+        background: linear-gradient(135deg, rgba(0, 255, 136, 0.1), rgba(0, 204, 106, 0.1));
+        border: 1px solid rgba(0, 255, 136, 0.3);
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.4); }
+        70% { box-shadow: 0 0 0 10px rgba(0, 255, 136, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0); }
+    }
+    
+    .guide-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .guide-icon {
+        font-size: 24px;
+        color: var(--primary-green);
     }
     
     .guide-title {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        color: var(--primary);
+        color: var(--primary-green);
+        font-size: 16px;
         font-weight: 600;
-        font-size: 0.9rem;
-        margin-bottom: 0.75rem;
     }
     
     .guide-content {
-        color: var(--text-secondary);
-        font-size: 0.85rem;
+        color: var(--text-light-gray);
+        font-size: 14px;
         line-height: 1.5;
     }
     
-    /* Status badges */
-    .status-badge {
-        display: inline-flex;
+    .guide-action {
+        margin-top: 15px;
+        padding: 12px 20px;
+        background: var(--primary-green);
+        color: var(--primary-black);
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        text-align: center;
+        display: inline-block;
+        transition: transform 0.2s;
+    }
+    
+    .guide-action:hover {
+        transform: translateY(-2px);
+    }
+    
+    /* Status Indicators */
+    .status-container {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .status-item {
+        display: flex;
         align-items: center;
-        gap: 0.4rem;
-        padding: 0.35rem 0.8rem;
-        background: var(--bg-card);
-        border-radius: 30px;
-        font-size: 0.75rem;
-        border: 1px solid var(--border);
-        color: var(--text-secondary);
+        gap: 8px;
+        padding: 6px 12px;
+        background: var(--card-black);
+        border-radius: 20px;
+        font-size: 12px;
+        border: 1px solid var(--border-gray);
     }
     
     .status-dot {
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        background: var(--border);
+        background: var(--border-gray);
     }
     
     .status-dot.active {
-        background: var(--primary);
-        box-shadow: 0 0 12px var(--primary);
+        background: var(--primary-green);
+        box-shadow: 0 0 10px var(--primary-green);
     }
     
-    /* Buttons - mobile optimized */
+    /* Cards */
+    .card {
+        background: var(--card-black);
+        border: 1px solid var(--border-gray);
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 15px;
+        transition: all 0.2s ease;
+    }
+    
+    .card:hover {
+        border-color: var(--primary-green);
+    }
+    
+    .card-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border-gray);
+    }
+    
+    .card-title .icon {
+        width: 32px;
+        height: 32px;
+        background: rgba(0, 255, 136, 0.1);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--primary-green);
+        font-size: 16px;
+    }
+    
+    /* Buttons */
     .stButton > button {
         width: 100%;
-        background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-        color: var(--bg-dark) !important;
+        background: linear-gradient(90deg, var(--primary-green), var(--accent-green));
+        color: var(--primary-black) !important;
         border: none;
-        padding: 0.8rem 1rem;
-        border-radius: 12px;
+        padding: 12px 20px;
+        border-radius: 8px;
         font-weight: 600;
-        font-size: 0.9rem;
-        transition: all 0.2s ease;
-        border: none !important;
-        box-shadow: none !important;
+        font-size: 14px;
+        letter-spacing: 0.5px;
+        transition: all 0.3s ease;
+        margin: 5px 0;
     }
     
     .stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0, 255, 136, 0.25) !important;
+        box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
     }
     
-    /* Secondary button */
-    .stButton > button.secondary {
-        background: transparent;
-        color: var(--text) !important;
-        border: 1px solid var(--border) !important;
+    .stButton > button:disabled {
+        background: var(--border-gray) !important;
+        color: var(--text-gray) !important;
+        cursor: not-allowed;
+        transform: none !important;
+        box-shadow: none !important;
     }
     
-    /* Input fields - mobile optimized */
+    /* Input fields */
     .stSelectbox > div > div > select,
     .stDateInput > div > div > input,
     .stNumberInput > div > div > input,
     .stMultiSelect > div > div > div {
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-        color: var(--text) !important;
-        border-radius: 12px !important;
-        padding: 0.6rem 0.8rem !important;
-        font-size: 0.9rem !important;
+        background: var(--secondary-black) !important;
+        border: 1px solid var(--border-gray) !important;
+        color: var(--text-white) !important;
+        border-radius: 6px !important;
+        padding: 10px 12px !important;
+        font-size: 14px !important;
     }
     
-    /* Metrics - mobile optimized */
-    [data-testid="stMetricValue"] {
-        font-size: 1.5rem !important;
-        color: var(--text) !important;
-        font-weight: 600;
+    .stSelectbox > div > div > select:focus,
+    .stDateInput > div > div > input:focus {
+        border-color: var(--primary-green) !important;
+        box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.2) !important;
     }
     
-    [data-testid="stMetricLabel"] {
-        font-size: 0.8rem !important;
-        color: var(--text-muted) !important;
-        font-weight: 500;
+    /* Map container */
+    .map-container {
+        border: 1px solid var(--border-gray);
+        border-radius: 10px;
+        overflow: hidden;
+        height: 600px;
+        position: relative;
     }
     
-    /* Chart containers */
-    .chart-container {
-        background: var(--bg-card);
-        border-radius: 16px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-        border: 1px solid var(--border);
-    }
-    
-    /* Mobile responsive */
-    @media (max-width: 768px) {
-        .step-label {
-            font-size: 0.65rem;
-        }
-        
-        .step-circle {
-            width: 32px;
-            height: 32px;
-            font-size: 0.8rem;
-        }
-        
-        .card {
-            padding: 1rem;
-        }
-        
-        h1 {
-            font-size: 1.5rem !important;
-        }
-    }
-    
-    /* Hide Streamlit branding */
+    /* Hide Streamlit default elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .progress-step {
+            flex: 1;
+        }
+        
+        .step-label {
+            font-size: 10px;
+            max-width: 60px;
+        }
+    }
+    
+    /* Auto-transition animation */
+    .auto-transition {
+        animation: slideIn 0.5s ease-out;
+    }
+    
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
     /* Tab styling */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 0.5rem;
-        background: var(--bg-card);
-        border-radius: 16px;
-        padding: 0.5rem;
+        gap: 2px;
+        background-color: var(--secondary-black);
+        border-radius: 8px;
+        padding: 4px;
     }
     
     .stTabs [data-baseweb="tab"] {
-        background: transparent;
-        border-radius: 12px;
-        padding: 0.5rem 1rem;
-        color: var(--text-muted);
+        background-color: transparent;
+        border-radius: 6px;
+        padding: 8px 16px;
+        color: var(--text-gray);
         font-weight: 500;
-        font-size: 0.85rem;
     }
     
     .stTabs [aria-selected="true"] {
-        background: var(--primary) !important;
-        color: var(--bg-dark) !important;
+        background-color: var(--primary-green) !important;
+        color: var(--primary-black) !important;
     }
     
-    /* Full width charts */
-    .js-plotly-plot, .plotly {
-        width: 100% !important;
+    /* Metrics styling */
+    [data-testid="stMetricValue"] {
+        font-size: 1.5rem !important;
+        color: var(--text-white) !important;
+    }
+    
+    [data-testid="stMetricLabel"] {
+        font-size: 0.9rem !important;
+        color: var(--text-gray) !important;
+    }
+    
+    /* Section headers */
+    .section-header {
+        background: linear-gradient(90deg, rgba(0, 255, 136, 0.1), rgba(0, 204, 106, 0.1));
+        border-left: 4px solid var(--primary-green);
+        padding: 15px 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+        color: var(--text-white);
+        font-size: 1.2rem;
+        font-weight: 600;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -437,54 +475,6 @@ SOIL_TEXTURE_CLASSES = {
 # ACCURACY AND VALIDATION FUNCTIONS
 # =============================================================================
 
-def get_accuracy_badge(dataset_name, region_type="general"):
-    """Return accuracy badge HTML based on dataset and region"""
-    
-    accuracy_info = {
-        "ERA5-Land": {
-            "Temperature": {"level": "high", "text": "±1-2°C", "color": "accuracy-high"},
-            "Soil Moisture": {"level": "medium", "text": "±0.05 m³/m³", "color": "accuracy-medium"},
-            "general": {"level": "high", "text": "High Accuracy", "color": "accuracy-high"}
-        },
-        "CHIRPS": {
-            "Humid": {"level": "high", "text": "±10-20%", "color": "accuracy-high"},
-            "Semi-arid": {"level": "medium", "text": "±20-40%", "color": "accuracy-medium"},
-            "Arid": {"level": "low", "text": "±40-60%", "color": "accuracy-low"},
-            "general": {"level": "medium", "text": "±20-40%", "color": "accuracy-medium"}
-        },
-        "Sentinel-2": {
-            "NDVI": {"level": "high", "text": "±0.05", "color": "accuracy-high"},
-            "EVI": {"level": "high", "text": "±0.05", "color": "accuracy-high"},
-            "SAVI": {"level": "high", "text": "±0.05", "color": "accuracy-high"},
-            "general": {"level": "high", "text": "High Accuracy", "color": "accuracy-high"}
-        },
-        "Landsat-8": {
-            "NDVI": {"level": "high", "text": "±0.05", "color": "accuracy-high"},
-            "EVI": {"level": "medium", "text": "±0.08", "color": "accuracy-medium"},
-            "SAVI": {"level": "medium", "text": "±0.08", "color": "accuracy-medium"},
-            "general": {"level": "high", "text": "High Accuracy", "color": "accuracy-high"}
-        },
-        "WorldClim": {
-            "general": {"level": "high", "text": "±1-2°C", "color": "accuracy-high"}
-        },
-        "GSOC": {
-            "general": {"level": "medium", "text": "±20%", "color": "accuracy-medium"}
-        },
-        "ISDASoil": {
-            "general": {"level": "medium", "text": "±25%", "color": "accuracy-medium"}
-        }
-    }
-    
-    if dataset_name in accuracy_info:
-        if region_type in accuracy_info[dataset_name]:
-            info = accuracy_info[dataset_name][region_type]
-        else:
-            info = accuracy_info[dataset_name]["general"]
-    else:
-        info = {"level": "medium", "text": "Medium Accuracy", "color": "accuracy-medium"}
-    
-    return f'<span class="accuracy-badge {info["color"]}">🎯 {info["text"]}</span>'
-
 def get_region_type(location_name):
     """Determine region type for accuracy assessment"""
     if not location_name:
@@ -504,11 +494,11 @@ def get_region_type(location_name):
         return "general"
 
 # =============================================================================
-# CRITICAL FIX: CORRECTED CLIMATE DATA FUNCTIONS
+# CORRECTED CLIMATE DATA FUNCTIONS - CONSISTENT ACROSS BOTH ANALYSIS TYPES
 # =============================================================================
 
 def get_daily_climate_data_corrected(start_date, end_date, geometry, scale=5000, precip_scale=1.0):
-    """Get daily climate data with CORRECT Kelvin → Celsius conversion"""
+    """Get daily climate data with CORRECT Kelvin → Celsius conversion - CONSISTENT FOR BOTH ANALYSES"""
     
     # ERA5-Land temperature is in Kelvin - we MUST convert to Celsius
     temperature = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR") \
@@ -519,6 +509,11 @@ def get_daily_climate_data_corrected(start_date, end_date, geometry, scale=5000,
     precipitation = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY") \
         .filterDate(start_date, end_date) \
         .select('precipitation')
+    
+    # Soil moisture from ERA5-Land
+    soil_moisture = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR") \
+        .filterDate(start_date, end_date) \
+        .select(['volumetric_soil_water_layer_1', 'volumetric_soil_water_layer_2', 'volumetric_soil_water_layer_3'])
     
     start = ee.Date(start_date)
     end = ee.Date(end_date)
@@ -611,21 +606,77 @@ def get_daily_climate_data_corrected(start_date, end_date, geometry, scale=5000,
             None
         )
         
+        # Soil moisture
+        soil_image = soil_moisture.filterDate(date, date.advance(1, 'day')).first()
+        
+        sm1 = ee.Algorithms.If(
+            soil_image,
+            soil_image.select('volumetric_soil_water_layer_1').reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=scale,
+                maxPixels=1e9,
+                bestEffort=True
+            ).get('volumetric_soil_water_layer_1'),
+            None
+        )
+        
+        sm2 = ee.Algorithms.If(
+            soil_image,
+            soil_image.select('volumetric_soil_water_layer_2').reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=scale,
+                maxPixels=1e9,
+                bestEffort=True
+            ).get('volumetric_soil_water_layer_2'),
+            None
+        )
+        
+        sm3 = ee.Algorithms.If(
+            soil_image,
+            soil_image.select('volumetric_soil_water_layer_3').reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geometry,
+                scale=scale,
+                maxPixels=1e9,
+                bestEffort=True
+            ).get('volumetric_soil_water_layer_3'),
+            None
+        )
+        
+        # Calculate PET using Hargreaves method
+        temp_range = ee.Algorithms.If(
+            ee.Number(temp_max_celsius).and(ee.Number(temp_min_celsius)),
+            ee.Number(temp_max_celsius).subtract(ee.Number(temp_min_celsius)),
+            None
+        )
+        
+        pet = ee.Algorithms.If(
+            ee.Number(temp_celsius).and(temp_range),
+            ee.Number(temp_celsius).add(17.8).multiply(ee.Number(temp_range).sqrt()).multiply(0.0023).multiply(1),  # Daily PET
+            None
+        )
+        
         return ee.Feature(None, {
             'date': date_str,
             'temperature': temp_celsius,
             'temperature_max': temp_max_celsius,
             'temperature_min': temp_min_celsius,
-            'precipitation': precip_calibrated
+            'precipitation': precip_calibrated,
+            'soil_moisture_0_7cm': sm1,
+            'soil_moisture_7_28cm': sm2,
+            'soil_moisture_28_100cm': sm3,
+            'potential_evaporation': pet
         })
     
     daily_data = ee.FeatureCollection(days.map(get_daily_data))
     return daily_data
 
 def analyze_daily_climate_data(study_roi, start_date, end_date, location_name="", precip_scale=1.0):
-    """Analyze daily climate data with CORRECT conversions"""
+    """Analyze daily climate data with CORRECT conversions - CONSISTENT FOR BOTH ANALYSES"""
     try:
-        # Use appropriate scale based on area size (5000m is good for admin areas)
+        # Use appropriate scale based on area size (5000m is optimal for admin areas)
         daily_data = get_daily_climate_data_corrected(
             start_date, 
             end_date, 
@@ -645,6 +696,10 @@ def analyze_daily_climate_data(study_roi, start_date, end_date, location_name=""
             temp_max_val = props.get('temperature_max')
             temp_min_val = props.get('temperature_min')
             precip_val = props.get('precipitation')
+            sm1_val = props.get('soil_moisture_0_7cm')
+            sm2_val = props.get('soil_moisture_7_28cm')
+            sm3_val = props.get('soil_moisture_28_100cm')
+            pet_val = props.get('potential_evaporation')
             
             # Only add if we have temperature data
             if temp_val is not None:
@@ -653,7 +708,11 @@ def analyze_daily_climate_data(study_roi, start_date, end_date, location_name=""
                     'temperature': float(temp_val) if temp_val is not None else np.nan,
                     'temperature_max': float(temp_max_val) if temp_max_val is not None else np.nan,
                     'temperature_min': float(temp_min_val) if temp_min_val is not None else np.nan,
-                    'precipitation': float(precip_val) if precip_val is not None else 0
+                    'precipitation': float(precip_val) if precip_val is not None else 0,
+                    'soil_moisture_0_7cm': float(sm1_val) if sm1_val is not None else np.nan,
+                    'soil_moisture_7_28cm': float(sm2_val) if sm2_val is not None else np.nan,
+                    'soil_moisture_28_100cm': float(sm3_val) if sm3_val is not None else np.nan,
+                    'potential_evaporation': float(pet_val) if pet_val is not None else np.nan
                 })
         
         df = pd.DataFrame(data)
@@ -665,9 +724,13 @@ def analyze_daily_climate_data(study_roi, start_date, end_date, location_name=""
         df['date'] = pd.to_datetime(df['date'])
         df = df.sort_values('date')
         
-        # Filter unrealistic values (Kelvin would be > 250, Celsius is -15 to 55)
+        # Filter unrealistic values (Celsius range)
         df = df[(df['temperature'] > -15) & (df['temperature'] < 55)]
         df['precipitation'] = df['precipitation'].clip(lower=0)
+        
+        # Add month columns for aggregation
+        df['month'] = df['date'].dt.month
+        df['month_name'] = df['date'].dt.strftime('%b')
         
         return df
         
@@ -676,7 +739,7 @@ def analyze_daily_climate_data(study_roi, start_date, end_date, location_name=""
         return None
 
 # =============================================================================
-# ENHANCED SIMPLIFIED CLIMATE & SOIL ANALYZER CLASS - FULLY CORRECTED
+# ENHANCED CLIMATE & SOIL ANALYZER CLASS - FULLY CORRECTED
 # =============================================================================
 
 class EnhancedClimateSoilAnalyzer:
@@ -689,21 +752,21 @@ class EnhancedClimateSoilAnalyzer:
         }
 
         self.climate_class_names = {
-            1: 'Tropical Rainforest',
-            2: 'Tropical Monsoon',
-            3: 'Tropical Savanna',
-            4: 'Tropical Dry',
-            5: 'Humid Subtropical',
-            6: 'Mediterranean',
-            7: 'Desert/Steppe',
-            8: 'Oceanic',
-            9: 'Warm Temperate',
-            10: 'Temperate Dry',
-            11: 'Boreal Humid',
-            12: 'Boreal Dry',
-            13: 'Tundra',
-            14: 'Ice Cap',
-            15: 'Hyper-arid'
+            1: 'Tropical Rainforest (Temp > 18°C, Precip > 2000mm)',
+            2: 'Tropical Monsoon (Temp > 18°C, Precip 1500-2000mm)',
+            3: 'Tropical Savanna (Temp > 18°C, Precip 1000-1500mm)',
+            4: 'Tropical Dry (Temp > 18°C, Precip 500-1000mm)',
+            5: 'Humid Subtropical (Temp 12-18°C, Precip > 1200mm)',
+            6: 'Mediterranean (Temp 12-18°C, Precip 600-1200mm)',
+            7: 'Desert/Steppe (Arid/Semi-arid)',
+            8: 'Oceanic (Temp 6-12°C, Precip > 1000mm)',
+            9: 'Warm Temperate (Temp 6-12°C, Precip 500-1000mm)',
+            10: 'Temperate Dry (Temp 6-12°C, Precip < 500mm)',
+            11: 'Boreal Humid (Temp 0-6°C, Precip > 500mm)',
+            12: 'Boreal Dry (Temp 0-6°C, Precip < 500mm)',
+            13: 'Tundra (Temp -10 to 0°C)',
+            14: 'Ice Cap (Temp < -10°C)',
+            15: 'Hyper-arid (Aridity < 0.03)'
         }
 
         self.current_soil_data = None
@@ -857,7 +920,7 @@ class EnhancedClimateSoilAnalyzer:
             if location_name and 'sidi' in location_name.lower():
                 # Sidi Bel Abbès, Algeria - Mediterranean climate
                 return {
-                    'climate_zone': "Mediterranean",
+                    'climate_zone': "Mediterranean (Temp 12-18°C, Precip 600-1200mm)",
                     'climate_class': 6,
                     'mean_temperature': 17.8,
                     'mean_precipitation': 420,
@@ -873,798 +936,101 @@ class EnhancedClimateSoilAnalyzer:
                     'aridity_index': 1.25
                 }
 
-    # =============================================================================
-    # ENHANCED CLIMATE CHARTS WITH ALL ORIGINAL FEATURES
-    # =============================================================================
+    def create_climate_classification_chart(self, location_name, climate_data):
+        """Create climate classification chart"""
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
+        fig.suptitle(f'Climate Classification Analysis - {location_name}', fontsize=14, fontweight='bold', y=0.95)
 
-    def get_daily_climate_data_for_analysis(self, geometry, start_date, end_date, precip_scale=1.0):
-        """Get enhanced daily climate data with GUARANTEED Kelvin → Celsius conversion"""
-        try:
-            era5 = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR") \
-                .filterDate(start_date, end_date) \
-                .filterBounds(geometry)
-            
-            chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY") \
-                .filterDate(start_date, end_date) \
-                .filterBounds(geometry)
-            
-            def create_monthly_composite(year_month):
-                year_month = ee.Date(year_month)
-                month_start = year_month
-                month_end = month_start.advance(1, 'month')
-                
-                # CRITICAL FIX: Get Kelvin, then SUBTRACT 273.15 for Celsius
-                temp_kelvin = era5.filterDate(month_start, month_end) \
-                                 .select('temperature_2m') \
-                                 .mean()
-                
-                # GUARANTEED CONVERSION
-                temp_celsius = temp_kelvin.subtract(273.15)
-                
-                # Precipitation with calibration
-                precip_raw = chirps.filterDate(month_start, month_end) \
-                                  .select('precipitation') \
-                                  .sum()
-                
-                precip_calibrated = precip_raw.multiply(precip_scale)
-                
-                # Soil moisture (no conversion needed)
-                soil_moisture_1 = era5.filterDate(month_start, month_end) \
-                                     .select('volumetric_soil_water_layer_1') \
-                                     .mean()
-                
-                soil_moisture_2 = era5.filterDate(month_start, month_end) \
-                                     .select('volumetric_soil_water_layer_2') \
-                                     .mean()
-                
-                soil_moisture_3 = era5.filterDate(month_start, month_end) \
-                                     .select('volumetric_soil_water_layer_3') \
-                                     .mean()
-                
-                # Convert max/min temperatures
-                temp_max_kelvin = era5.filterDate(month_start, month_end) \
-                                     .select('temperature_2m_max') \
-                                     .max()
-                
-                temp_max_celsius = temp_max_kelvin.subtract(273.15)
-                
-                temp_min_kelvin = era5.filterDate(month_start, month_end) \
-                                     .select('temperature_2m_min') \
-                                     .min()
-                
-                temp_min_celsius = temp_min_kelvin.subtract(273.15)
-                
-                temp_range = temp_max_celsius.subtract(temp_min_celsius)
-                pet = temp_celsius.add(17.8).multiply(temp_range.sqrt()).multiply(0.0023).multiply(30).rename('potential_evaporation')
-                
-                return ee.Image.cat([
-                    temp_celsius.rename('temperature_2m'),  # GUARANTEED CELSIUS
-                    precip_calibrated.rename('total_precipitation'),
-                    soil_moisture_1.rename('soil_moisture_1'),
-                    soil_moisture_2.rename('soil_moisture_2'),
-                    soil_moisture_3.rename('soil_moisture_3'),
-                    pet.rename('potential_evaporation'),
-                    temp_max_celsius.rename('temperature_max'),
-                    temp_min_celsius.rename('temperature_min')
-                ]).set('system:time_start', month_start.millis())
-            
-            start = ee.Date(start_date)
-            end = ee.Date(end_date)
-            months = ee.List.sequence(0, end.difference(start, 'month').subtract(1))
-            
-            monthly_collection = ee.ImageCollection(months.map(
-                lambda month: create_monthly_composite(start.advance(month, 'month'))
-            ))
-            
-            return monthly_collection
-            
-        except Exception as e:
-            st.error(f"Error in get_daily_climate_data_for_analysis: {e}")
-            return None
+        current_class = climate_data['climate_class']
+        
+        # Create color palette
+        climate_palettes = [
+            '#006400', '#32CD32', '#9ACD32', '#FFD700', '#FF4500', '#FF8C00', '#B8860B',
+            '#0000FF', '#1E90FF', '#87CEEB', '#2E8B57', '#696969', '#ADD8E6', '#FFFFFF', '#8B0000'
+        ]
+        
+        ax1.barh([0], [1], color=climate_palettes[current_class-1], alpha=0.7)
+        ax1.set_yticks([0])
+        ax1.set_yticklabels([f'Class {current_class}'])
+        ax1.set_xlabel('Representation')
+        ax1.set_title(f'Current Climate Zone: {climate_data["climate_zone"][:50]}...', fontsize=10, fontweight='bold')
+        ax1.grid(True, alpha=0.3)
 
-    def extract_monthly_statistics(self, monthly_collection, geometry):
-        """Extract monthly statistics for analysis with all soil layers"""
-        try:
-            centroid = geometry.centroid()
-            series = monthly_collection.getRegion(centroid, 10000).getInfo()
-            
-            if not series or len(series) <= 1:
-                return None
-            
-            headers = series[0]
-            data = series[1:]
-            
-            df = pd.DataFrame(data, columns=headers)
-            df['datetime'] = pd.to_datetime(df['time'], unit='ms')
-            df['month'] = df['datetime'].dt.month
-            df['month_name'] = df['datetime'].dt.strftime('%b')
-            df['year'] = df['datetime'].dt.year
-            
-            # Rename columns for clarity
-            column_mapping = {
-                'soil_moisture_1': 'soil_moisture_0_7cm',
-                'soil_moisture_2': 'soil_moisture_7_28cm',
-                'soil_moisture_3': 'soil_moisture_28_100cm',
-                'temperature_2m': 'temperature_2m',
-                'total_precipitation': 'total_precipitation',
-                'potential_evaporation': 'potential_evaporation',
-                'temperature_max': 'temperature_max',
-                'temperature_min': 'temperature_min'
-            }
-            df = df.rename(columns=column_mapping)
-            
-            required_columns = ['temperature_2m', 'total_precipitation', 'potential_evaporation', 
-                               'soil_moisture_0_7cm', 'soil_moisture_7_28cm', 'soil_moisture_28_100cm',
-                               'temperature_max', 'temperature_min']
-            for col in required_columns:
-                if col in df.columns:
-                    df[col] = df[col].fillna(0)
-            
-            return df
-            
-        except Exception as e:
-            return None
+        categories = ['Temperature', 'Precipitation', 'Aridity']
+        values = [
+            climate_data['mean_temperature'] / 30,
+            climate_data['mean_precipitation'] / 3000,
+            climate_data['aridity_index'] * 10
+        ]
+        values += values[:1]
+        angles = np.linspace(0, 2*np.pi, len(categories), endpoint=False).tolist()
+        angles += angles[:1]
 
-    def create_modern_climate_charts(self, climate_df, location_name):
-        """Create modern, smooth climate charts with accuracy indicators - FULLY RESTORED"""
-        charts = {}
-        
-        if climate_df is None or climate_df.empty:
-            return charts
-        
-        region_type = get_region_type(location_name)
-        temp_accuracy_badge = get_accuracy_badge("ERA5-Land", region_type)
-        precip_accuracy_badge = get_accuracy_badge("CHIRPS", region_type)
-        
-        # 1. Temperature Chart (Monthly)
-        fig_temp = go.Figure()
-        
-        fig_temp.add_trace(go.Scatter(
-            x=climate_df['month_name'],
-            y=climate_df['temperature_2m'],
-            mode='lines+markers',
-            name='Temperature',
-            line=dict(
-                color='#FF6B6B',
-                width=3,
-                shape='spline',
-                smoothing=1.3
-            ),
-            marker=dict(
-                size=8,
-                color='#FF6B6B',
-                line=dict(width=1, color='#FFFFFF')
-            ),
-            fill='tozeroy',
-            fillcolor='rgba(255, 107, 107, 0.1)'
-        ))
-        
-        fig_temp.update_layout(
-            title=dict(
-                text=f'<b>Monthly Temperature</b> {temp_accuracy_badge}',
-                font=dict(size=16, color='#FFFFFF'),
-                x=0.5
-            ),
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#FFFFFF', size=12),
-            xaxis=dict(
-                title='',
-                gridcolor='#333333',
-                tickfont=dict(size=12, color='#CCCCCC'),
-                showline=True,
-                linewidth=1,
-                linecolor='#444444'
-            ),
-            yaxis=dict(
-                title='Temperature (°C)',
-                gridcolor='#333333',
-                tickfont=dict(size=12, color='#CCCCCC'),
-                showline=True,
-                linewidth=1,
-                linecolor='#444444'
-            ),
-            height=350,
-            margin=dict(l=40, r=20, t=80, b=40),
-            hovermode='x unified',
-            showlegend=False
-        )
-        
-        charts['temperature'] = fig_temp
-        
-        # 2. Temperature Range Chart (Min/Max)
-        if 'temperature_max' in climate_df.columns and 'temperature_min' in climate_df.columns:
-            fig_temp_range = go.Figure()
-            
-            fig_temp_range.add_trace(go.Scatter(
-                x=climate_df['month_name'],
-                y=climate_df['temperature_max'],
-                mode='lines+markers',
-                name='Max Temperature',
-                line=dict(
-                    color='#FF4444',
-                    width=2,
-                    shape='spline',
-                    smoothing=1.3
-                ),
-                marker=dict(
-                    size=6,
-                    color='#FF4444'
-                )
-            ))
-            
-            fig_temp_range.add_trace(go.Scatter(
-                x=climate_df['month_name'],
-                y=climate_df['temperature_min'],
-                mode='lines+markers',
-                name='Min Temperature',
-                line=dict(
-                    color='#4A90E2',
-                    width=2,
-                    shape='spline',
-                    smoothing=1.3
-                ),
-                marker=dict(
-                    size=6,
-                    color='#4A90E2'
-                ),
-                fill='tonexty',
-                fillcolor='rgba(74, 144, 226, 0.1)'
-            ))
-            
-            fig_temp_range.update_layout(
-                title=dict(
-                    text=f'<b>Temperature Range</b> {temp_accuracy_badge}',
-                    font=dict(size=16, color='#FFFFFF'),
-                    x=0.5
-                ),
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='#FFFFFF', size=12),
-                xaxis=dict(title='', gridcolor='#333333'),
-                yaxis=dict(title='Temperature (°C)', gridcolor='#333333'),
-                height=350,
-                margin=dict(l=40, r=20, t=80, b=40),
-                hovermode='x unified',
-                legend=dict(
-                    orientation='h',
-                    yanchor='bottom',
-                    y=1.02,
-                    xanchor='center',
-                    x=0.5,
-                    font=dict(size=11, color='#FFFFFF')
-                )
-            )
-            
-            charts['temperature_range'] = fig_temp_range
-        
-        # 3. Precipitation & Evaporation Chart
-        fig_water = go.Figure()
-        
-        fig_water.add_trace(go.Bar(
-            x=climate_df['month_name'],
-            y=climate_df['total_precipitation'],
-            name='Precipitation',
-            marker_color='#4A90E2',
-            marker_line=dict(width=1, color='#FFFFFF'),
-            opacity=0.8,
-            text=[f'{v:.1f} mm' for v in climate_df['total_precipitation']],
-            textposition='outside',
-            textfont=dict(size=11, color='#CCCCCC')
-        ))
-        
-        if 'potential_evaporation' in climate_df.columns:
-            fig_water.add_trace(go.Scatter(
-                x=climate_df['month_name'],
-                y=climate_df['potential_evaporation'],
-                mode='lines+markers',
-                name='Evaporation',
-                line=dict(
-                    color='#FFAA44',
-                    width=3,
-                    shape='spline',
-                    smoothing=1.3
-                ),
-                marker=dict(
-                    size=8,
-                    color='#FFAA44',
-                    line=dict(width=1, color='#FFFFFF')
-                ),
-                yaxis='y2'
-            ))
-        
-        fig_water.update_layout(
-            title=dict(
-                text=f'<b>Water Balance</b> {precip_accuracy_badge}',
-                font=dict(size=16, color='#FFFFFF'),
-                x=0.5
-            ),
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#FFFFFF', size=12),
-            xaxis=dict(
-                title='',
-                gridcolor='#333333',
-                tickfont=dict(size=12, color='#CCCCCC')
-            ),
-            yaxis=dict(
-                title='Precipitation (mm)',
-                gridcolor='#333333',
-                tickfont=dict(size=12, color='#CCCCCC')
-            ),
-            yaxis2=dict(
-                title='Evaporation (mm)',
-                overlaying='y',
-                side='right',
-                gridcolor='#333333',
-                tickfont=dict(size=12, color='#CCCCCC')
-            ),
-            height=350,
-            margin=dict(l=40, r=40, t=80, b=40),
-            hovermode='x unified',
-            legend=dict(
-                orientation='h',
-                yanchor='bottom',
-                y=1.02,
-                xanchor='center',
-                x=0.5,
-                font=dict(size=11, color='#FFFFFF')
-            )
-        )
-        
-        charts['water_balance'] = fig_water
-        
-        # 4. Soil Moisture Chart - ALL THREE LAYERS
-        if all(col in climate_df.columns for col in ['soil_moisture_0_7cm', 'soil_moisture_7_28cm', 'soil_moisture_28_100cm']):
-            fig_soil = go.Figure()
-            
-            # Layer 1: 0-7cm (Surface)
-            fig_soil.add_trace(go.Scatter(
-                x=climate_df['month_name'],
-                y=climate_df['soil_moisture_0_7cm'],
-                mode='lines+markers',
-                name='Surface (0-7cm)',
-                line=dict(
-                    color='#00FF88',
-                    width=3,
-                    shape='spline',
-                    smoothing=1.3
-                ),
-                marker=dict(
-                    size=8,
-                    color='#00FF88',
-                    line=dict(width=1, color='#FFFFFF')
-                ),
-                fill='tozeroy',
-                fillcolor='rgba(0, 255, 136, 0.1)'
-            ))
-            
-            # Layer 2: 7-28cm (Root zone)
-            fig_soil.add_trace(go.Scatter(
-                x=climate_df['month_name'],
-                y=climate_df['soil_moisture_7_28cm'],
-                mode='lines+markers',
-                name='Root zone (7-28cm)',
-                line=dict(
-                    color='#4A90E2',
-                    width=3,
-                    shape='spline',
-                    smoothing=1.3
-                ),
-                marker=dict(
-                    size=8,
-                    color='#4A90E2',
-                    line=dict(width=1, color='#FFFFFF')
-                ),
-                fill='tonexty',
-                fillcolor='rgba(74, 144, 226, 0.1)'
-            ))
-            
-            # Layer 3: 28-100cm (Deep storage)
-            fig_soil.add_trace(go.Scatter(
-                x=climate_df['month_name'],
-                y=climate_df['soil_moisture_28_100cm'],
-                mode='lines+markers',
-                name='Deep (28-100cm)',
-                line=dict(
-                    color='#FFAA44',
-                    width=3,
-                    shape='spline',
-                    smoothing=1.3
-                ),
-                marker=dict(
-                    size=8,
-                    color='#FFAA44',
-                    line=dict(width=1, color='#FFFFFF')
-                ),
-                fill='tonexty',
-                fillcolor='rgba(255, 170, 68, 0.1)'
-            ))
-            
-            fig_soil.update_layout(
-                title=dict(
-                    text=f'<b>Soil Moisture by Depth</b> {temp_accuracy_badge}',
-                    font=dict(size=16, color='#FFFFFF'),
-                    x=0.5
-                ),
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='#FFFFFF', size=12),
-                xaxis=dict(
-                    title='',
-                    gridcolor='#333333',
-                    tickfont=dict(size=12, color='#CCCCCC')
-                ),
-                yaxis=dict(
-                    title='Volumetric Water Content (m³/m³)',
-                    gridcolor='#333333',
-                    tickfont=dict(size=12, color='#CCCCCC'),
-                    tickformat='.2f',
-                    range=[0, max(climate_df[['soil_moisture_0_7cm', 'soil_moisture_7_28cm', 'soil_moisture_28_100cm']].max()) * 1.1]
-                ),
-                height=400,
-                margin=dict(l=40, r=20, t=80, b=40),
-                hovermode='x unified',
-                legend=dict(
-                    orientation='h',
-                    yanchor='bottom',
-                    y=1.02,
-                    xanchor='center',
-                    x=0.5,
-                    font=dict(size=11, color='#FFFFFF')
-                )
-            )
-            
-            charts['soil_moisture'] = fig_soil
-            
-            # 5. Soil Moisture Comparison Chart (Stacked Area)
-            fig_soil_comparison = go.Figure()
-            
-            fig_soil_comparison.add_trace(go.Scatter(
-                x=climate_df['month_name'],
-                y=climate_df['soil_moisture_28_100cm'],
-                mode='lines',
-                name='Deep (28-100cm)',
-                line=dict(width=0),
-                stackgroup='one',
-                fillcolor='rgba(255, 170, 68, 0.7)'
-            ))
-            
-            fig_soil_comparison.add_trace(go.Scatter(
-                x=climate_df['month_name'],
-                y=climate_df['soil_moisture_7_28cm'],
-                mode='lines',
-                name='Root zone (7-28cm)',
-                line=dict(width=0),
-                stackgroup='one',
-                fillcolor='rgba(74, 144, 226, 0.7)'
-            ))
-            
-            fig_soil_comparison.add_trace(go.Scatter(
-                x=climate_df['month_name'],
-                y=climate_df['soil_moisture_0_7cm'],
-                mode='lines',
-                name='Surface (0-7cm)',
-                line=dict(width=0),
-                stackgroup='one',
-                fillcolor='rgba(0, 255, 136, 0.7)'
-            ))
-            
-            fig_soil_comparison.update_layout(
-                title=dict(
-                    text=f'<b>Soil Moisture Distribution</b> {temp_accuracy_badge}',
-                    font=dict(size=16, color='#FFFFFF'),
-                    x=0.5
-                ),
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='#FFFFFF', size=12),
-                xaxis=dict(
-                    title='',
-                    gridcolor='#333333',
-                    tickfont=dict(size=12, color='#CCCCCC')
-                ),
-                yaxis=dict(
-                    title='Total Volumetric Water (m³/m³)',
-                    gridcolor='#333333',
-                    tickfont=dict(size=12, color='#CCCCCC'),
-                    tickformat='.2f'
-                ),
-                height=350,
-                margin=dict(l=40, r=20, t=80, b=40),
-                hovermode='x unified',
-                legend=dict(
-                    orientation='h',
-                    yanchor='bottom',
-                    y=1.02,
-                    xanchor='center',
-                    x=0.5,
-                    font=dict(size=11, color='#FFFFFF')
-                )
-            )
-            
-            charts['soil_comparison'] = fig_soil_comparison
-        
-        return charts
+        ax2 = plt.subplot(222, polar=True)
+        ax2.plot(angles, values, 'o-', linewidth=2, label='Current Location')
+        ax2.fill(angles, values, alpha=0.25)
+        ax2.set_thetagrids(np.degrees(angles[:-1]), categories)
+        ax2.set_ylim(0, 1)
+        ax2.set_title('Climate Parameters Radar Chart', fontsize=10, fontweight='bold')
+        ax2.legend()
 
-    def display_daily_climate_charts(self, daily_df, location_name):
-        """Display daily climate data charts"""
-        if daily_df is None or daily_df.empty:
-            return
-        
-        region_type = get_region_type(location_name)
-        temp_accuracy_badge = get_accuracy_badge("ERA5-Land", region_type)
-        precip_accuracy_badge = get_accuracy_badge("CHIRPS", region_type)
-        
-        # Daily Temperature Chart
-        fig_daily_temp = go.Figure()
-        
-        fig_daily_temp.add_trace(go.Scatter(
-            x=daily_df['date'],
-            y=daily_df['temperature'],
-            mode='lines',
-            name='Daily Temperature',
-            line=dict(
-                color='#FF6B6B',
-                width=2,
-                shape='spline',
-                smoothing=1.1
-            ),
-            fill='tozeroy',
-            fillcolor='rgba(255, 107, 107, 0.05)'
-        ))
-        
-        if 'temperature_max' in daily_df.columns and 'temperature_min' in daily_df.columns:
-            fig_daily_temp.add_trace(go.Scatter(
-                x=daily_df['date'],
-                y=daily_df['temperature_max'],
-                mode='lines',
-                name='Max',
-                line=dict(color='#FF4444', width=1, dash='dot'),
-                showlegend=True
-            ))
-            
-            fig_daily_temp.add_trace(go.Scatter(
-                x=daily_df['date'],
-                y=daily_df['temperature_min'],
-                mode='lines',
-                name='Min',
-                line=dict(color='#4A90E2', width=1, dash='dot'),
-                fill='tonexty',
-                fillcolor='rgba(74, 144, 226, 0.05)',
-                showlegend=True
-            ))
-        
-        fig_daily_temp.update_layout(
-            title=dict(
-                text=f'<b>Daily Temperature</b> {temp_accuracy_badge}',
-                font=dict(size=16, color='#FFFFFF'),
-                x=0.5
-            ),
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#FFFFFF', size=12),
-            xaxis=dict(
-                title='',
-                gridcolor='#333333',
-                tickfont=dict(size=11, color='#CCCCCC')
-            ),
-            yaxis=dict(
-                title='Temperature (°C)',
-                gridcolor='#333333',
-                tickfont=dict(size=12, color='#CCCCCC')
-            ),
-            height=300,
-            margin=dict(l=40, r=20, t=60, b=40),
-            hovermode='x unified',
-            legend=dict(
-                orientation='h',
-                yanchor='bottom',
-                y=1.02,
-                xanchor='center',
-                x=0.5,
-                font=dict(size=11, color='#FFFFFF')
-            )
-        )
-        
-        st.plotly_chart(fig_daily_temp, use_container_width=True)
-        
-        # Daily Precipitation Chart
-        fig_daily_precip = go.Figure()
-        
-        fig_daily_precip.add_trace(go.Bar(
-            x=daily_df['date'],
-            y=daily_df['precipitation'],
-            name='Daily Precipitation',
-            marker_color='#4A90E2',
-            marker_line=dict(width=0),
-            opacity=0.7
-        ))
-        
-        fig_daily_precip.update_layout(
-            title=dict(
-                text=f'<b>Daily Precipitation</b> {precip_accuracy_badge}',
-                font=dict(size=16, color='#FFFFFF'),
-                x=0.5
-            ),
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#FFFFFF', size=12),
-            xaxis=dict(
-                title='',
-                gridcolor='#333333',
-                tickfont=dict(size=11, color='#CCCCCC')
-            ),
-            yaxis=dict(
-                title='Precipitation (mm)',
-                gridcolor='#333333',
-                tickfont=dict(size=12, color='#CCCCCC')
-            ),
-            height=250,
-            margin=dict(l=40, r=20, t=60, b=40),
-            hovermode='x unified',
-            showlegend=False
-        )
-        
-        st.plotly_chart(fig_daily_precip, use_container_width=True)
+        ax3.scatter(climate_data['mean_temperature'], climate_data['mean_precipitation'],
+                   c=climate_palettes[current_class-1], s=200, alpha=0.7)
+        ax3.set_xlabel('Mean Temperature (°C)')
+        ax3.set_ylabel('Mean Precipitation (mm/year)')
+        ax3.set_title('Temperature vs Precipitation', fontsize=10, fontweight='bold')
+        ax3.grid(True, alpha=0.3)
+        ax3.annotate(f'Class {current_class}',
+                    (climate_data['mean_temperature'], climate_data['mean_precipitation']),
+                    xytext=(10, 10), textcoords='offset points')
 
-    def display_enhanced_climate_charts(self, location_name, climate_df, daily_df=None, precip_scale=1.0):
-        """Display enhanced climate charts with ALL original charts restored"""
-        if climate_df is None or climate_df.empty:
-            st.warning("No climate data available for this location.")
-            return
-        
-        # Create modern charts
-        charts = self.create_modern_climate_charts(climate_df, location_name)
-        
-        if charts:
-            # Create tabs for different chart categories
-            tab1, tab2, tab3, tab4, tab5 = st.tabs(["🌡️ Temperature", "📊 Daily Data", "💧 Water", "🌱 Soil Layers", "📊 Soil Distribution"])
-            
-            with tab1:
-                # Monthly Temperature
-                st.plotly_chart(charts['temperature'], use_container_width=True)
-                
-                # Temperature Range if available
-                if 'temperature_range' in charts:
-                    st.plotly_chart(charts['temperature_range'], use_container_width=True)
-                
-                # Temperature metrics
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    avg_temp = climate_df['temperature_2m'].mean()
-                    st.metric("🌡️ Average", f"{avg_temp:.1f}°C")
-                with col2:
-                    max_temp = climate_df['temperature_2m'].max()
-                    max_month = climate_df.loc[climate_df['temperature_2m'].idxmax(), 'month_name']
-                    st.metric("📈 Maximum", f"{max_temp:.1f}°C", delta=f"in {max_month}")
-                with col3:
-                    min_temp = climate_df['temperature_2m'].min()
-                    min_month = climate_df.loc[climate_df['temperature_2m'].idxmin(), 'month_name']
-                    st.metric("📉 Minimum", f"{min_temp:.1f}°C", delta=f"in {min_month}")
-                with col4:
-                    temp_range = max_temp - min_temp
-                    st.metric("📊 Range", f"{temp_range:.1f}°C")
-                
-                # Accuracy note
-                st.markdown(f"""
-                <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem;">
-                    <p style="color: #CCCCCC; margin: 0; font-size: 0.8rem;">
-                    <strong>📊 Data Source:</strong> ERA5-Land Daily Aggregated<br>
-                    <strong>✓ Temperature:</strong> Converted from Kelvin to Celsius<br>
-                    <strong>✓ Accuracy:</strong> ±1-2°C for temperature<br>
-                    <strong>✓ Period:</strong> {climate_df['month'].min()} - {climate_df['month'].max()} months
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with tab2:
-                # Daily temperature and precipitation charts
-                if daily_df is not None and not daily_df.empty:
-                    st.subheader("📅 Daily Temperature")
-                    self.display_daily_climate_charts(daily_df, location_name)
-                    
-                    # Daily statistics
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("📅 Days", f"{len(daily_df)}")
-                    with col2:
-                        st.metric("🌡️ Avg Daily", f"{daily_df['temperature'].mean():.1f}°C")
-                    with col3:
-                        st.metric("💧 Total Precip", f"{daily_df['precipitation'].sum():.0f} mm")
-                else:
-                    st.info("Daily data not available for this time period")
-            
-            with tab3:
-                # Water Balance
-                if 'water_balance' in charts:
-                    st.plotly_chart(charts['water_balance'], use_container_width=True)
-                
-                # Water balance metrics
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    total_precip = climate_df['total_precipitation'].sum()
-                    st.metric("💧 Annual Total", f"{total_precip:.0f} mm")
-                with col2:
-                    if 'potential_evaporation' in climate_df.columns:
-                        total_evap = climate_df['potential_evaporation'].sum()
-                        st.metric("☀️ Annual Evap", f"{total_evap:.0f} mm")
-                    else:
-                        st.metric("☀️ Wet Months", f"{(climate_df['total_precipitation'] > 50).sum()}")
-                with col3:
-                    water_balance = total_precip - total_evap if 'potential_evaporation' in climate_df.columns else total_precip
-                    status = "Surplus" if water_balance > 0 else "Deficit"
-                    st.metric("💦 Net Balance", f"{water_balance:.0f} mm", delta=status, delta_color="normal")
-                
-                # Accuracy note for CHIRPS
-                region_type = get_region_type(location_name)
-                if region_type in ["Semi-arid", "Arid"]:
-                    st.markdown(f"""
-                    <div style="background: rgba(255, 170, 68, 0.1); padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem;">
-                        <p style="color: #FFAA44; margin: 0; font-size: 0.8rem;">
-                        <strong>⚠️ CHIRPS Accuracy Note:</strong><br>
-                        • Region detected: {region_type}<br>
-                        • In arid/semi-arid areas, CHIRPS may overestimate precipitation by 20-40%<br>
-                        • Calibration factor applied: ×{precip_scale}<br>
-                        • Consider using local rain gauge data for critical applications
-                        </p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.markdown(f"""
-                    <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem;">
-                        <p style="color: #CCCCCC; margin: 0; font-size: 0.8rem;">
-                        <strong>📊 Data Source:</strong> CHIRPS Daily<br>
-                        <strong>✓ Precipitation:</strong> Satellite + Gauge data<br>
-                        <strong>✓ Accuracy:</strong> ±20-40% depending on region<br>
-                        <strong>✓ Calibration:</strong> ×{precip_scale} factor applied
-                        </p>
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            with tab4:
-                # Soil Moisture by Layer
-                if 'soil_moisture' in charts:
-                    st.plotly_chart(charts['soil_moisture'], use_container_width=True)
-                    
-                    # Soil moisture metrics for each layer
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        avg_surface = climate_df['soil_moisture_0_7cm'].mean()
-                        st.metric("🌱 Surface (0-7cm)", f"{avg_surface:.3f} m³/m³")
-                    with col2:
-                        avg_root = climate_df['soil_moisture_7_28cm'].mean()
-                        st.metric("🌿 Root zone (7-28cm)", f"{avg_root:.3f} m³/m³")
-                    with col3:
-                        avg_deep = climate_df['soil_moisture_28_100cm'].mean()
-                        st.metric("🌳 Deep (28-100cm)", f"{avg_deep:.3f} m³/m³")
-                else:
-                    st.info("Soil moisture data not available for this location")
-            
-            with tab5:
-                # Soil Moisture Distribution
-                if 'soil_comparison' in charts:
-                    st.plotly_chart(charts['soil_comparison'], use_container_width=True)
-                    
-                    # Soil moisture summary
-                    st.markdown("""
-                    <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 12px; margin-top: 0.5rem;">
-                        <p style="color: #CCCCCC; margin: 0; font-size: 0.9rem;">
-                        <strong>📊 Soil Moisture Interpretation:</strong><br>
-                        • <span style="color: #00FF88;">Surface (0-7cm):</span> Rapid response to rainfall, high evaporation<br>
-                        • <span style="color: #4A90E2;">Root zone (7-28cm):</span> Available for plant uptake, moderate retention<br>
-                        • <span style="color: #FFAA44;">Deep (28-100cm):</span> Groundwater recharge, stable moisture
-                        </p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.info("Soil moisture distribution data not available")
-        else:
-            st.warning("Could not generate climate charts.")
+        ax4.axis('off')
+        legend_text = "CLIMATE CLASSIFICATION LEGEND\n\n"
+        for class_id, class_name in self.climate_class_names.items():
+            color = climate_palettes[class_id-1]
+            marker = '▶' if class_id == current_class else '○'
+            legend_text += f"{marker} Class {class_id}: {class_name[:40]}...\n" if len(class_name) > 40 else f"{marker} Class {class_id}: {class_name}\n"
+
+        ax4.text(0.1, 0.9, legend_text, transform=ax4.transAxes, fontsize=8,
+                bbox=dict(boxstyle="round", facecolor="lightgray", alpha=0.8),
+                verticalalignment='top')
+
+        plt.tight_layout()
+        return fig
 
     # =============================================================================
     # SOIL ANALYSIS METHODS
     # =============================================================================
+
+    def get_small_region_sample(self, geometry):
+        """Get small region sample for soil analysis"""
+        try:
+            centroid = geometry.centroid()
+            small_region = centroid.buffer(1000)
+            bounds = small_region.bounds()
+            coords = bounds.coordinates().getInfo()
+
+            ring = coords[0]
+            lons = [coord[0] for coord in ring]
+            lats = [coord[1] for coord in ring]
+
+            min_lon, max_lon = min(lons), max(lons)
+            min_lat, max_lat = min(lats), max(lats)
+
+            points = []
+            for i in range(3):
+                for j in range(3):
+                    lon = min_lon + (max_lon - min_lon) * (i + 0.5) / 3
+                    lat = min_lat + (max_lat - min_lat) * (j + 0.5) / 3
+                    points.append([lon, lat])
+
+            features = [ee.Feature(ee.Geometry.Point(point)) for point in points]
+            return ee.FeatureCollection(features)
+
+        except Exception as e:
+            st.warning(f"Could not create small region: {e}")
+            centroid = geometry.centroid()
+            return ee.FeatureCollection([ee.Feature(centroid)])
 
     def get_reference_soil_data_improved(self, geometry, region_name):
         """Get improved reference soil data"""
@@ -1781,172 +1147,577 @@ class EnhancedClimateSoilAnalyzer:
         else:
             return None
 
-    def create_soil_analysis_chart(self, soil_data, location_name):
-        """Create modern soil analysis chart with accuracy indicators"""
+    def display_soil_analysis(self, soil_results):
+        """Display soil analysis results"""
+        if not soil_results:
+            return
+
+        soil_data = soil_results['soil_data']
+        location_name = soil_results['location_name']
+
+        st.markdown(f'<div class="section-header">🌱 SOIL ANALYSIS - {location_name}</div>', unsafe_allow_html=True)
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("🏺 Soil Texture", soil_data['texture_name'])
+        with col2:
+            st.metric("🧪 Soil Organic Matter", f"{soil_data['final_som_estimate']:.2f}%")
+        with col3:
+            st.metric("📊 Soil Quality", 
+                     "High" if soil_data['final_som_estimate'] > 3.0 else 
+                     "Medium" if soil_data['final_som_estimate'] > 1.5 else "Low")
+
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+        
+        texture_components = ['Clay', 'Silt', 'Sand']
+        texture_values = [soil_data['clay_content'], soil_data['silt_content'], soil_data['sand_content']]
+        colors = ['#8B4513', '#DEB887', '#F4A460']
+        axes[0].bar(texture_components, texture_values, color=colors)
+        axes[0].set_title('Soil Texture Composition')
+        axes[0].set_ylabel('Percentage (%)')
+        axes[0].set_ylim(0, 100)
+        for i, v in enumerate(texture_values):
+            axes[0].text(i, v + 1, f'{v}%', ha='center', va='bottom', fontweight='bold')
+
+        carbon_data = [soil_data['soc_stock'], soil_data['soil_organic_matter']]
+        carbon_labels = ['SOC Stock\n(t/ha)', 'SOM\n(%)']
+        carbon_colors = ['#2E8B57', '#32CD32']
+        axes[1].bar(carbon_labels, carbon_data, color=carbon_colors, alpha=0.7)
+        axes[1].set_title('Soil Organic Matter')
+        for i, v in enumerate(carbon_data):
+            axes[1].text(i, v + max(carbon_data)*0.05, f'{v:.2f}', ha='center', va='bottom')
+
+        axes[2].axis('off')
+        quality_text = f"""
+        📈 SOIL QUALITY ASSESSMENT:
+
+        Organic Matter: {'✅ HIGH' if soil_data['final_som_estimate'] > 3.0 else '⚠️ MEDIUM' if soil_data['final_som_estimate'] > 1.5 else '❌ LOW'}
+
+        Value: {soil_data['final_som_estimate']:.2f}%
+
+        Texture: {'✅ OPTIMAL' if soil_data['texture_name'] in ['Loam', 'Silt loam', 'Clay loam'] else '⚠️ MODERATE' if soil_data['texture_name'] in ['Sandy loam', 'Silty clay loam'] else '❌ POOR'}
+
+        Class: {soil_data['texture_name']}
+
+        💡 RECOMMENDATIONS:
+        """
+        if soil_data['final_som_estimate'] < 1.5:
+            quality_text += "• Add organic amendments\n• Use cover crops\n"
+        if soil_data['sand_content'] > 70:
+            quality_text += "• Improve water retention\n"
+        
+        axes[2].text(0.1, 0.9, quality_text, transform=axes[2].transAxes, fontsize=10,
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen"),
+                    verticalalignment='top')
+
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+
+    # =============================================================================
+    # ENHANCED CLIMATE CHARTS WITH ALL ORIGINAL FEATURES
+    # =============================================================================
+
+    def create_modern_climate_charts(self, climate_df, location_name):
+        """Create modern, smooth climate charts with accuracy indicators"""
+        charts = {}
+        
+        if climate_df is None or climate_df.empty:
+            return charts
         
         region_type = get_region_type(location_name)
-        soil_accuracy_badge = get_accuracy_badge("ISDASoil", region_type)
         
-        # Soil texture composition
-        fig_texture = go.Figure()
+        # Create monthly aggregated data
+        monthly_df = climate_df.groupby(['month', 'month_name']).agg({
+            'temperature': 'mean',
+            'temperature_max': 'max',
+            'temperature_min': 'min',
+            'precipitation': 'sum',
+            'soil_moisture_0_7cm': 'mean',
+            'soil_moisture_7_28cm': 'mean',
+            'soil_moisture_28_100cm': 'mean',
+            'potential_evaporation': 'mean'
+        }).reset_index()
         
-        components = ['Clay', 'Silt', 'Sand']
-        values = [soil_data['clay_content'], soil_data['silt_content'], soil_data['sand_content']]
-        colors = ['#8B4513', '#DEB887', '#F4A460']
+        monthly_df = monthly_df.sort_values('month')
         
-        fig_texture.add_trace(go.Bar(
-            x=components,
-            y=values,
-            marker_color=colors,
-            text=[f'{v}%' for v in values],
-            textposition='outside',
-            textfont=dict(size=14, color='#FFFFFF'),
-            width=0.6
+        # 1. Temperature Chart
+        fig_temp = go.Figure()
+        
+        fig_temp.add_trace(go.Scatter(
+            x=monthly_df['month_name'],
+            y=monthly_df['temperature'],
+            mode='lines+markers',
+            name='Temperature',
+            line=dict(
+                color='#FF6B6B',
+                width=3,
+                shape='spline',
+                smoothing=1.3
+            ),
+            marker=dict(
+                size=8,
+                color='#FF6B6B',
+                line=dict(width=1, color='#FFFFFF')
+            ),
+            fill='tozeroy',
+            fillcolor='rgba(255, 107, 107, 0.1)'
         ))
         
-        fig_texture.update_layout(
+        fig_temp.update_layout(
             title=dict(
-                text=f'<b>Soil Texture Composition</b> {soil_accuracy_badge}',
+                text=f'<b>Monthly Temperature</b>',
                 font=dict(size=16, color='#FFFFFF'),
                 x=0.5
             ),
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#FFFFFF'),
+            font=dict(color='#FFFFFF', size=12),
             xaxis=dict(
                 title='',
                 gridcolor='#333333',
-                tickfont=dict(size=14, color='#FFFFFF')
+                tickfont=dict(size=12, color='#CCCCCC')
             ),
             yaxis=dict(
-                title='Percentage (%)',
+                title='Temperature (°C)',
                 gridcolor='#333333',
-                tickfont=dict(size=12, color='#CCCCCC'),
-                range=[0, 100]
+                tickfont=dict(size=12, color='#CCCCCC')
             ),
-            height=400,
-            margin=dict(l=40, r=40, t=80, b=40),
+            height=350,
+            margin=dict(l=40, r=20, t=80, b=40),
+            hovermode='x unified',
             showlegend=False
         )
         
-        # Soil Organic Matter chart
-        fig_som = go.Figure()
+        charts['temperature'] = fig_temp
         
-        som_value = soil_data['final_som_estimate']
+        # 2. Temperature Range Chart
+        fig_temp_range = go.Figure()
         
-        fig_som.add_trace(go.Indicator(
-            mode="gauge+number+delta",
-            value=som_value,
-            number=dict(font=dict(size=24, color='#FFFFFF'), suffix='%'),
-            gauge=dict(
-                axis=dict(range=[0, 6], tickwidth=1, tickcolor="#CCCCCC"),
-                bar=dict(color="#00FF88", thickness=0.3),
-                bgcolor="#333333",
-                borderwidth=2,
-                bordercolor="#444444",
-                steps=[
-                    dict(range=[0, 1.5], color="#FF4444"),
-                    dict(range=[1.5, 3], color="#FFAA44"),
-                    dict(range=[3, 6], color="#44FF44")
-                ],
-                threshold=dict(
-                    thickness=0.75,
-                    value=som_value
-                )
+        fig_temp_range.add_trace(go.Scatter(
+            x=monthly_df['month_name'],
+            y=monthly_df['temperature_max'],
+            mode='lines+markers',
+            name='Max Temperature',
+            line=dict(
+                color='#FF4444',
+                width=2,
+                shape='spline',
+                smoothing=1.3
             ),
-            title=dict(
-                text=f"<b>Soil Organic Matter</b> {soil_accuracy_badge}",
-                font=dict(size=16, color='#FFFFFF')
+            marker=dict(
+                size=6,
+                color='#FF4444'
             )
         ))
         
-        fig_som.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#FFFFFF'),
-            height=400,
-            margin=dict(l=40, r=40, t=80, b=40)
-        )
-        
-        return fig_texture, fig_som
-
-    def create_climate_classification_chart(self, location_name, climate_data):
-        """Create modern climate classification chart with accuracy indicators"""
-        
-        region_type = get_region_type(location_name)
-        temp_accuracy_badge = get_accuracy_badge("WorldClim", region_type)
-        precip_accuracy_badge = get_accuracy_badge("WorldClim", region_type)
-        
-        # Create gauge chart for temperature
-        fig_temp = go.Figure()
-        
-        fig_temp.add_trace(go.Indicator(
-            mode="gauge+number",
-            value=climate_data['mean_temperature'],
-            number=dict(font=dict(size=24, color='#FFFFFF'), suffix='°C'),
-            gauge=dict(
-                axis=dict(range=[-20, 40], tickwidth=1, tickcolor="#CCCCCC"),
-                bar=dict(color="#FF6B6B", thickness=0.3),
-                bgcolor="#333333",
-                borderwidth=2,
-                bordercolor="#444444",
-                steps=[
-                    dict(range=[-20, 0], color="#4A90E2"),
-                    dict(range=[0, 18], color="#44AA44"),
-                    dict(range=[18, 30], color="#FFAA44"),
-                    dict(range=[30, 40], color="#FF4444")
-                ]
+        fig_temp_range.add_trace(go.Scatter(
+            x=monthly_df['month_name'],
+            y=monthly_df['temperature_min'],
+            mode='lines+markers',
+            name='Min Temperature',
+            line=dict(
+                color='#4A90E2',
+                width=2,
+                shape='spline',
+                smoothing=1.3
             ),
-            title=dict(
-                text=f"<b>Mean Annual Temp</b> {temp_accuracy_badge}",
-                font=dict(size=14, color='#FFFFFF')
-            )
+            marker=dict(
+                size=6,
+                color='#4A90E2'
+            ),
+            fill='tonexty',
+            fillcolor='rgba(74, 144, 226, 0.1)'
         ))
         
-        fig_temp.update_layout(
+        fig_temp_range.update_layout(
+            title=dict(
+                text=f'<b>Temperature Range</b>',
+                font=dict(size=16, color='#FFFFFF'),
+                x=0.5
+            ),
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#FFFFFF'),
-            height=250,
-            margin=dict(l=30, r=30, t=80, b=30)
+            font=dict(color='#FFFFFF', size=12),
+            xaxis=dict(title='', gridcolor='#333333'),
+            yaxis=dict(title='Temperature (°C)', gridcolor='#333333'),
+            height=350,
+            margin=dict(l=40, r=20, t=80, b=40),
+            hovermode='x unified',
+            legend=dict(
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='center',
+                x=0.5,
+                font=dict(size=11, color='#FFFFFF')
+            )
         )
         
-        # Create gauge chart for precipitation
+        charts['temperature_range'] = fig_temp_range
+        
+        # 3. Precipitation Chart
         fig_precip = go.Figure()
         
-        fig_precip.add_trace(go.Indicator(
-            mode="gauge+number",
-            value=climate_data['mean_precipitation'],
-            number=dict(font=dict(size=24, color='#FFFFFF'), suffix='mm'),
-            gauge=dict(
-                axis=dict(range=[0, 3000], tickwidth=1, tickcolor="#CCCCCC"),
-                bar=dict(color="#4A90E2", thickness=0.3),
-                bgcolor="#333333",
-                borderwidth=2,
-                bordercolor="#444444",
-                steps=[
-                    dict(range=[0, 250], color="#FF4444"),
-                    dict(range=[250, 500], color="#FFAA44"),
-                    dict(range=[500, 1000], color="#44AA44"),
-                    dict(range=[1000, 2000], color="#4A90E2"),
-                    dict(range=[2000, 3000], color="#800080")
-                ]
-            ),
-            title=dict(
-                text=f"<b>Annual Precipitation</b> {precip_accuracy_badge}",
-                font=dict(size=14, color='#FFFFFF')
-            )
+        fig_precip.add_trace(go.Bar(
+            x=monthly_df['month_name'],
+            y=monthly_df['precipitation'],
+            name='Precipitation',
+            marker_color='#4A90E2',
+            marker_line=dict(width=1, color='#FFFFFF'),
+            opacity=0.8,
+            text=[f'{v:.1f} mm' for v in monthly_df['precipitation']],
+            textposition='outside',
+            textfont=dict(size=11, color='#CCCCCC')
         ))
         
         fig_precip.update_layout(
+            title=dict(
+                text=f'<b>Monthly Precipitation</b>',
+                font=dict(size=16, color='#FFFFFF'),
+                x=0.5
+            ),
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#FFFFFF'),
-            height=250,
-            margin=dict(l=30, r=30, t=80, b=30)
+            font=dict(color='#FFFFFF', size=12),
+            xaxis=dict(
+                title='',
+                gridcolor='#333333',
+                tickfont=dict(size=12, color='#CCCCCC')
+            ),
+            yaxis=dict(
+                title='Precipitation (mm)',
+                gridcolor='#333333',
+                tickfont=dict(size=12, color='#CCCCCC')
+            ),
+            height=350,
+            margin=dict(l=40, r=20, t=80, b=40),
+            hovermode='x unified',
+            showlegend=False
         )
         
-        return fig_temp, fig_precip
+        charts['precipitation'] = fig_precip
+        
+        # 4. Water Balance Chart
+        if 'potential_evaporation' in monthly_df.columns:
+            fig_water = go.Figure()
+            
+            fig_water.add_trace(go.Bar(
+                x=monthly_df['month_name'],
+                y=monthly_df['precipitation'],
+                name='Precipitation',
+                marker_color='#4A90E2',
+                marker_line=dict(width=1, color='#FFFFFF'),
+                opacity=0.8
+            ))
+            
+            fig_water.add_trace(go.Scatter(
+                x=monthly_df['month_name'],
+                y=monthly_df['potential_evaporation'],
+                mode='lines+markers',
+                name='Evaporation',
+                line=dict(
+                    color='#FFAA44',
+                    width=3,
+                    shape='spline',
+                    smoothing=1.3
+                ),
+                marker=dict(
+                    size=8,
+                    color='#FFAA44',
+                    line=dict(width=1, color='#FFFFFF')
+                ),
+                yaxis='y2'
+            ))
+            
+            fig_water.update_layout(
+                title=dict(
+                    text=f'<b>Water Balance</b>',
+                    font=dict(size=16, color='#FFFFFF'),
+                    x=0.5
+                ),
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='#FFFFFF', size=12),
+                xaxis=dict(title='', gridcolor='#333333'),
+                yaxis=dict(title='Precipitation (mm)', gridcolor='#333333'),
+                yaxis2=dict(
+                    title='Evaporation (mm)',
+                    overlaying='y',
+                    side='right',
+                    gridcolor='#333333'
+                ),
+                height=350,
+                margin=dict(l=40, r=40, t=80, b=40),
+                hovermode='x unified',
+                legend=dict(
+                    orientation='h',
+                    yanchor='bottom',
+                    y=1.02,
+                    xanchor='center',
+                    x=0.5
+                )
+            )
+            
+            charts['water_balance'] = fig_water
+        
+        # 5. Soil Moisture Chart
+        if all(col in monthly_df.columns for col in ['soil_moisture_0_7cm', 'soil_moisture_7_28cm', 'soil_moisture_28_100cm']):
+            fig_soil = go.Figure()
+            
+            fig_soil.add_trace(go.Scatter(
+                x=monthly_df['month_name'],
+                y=monthly_df['soil_moisture_0_7cm'],
+                mode='lines+markers',
+                name='Surface (0-7cm)',
+                line=dict(color='#00FF88', width=3, shape='spline', smoothing=1.3),
+                marker=dict(size=8, color='#00FF88', line=dict(width=1, color='#FFFFFF')),
+                fill='tozeroy',
+                fillcolor='rgba(0, 255, 136, 0.1)'
+            ))
+            
+            fig_soil.add_trace(go.Scatter(
+                x=monthly_df['month_name'],
+                y=monthly_df['soil_moisture_7_28cm'],
+                mode='lines+markers',
+                name='Root zone (7-28cm)',
+                line=dict(color='#4A90E2', width=3, shape='spline', smoothing=1.3),
+                marker=dict(size=8, color='#4A90E2', line=dict(width=1, color='#FFFFFF')),
+                fill='tonexty',
+                fillcolor='rgba(74, 144, 226, 0.1)'
+            ))
+            
+            fig_soil.add_trace(go.Scatter(
+                x=monthly_df['month_name'],
+                y=monthly_df['soil_moisture_28_100cm'],
+                mode='lines+markers',
+                name='Deep (28-100cm)',
+                line=dict(color='#FFAA44', width=3, shape='spline', smoothing=1.3),
+                marker=dict(size=8, color='#FFAA44', line=dict(width=1, color='#FFFFFF')),
+                fill='tonexty',
+                fillcolor='rgba(255, 170, 68, 0.1)'
+            ))
+            
+            fig_soil.update_layout(
+                title=dict(text='<b>Soil Moisture by Depth</b>', font=dict(size=16, color='#FFFFFF'), x=0.5),
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='#FFFFFF', size=12),
+                xaxis=dict(title='', gridcolor='#333333'),
+                yaxis=dict(title='Volumetric Water Content (m³/m³)', gridcolor='#333333', tickformat='.2f'),
+                height=400,
+                margin=dict(l=40, r=20, t=80, b=40),
+                hovermode='x unified',
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='center', x=0.5)
+            )
+            
+            charts['soil_moisture'] = fig_soil
+        
+        return charts
+
+    def display_daily_climate_charts(self, daily_df, location_name, precip_scale=1.0):
+        """Display daily climate data charts"""
+        if daily_df is None or daily_df.empty:
+            return
+        
+        region_type = get_region_type(location_name)
+        
+        # Daily Temperature Chart
+        fig_daily_temp = go.Figure()
+        
+        fig_daily_temp.add_trace(go.Scatter(
+            x=daily_df['date'],
+            y=daily_df['temperature'],
+            mode='lines',
+            name='Daily Temperature',
+            line=dict(
+                color='#FF6B6B',
+                width=2,
+                shape='spline',
+                smoothing=1.1
+            ),
+            fill='tozeroy',
+            fillcolor='rgba(255, 107, 107, 0.05)'
+        ))
+        
+        if 'temperature_max' in daily_df.columns and 'temperature_min' in daily_df.columns:
+            fig_daily_temp.add_trace(go.Scatter(
+                x=daily_df['date'],
+                y=daily_df['temperature_max'],
+                mode='lines',
+                name='Max',
+                line=dict(color='#FF4444', width=1, dash='dot')
+            ))
+            
+            fig_daily_temp.add_trace(go.Scatter(
+                x=daily_df['date'],
+                y=daily_df['temperature_min'],
+                mode='lines',
+                name='Min',
+                line=dict(color='#4A90E2', width=1, dash='dot'),
+                fill='tonexty',
+                fillcolor='rgba(74, 144, 226, 0.05)'
+            ))
+        
+        fig_daily_temp.update_layout(
+            title=dict(
+                text=f'<b>Daily Temperature</b>',
+                font=dict(size=16, color='#FFFFFF'),
+                x=0.5
+            ),
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#FFFFFF', size=12),
+            xaxis=dict(title='', gridcolor='#333333', tickfont=dict(size=11, color='#CCCCCC')),
+            yaxis=dict(title='Temperature (°C)', gridcolor='#333333', tickfont=dict(size=12, color='#CCCCCC')),
+            height=300,
+            margin=dict(l=40, r=20, t=60, b=40),
+            hovermode='x unified',
+            legend=dict(
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='center',
+                x=0.5,
+                font=dict(size=11, color='#FFFFFF')
+            )
+        )
+        
+        st.plotly_chart(fig_daily_temp, use_container_width=True)
+        
+        # Daily Precipitation Chart
+        fig_daily_precip = go.Figure()
+        
+        fig_daily_precip.add_trace(go.Bar(
+            x=daily_df['date'],
+            y=daily_df['precipitation'],
+            name='Daily Precipitation',
+            marker_color='#4A90E2',
+            marker_line=dict(width=0),
+            opacity=0.7
+        ))
+        
+        fig_daily_precip.update_layout(
+            title=dict(
+                text=f'<b>Daily Precipitation</b>',
+                font=dict(size=16, color='#FFFFFF'),
+                x=0.5
+            ),
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#FFFFFF', size=12),
+            xaxis=dict(title='', gridcolor='#333333', tickfont=dict(size=11, color='#CCCCCC')),
+            yaxis=dict(title='Precipitation (mm)', gridcolor='#333333', tickfont=dict(size=12, color='#CCCCCC')),
+            height=250,
+            margin=dict(l=40, r=20, t=60, b=40),
+            hovermode='x unified',
+            showlegend=False
+        )
+        
+        st.plotly_chart(fig_daily_precip, use_container_width=True)
+        
+        # Calibration note for arid regions
+        if region_type in ["Semi-arid", "Arid"] and precip_scale < 1.0:
+            st.info(f"💧 Precipitation calibrated for {region_type} region: ×{precip_scale} factor applied")
+
+    def display_enhanced_climate_charts(self, location_name, climate_df, precip_scale=1.0):
+        """Display enhanced climate charts with ALL original charts restored"""
+        if climate_df is None or climate_df.empty:
+            st.warning("No climate data available for this location.")
+            return
+        
+        # Create modern charts
+        charts = self.create_modern_climate_charts(climate_df, location_name)
+        
+        if charts:
+            # Create tabs for different chart categories
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(["🌡️ Temperature", "📊 Daily Data", "💧 Precipitation", "🌱 Soil Moisture", "📈 Statistics"])
+            
+            with tab1:
+                st.plotly_chart(charts['temperature'], use_container_width=True)
+                st.plotly_chart(charts['temperature_range'], use_container_width=True)
+                
+                # Temperature metrics
+                monthly_df = climate_df.groupby('month').agg({
+                    'temperature': 'mean',
+                    'temperature_max': 'max',
+                    'temperature_min': 'min'
+                }).reset_index()
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("🌡️ Average", f"{monthly_df['temperature'].mean():.1f}°C")
+                with col2:
+                    max_temp = monthly_df['temperature_max'].max()
+                    st.metric("📈 Maximum", f"{max_temp:.1f}°C")
+                with col3:
+                    min_temp = monthly_df['temperature_min'].min()
+                    st.metric("📉 Minimum", f"{min_temp:.1f}°C")
+                with col4:
+                    temp_range = max_temp - min_temp
+                    st.metric("📊 Range", f"{temp_range:.1f}°C")
+            
+            with tab2:
+                self.display_daily_climate_charts(climate_df, location_name, precip_scale)
+            
+            with tab3:
+                st.plotly_chart(charts['precipitation'], use_container_width=True)
+                if 'water_balance' in charts:
+                    st.plotly_chart(charts['water_balance'], use_container_width=True)
+                
+                # Precipitation metrics
+                total_precip = climate_df['precipitation'].sum()
+                max_precip = climate_df.groupby('month')['precipitation'].sum().max()
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("💧 Annual Total", f"{total_precip:.0f} mm")
+                with col2:
+                    st.metric("🌧️ Max Monthly", f"{max_precip:.0f} mm")
+                with col3:
+                    rainy_days = (climate_df['precipitation'] > 1).sum()
+                    st.metric("☔ Rainy Days", f"{rainy_days}")
+            
+            with tab4:
+                if 'soil_moisture' in charts:
+                    st.plotly_chart(charts['soil_moisture'], use_container_width=True)
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        avg_surface = climate_df['soil_moisture_0_7cm'].mean()
+                        st.metric("🌱 Surface (0-7cm)", f"{avg_surface:.3f} m³/m³")
+                    with col2:
+                        avg_root = climate_df['soil_moisture_7_28cm'].mean()
+                        st.metric("🌿 Root zone (7-28cm)", f"{avg_root:.3f} m³/m³")
+                    with col3:
+                        avg_deep = climate_df['soil_moisture_28_100cm'].mean()
+                        st.metric("🌳 Deep (28-100cm)", f"{avg_deep:.3f} m³/m³")
+                else:
+                    st.info("Soil moisture data not available for this location")
+            
+            with tab5:
+                # Summary statistics
+                st.markdown("""
+                <div style="background: rgba(0,255,136,0.1); padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                    <h4 style="color: #00ff88; margin-top: 0;">📊 Climate Summary</h4>
+                """, unsafe_allow_html=True)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**Temperature**")
+                    st.write(f"• Mean: {climate_df['temperature'].mean():.1f}°C")
+                    st.write(f"• Max: {climate_df['temperature_max'].max():.1f}°C")
+                    st.write(f"• Min: {climate_df['temperature_min'].min():.1f}°C")
+                
+                with col2:
+                    st.markdown("**Precipitation**")
+                    st.write(f"• Total: {climate_df['precipitation'].sum():.0f} mm")
+                    st.write(f"• Mean: {climate_df['precipitation'].mean():.1f} mm/day")
+                    st.write(f"• Max: {climate_df['precipitation'].max():.1f} mm/day")
+                
+                st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.warning("Could not generate climate charts.")
 
     # =============================================================================
     # CORRECTED CLIMATE ANALYSIS WITH ACTUAL DAILY DATA
@@ -1955,7 +1726,6 @@ class EnhancedClimateSoilAnalyzer:
     def run_enhanced_climate_soil_analysis(self, country, region='Select Region', municipality='Select Municipality', precip_scale=1.0):
         """Run enhanced climate and soil analysis with CORRECT values"""
         try:
-            # Get geometry from selection
             geometry, location_name = self.get_geometry_from_selection(country, region, municipality)
 
             if not geometry:
@@ -1972,48 +1742,14 @@ class EnhancedClimateSoilAnalyzer:
             end_date = datetime.now().strftime('%Y-%m-%d')
             start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
             
-            # Get daily climate data with proper scale
-            daily_climate_df = analyze_daily_climate_data(
+            # Get daily climate data with proper scale and calibration - USING CORRECTED FUNCTION
+            climate_df = analyze_daily_climate_data(
                 geom, 
                 start_date, 
                 end_date, 
                 location_name, 
                 precip_scale
             )
-            
-            # Get monthly enhanced climate data for soil moisture and other parameters
-            monthly_collection = self.get_daily_climate_data_for_analysis(geom, start_date, end_date, precip_scale)
-            monthly_climate_df = None
-            if monthly_collection:
-                monthly_climate_df = self.extract_monthly_statistics(monthly_collection, geom)
-            
-            # Convert daily to monthly for visualization if monthly data not available
-            climate_df = monthly_climate_df
-            if climate_df is None and daily_climate_df is not None and not daily_climate_df.empty:
-                # Add month column for grouping
-                daily_climate_df['month'] = pd.to_datetime(daily_climate_df['date']).dt.month
-                daily_climate_df['month_name'] = pd.to_datetime(daily_climate_df['date']).dt.strftime('%b')
-                
-                # Group by month to get monthly averages
-                monthly_df = daily_climate_df.groupby(['month', 'month_name']).agg({
-                    'temperature': 'mean',
-                    'temperature_max': 'max',
-                    'temperature_min': 'min',
-                    'precipitation': 'sum'
-                }).reset_index()
-                
-                # Rename columns to match expected format
-                monthly_df = monthly_df.rename(columns={
-                    'temperature': 'temperature_2m',
-                    'temperature_max': 'temperature_max',
-                    'temperature_min': 'temperature_min',
-                    'precipitation': 'total_precipitation'
-                })
-                
-                # Sort by month
-                monthly_df = monthly_df.sort_values('month')
-                
-                climate_df = monthly_df
 
             # Get soil data
             soil_results = self.run_comprehensive_soil_analysis(country, region, municipality)
@@ -2023,7 +1759,6 @@ class EnhancedClimateSoilAnalyzer:
                     'climate_data': climate_results,
                     'soil_data': soil_results,
                     'climate_df': climate_df,
-                    'daily_climate_df': daily_climate_df,
                     'location_name': location_name
                 }
             else:
@@ -2032,7 +1767,6 @@ class EnhancedClimateSoilAnalyzer:
                     'climate_data': climate_results,
                     'soil_data': None,
                     'climate_df': climate_df,
-                    'daily_climate_df': daily_climate_df,
                     'location_name': location_name
                 }
                 
@@ -2051,9 +1785,9 @@ def calculate_vegetation_index(index_name, image):
         band_names = image.bandNames().getInfo()
         
         if index_name == 'NDVI':
-            if 'B8' in band_names and 'B4' in band_names:
+            if 'B8' in band_names and 'B4' in band_names:  # Sentinel-2
                 return image.normalizedDifference(['B8', 'B4']).rename('NDVI')
-            elif 'SR_B5' in band_names and 'SR_B4' in band_names:
+            elif 'SR_B5' in band_names and 'SR_B4' in band_names:  # Landsat-8
                 return image.normalizedDifference(['SR_B5', 'SR_B4']).rename('NDVI')
         
         elif index_name == 'EVI':
@@ -2072,6 +1806,22 @@ def calculate_vegetation_index(index_name, image):
                         'NIR': image.select('B8'),
                         'RED': image.select('B4')
                     }).rename('SAVI')
+        
+        elif index_name == 'NDWI':
+            if 'B8' in band_names and 'B11' in band_names:
+                return image.normalizedDifference(['B8', 'B11']).rename('NDWI')
+        
+        elif index_name == 'MSAVI':
+            if 'B8' in band_names and 'B4' in band_names:
+                return image.expression(
+                    '(2 * NIR + 1 - sqrt((2 * NIR + 1)**2 - 8 * (NIR - RED))) / 2', {
+                        'NIR': image.select('B8'),
+                        'RED': image.select('B4')
+                    }).rename('MSAVI')
+        
+        elif index_name == 'GNDVI':
+            if 'B8' in band_names and 'B3' in band_names:
+                return image.normalizedDifference(['B8', 'B3']).rename('GNDVI')
     except:
         pass
     
@@ -2149,11 +1899,6 @@ def create_modern_vegetation_chart(results, index_name, location_name):
     """Create modern vegetation index chart with accuracy indicators"""
     data = results[index_name]
     
-    # Get accuracy badge based on dataset
-    collection_choice = st.session_state.get('analysis_parameters', {}).get('collection_choice', 'Sentinel-2')
-    dataset = collection_choice
-    accuracy_badge = get_accuracy_badge(dataset, index_name)
-    
     fig = go.Figure()
     
     # Smooth line with markers
@@ -2194,7 +1939,7 @@ def create_modern_vegetation_chart(results, index_name, location_name):
     
     fig.update_layout(
         title=dict(
-            text=f'<b>{index_name} - Time Series</b> {accuracy_badge}',
+            text=f'<b>{index_name} - Time Series</b>',
             font=dict(size=16, color='#FFFFFF'),
             x=0.5
         ),
@@ -2313,8 +2058,6 @@ def main():
         st.session_state.auto_show_results = False
     if 'climate_data' not in st.session_state:
         st.session_state.climate_data = None
-    if 'daily_climate_data' not in st.session_state:
-        st.session_state.daily_climate_data = None
     if 'ee_initialized' not in st.session_state:
         st.session_state.ee_initialized = False
     if 'selected_analysis_type' not in st.session_state:
@@ -2333,10 +2076,10 @@ def main():
         with st.spinner("Initializing Earth Engine..."):
             st.session_state.ee_initialized = auto_initialize_earth_engine()
             if st.session_state.ee_initialized:
-                st.success("✅ Earth Engine initialized!")
+                st.success("✅ Earth Engine initialized successfully!")
                 st.session_state.enhanced_analyzer = EnhancedClimateSoilAnalyzer()
                 if st.session_state.enhanced_analyzer.initialize_ee_objects():
-                    st.success("✅ Ready to analyze!")
+                    st.success("✅ Earth Engine objects initialized!")
                 else:
                     st.error("❌ Failed to initialize Earth Engine objects")
             else:
@@ -2344,9 +2087,9 @@ def main():
 
     # Header
     st.markdown("""
-    <div style="margin-bottom: 0.75rem;">
-        <h1>🌍 KHISBA GIS</h1>
-        <p style="color: #999999; margin: 0; font-size: 0.85rem;">Climate & Soil Analyzer</p>
+    <div style="margin-bottom: 20px;">
+        <h1>🌍 KHISBA GIS - Climate & Soil Analyzer</h1>
+        <p style="color: #999999; margin: 0; font-size: 14px;">Interactive Global Vegetation, Climate & Soil Analytics - Guided Workflow</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -2363,23 +2106,27 @@ def main():
     if analysis_type == "Vegetation & Climate":
         STEPS = [
             {"number": 1, "label": "Select Area", "icon": "📍"},
-            {"number": 2, "label": "Parameters", "icon": "⚙️"},
+            {"number": 2, "label": "Set Parameters", "icon": "⚙️"},
             {"number": 3, "label": "View Map", "icon": "🗺️"},
-            {"number": 4, "label": "Run", "icon": "🚀"},
-            {"number": 5, "label": "Results", "icon": "📊"}
+            {"number": 4, "label": "Run Analysis", "icon": "🚀"},
+            {"number": 5, "label": "View Results", "icon": "📊"}
         ]
     else:
         STEPS = [
             {"number": 1, "label": "Select Area", "icon": "📍"},
-            {"number": 2, "label": "Climate", "icon": "🌤️"},
-            {"number": 3, "label": "Soil", "icon": "🌱"},
-            {"number": 4, "label": "Run", "icon": "🚀"},
-            {"number": 5, "label": "Results", "icon": "📊"}
+            {"number": 2, "label": "Climate Settings", "icon": "🌤️"},
+            {"number": 3, "label": "Soil Settings", "icon": "🌱"},
+            {"number": 4, "label": "Run Analysis", "icon": "🚀"},
+            {"number": 5, "label": "View Results", "icon": "📊"}
         ]
 
     # Progress Steps
-    st.markdown('<div class="progress-container">', unsafe_allow_html=True)
-    
+    st.markdown("""
+    <div class="progress-steps">
+        <div class="progress-line"></div>
+        <div class="progress-fill" id="progress-fill"></div>
+    """, unsafe_allow_html=True)
+
     for i, step in enumerate(STEPS):
         step_class = "active" if st.session_state.current_step == step["number"] else ""
         step_class = "completed" if st.session_state.current_step > step["number"] else step_class
@@ -2395,27 +2142,43 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    # Main content - Mobile optimized layout
-    if st.session_state.current_step < 5 or analysis_type == "Vegetation & Climate":
-        # Two column layout for earlier steps
-        col1, col2 = st.columns([0.4, 0.6], gap="small")
-    else:
-        # Single column for results on mobile
-        col1, col2 = st.columns([1, 1], gap="small")
+    # Status indicators
+    st.markdown(f"""
+    <div class="status-container">
+        <div class="status-item">
+            <div class="status-dot {'active' if st.session_state.ee_initialized else ''}"></div>
+            <span>Earth Engine: {'Ready' if st.session_state.ee_initialized else 'Loading...'}</span>
+        </div>
+        <div class="status-item">
+            <div class="status-dot {'active' if st.session_state.selected_area_name else ''}"></div>
+            <span>Area Selected: {'Yes' if st.session_state.selected_area_name else 'No'}</span>
+        </div>
+        <div class="status-item">
+            <div class="status-dot {'active' if st.session_state.analysis_results or st.session_state.soil_results else ''}"></div>
+            <span>Analysis: {'Complete' if st.session_state.analysis_results or st.session_state.soil_results else 'Pending'}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Main content area
+    col1, col2 = st.columns([0.35, 0.65], gap="large")
 
     with col1:
         # Step 1: Area Selection
         if st.session_state.current_step == 1:
             st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.markdown('<div class="card-header"><div class="card-icon">📍</div><h3 style="margin: 0;">Select Area</h3></div>', unsafe_allow_html=True)
+            st.markdown('<div class="card-title"><div class="icon">📍</div><h3 style="margin: 0;">Step 1: Select Your Area</h3></div>', unsafe_allow_html=True)
             
             st.markdown("""
-            <div class="guide-card">
-                <div class="guide-title">🎯 Get Started</div>
+            <div class="guide-container">
+                <div class="guide-header">
+                    <div class="guide-icon">🎯</div>
+                    <div class="guide-title">Get Started</div>
+                </div>
                 <div class="guide-content">
-                    Select a country, then state/province and municipality if needed.
+                    Select a geographic area for analysis. Start by choosing a country, then narrow down to state/province and municipality if needed.
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -2428,12 +2191,12 @@ def main():
                         if country_names:
                             selected_country = st.selectbox(
                                 "🌍 Country",
-                                options=["Select"] + country_names,
+                                options=["Select a country"] + country_names,
                                 index=0,
                                 key="country_select"
                             )
                             
-                            if selected_country and selected_country != "Select":
+                            if selected_country and selected_country != "Select a country":
                                 country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
                                 country_code = country_feature.get('ADM0_CODE').getInfo()
                                 admin1_fc = get_admin_boundaries(st.session_state.enhanced_analyzer, 1, country_code)
@@ -2443,12 +2206,12 @@ def main():
                                     if admin1_names:
                                         selected_admin1 = st.selectbox(
                                             "🏛️ State/Province",
-                                            options=["Select"] + admin1_names,
+                                            options=["Select state/province"] + admin1_names,
                                             index=0,
                                             key="admin1_select"
                                         )
                                         
-                                        if selected_admin1 and selected_admin1 != "Select":
+                                        if selected_admin1 and selected_admin1 != "Select state/province":
                                             admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
                                             admin1_code = admin1_feature.get('ADM1_CODE').getInfo()
                                             admin2_fc = get_admin_boundaries(st.session_state.enhanced_analyzer, 2, None, admin1_code)
@@ -2458,7 +2221,7 @@ def main():
                                                 if admin2_names:
                                                     selected_admin2 = st.selectbox(
                                                         "🏘️ Municipality",
-                                                        options=["Select"] + admin2_names,
+                                                        options=["Select municipality"] + admin2_names,
                                                         index=0,
                                                         key="admin2_select"
                                                     )
@@ -2468,75 +2231,81 @@ def main():
                     selected_admin1 = None
                     selected_admin2 = None
             else:
-                st.warning("Initializing Earth Engine...")
+                st.warning("Earth Engine not initialized. Please wait...")
+                selected_country = None
+                selected_admin1 = None
+                selected_admin2 = None
             
-            # Handle selection and confirmation
-            if 'selected_country' in locals() and selected_country and selected_country != "Select":
+            if 'selected_country' in locals() and selected_country and selected_country != "Select a country":
                 try:
-                    if 'selected_admin2' in locals() and selected_admin2 and selected_admin2 != "Select":
+                    if 'selected_admin2' in locals() and selected_admin2 and selected_admin2 != "Select municipality":
                         geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2)).first().geometry()
                         area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
-                        area_level = "Municipality"
-                    elif 'selected_admin1' in locals() and selected_admin1 and selected_admin1 != "Select":
+                    elif 'selected_admin1' in locals() and selected_admin1 and selected_admin1 != "Select state/province":
                         geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first().geometry()
                         area_name = f"{selected_admin1}, {selected_country}"
-                        area_level = "State/Province"
                     else:
                         geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first().geometry()
                         area_name = selected_country
-                        area_level = "Country"
                     
                     coords_info = get_geometry_coordinates(geometry)
                     
-                    if st.button("✅ Confirm Area", use_container_width=True):
+                    if st.button("✅ Confirm Selection", type="primary", use_container_width=True):
                         st.session_state.selected_geometry = geometry
                         st.session_state.selected_coordinates = coords_info
                         st.session_state.selected_area_name = area_name
-                        st.session_state.selected_area_level = area_level
                         st.session_state.current_step = 2
                         st.rerun()
                         
                 except Exception as e:
-                    st.error(f"Error processing selection: {str(e)}")
+                    st.error(f"Error processing geometry: {str(e)}")
             
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # Step 2: Parameters / Climate
+        # Step 2: Parameters based on analysis type
         elif st.session_state.current_step == 2:
             if analysis_type == "Vegetation & Climate":
                 st.markdown('<div class="card">', unsafe_allow_html=True)
-                st.markdown('<div class="card-header"><div class="card-icon">⚙️</div><h3 style="margin: 0;">Parameters</h3></div>', unsafe_allow_html=True)
+                st.markdown('<div class="card-title"><div class="icon">⚙️</div><h3 style="margin: 0;">Step 2: Set Analysis Parameters</h3></div>', unsafe_allow_html=True)
                 
                 if st.session_state.selected_area_name:
-                    st.info(f"**Area:** {st.session_state.selected_area_name[:30]}...")
+                    st.info(f"**Selected Area:** {st.session_state.selected_area_name}")
                     
-                    start_date = st.date_input(
-                        "📅 Start",
-                        value=datetime(2024, 1, 1)
-                    )
-                    end_date = st.date_input(
-                        "📅 End",
-                        value=datetime(2024, 12, 31)
-                    )
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        start_date = st.date_input(
+                            "📅 Start Date",
+                            value=datetime(2024, 1, 1),
+                            key="veg_start_date"
+                        )
+                    with col_b:
+                        end_date = st.date_input(
+                            "📅 End Date",
+                            value=datetime(2024, 12, 31),
+                            key="veg_end_date"
+                        )
                     
                     collection_choice = st.selectbox(
-                        "🛰️ Satellite",
+                        "🛰️ Satellite Source",
                         options=["Sentinel-2", "Landsat-8"],
-                        index=0
+                        index=0,
+                        key="satellite_choice"
                     )
                     
                     cloud_cover = st.slider(
-                        "☁️ Max Cloud %",
+                        "☁️ Max Cloud Cover (%)",
                         min_value=0,
                         max_value=100,
-                        value=20
+                        value=20,
+                        key="cloud_cover"
                     )
                     
-                    available_indices = ['NDVI', 'EVI', 'SAVI']
+                    available_indices = ['NDVI', 'EVI', 'SAVI', 'NDWI', 'MSAVI', 'GNDVI']
                     selected_indices = st.multiselect(
-                        "🌿 Indices",
+                        "🌿 Vegetation Indices",
                         options=available_indices,
-                        default=['NDVI']
+                        default=['NDVI', 'EVI', 'SAVI'],
+                        key="veg_indices"
                     )
                     
                     col_back, col_next = st.columns(2)
@@ -2546,7 +2315,7 @@ def main():
                             st.rerun()
                     
                     with col_next:
-                        if st.button("✅ Save", type="primary", use_container_width=True, disabled=not selected_indices):
+                        if st.button("✅ Save Parameters", type="primary", use_container_width=True, disabled=not selected_indices):
                             st.session_state.analysis_parameters = {
                                 'start_date': start_date,
                                 'end_date': end_date,
@@ -2557,39 +2326,42 @@ def main():
                             st.session_state.current_step = 3
                             st.rerun()
                 else:
-                    st.warning("Select an area first")
-                    if st.button("⬅️ Back to Area", use_container_width=True):
+                    st.warning("Please go back to Step 1 and select an area first.")
+                    if st.button("⬅️ Go to Area Selection", use_container_width=True):
                         st.session_state.current_step = 1
                         st.rerun()
                 
                 st.markdown('</div>', unsafe_allow_html=True)
             
-            else:  # Climate & Soil - Step 2 Climate
+            else:  # Climate & Soil
                 st.markdown('<div class="card">', unsafe_allow_html=True)
-                st.markdown('<div class="card-header"><div class="card-icon">🌤️</div><h3 style="margin: 0;">Climate Settings</h3></div>', unsafe_allow_html=True)
+                st.markdown('<div class="card-title"><div class="icon">🌤️</div><h3 style="margin: 0;">Step 2: Climate Settings</h3></div>', unsafe_allow_html=True)
                 
                 if st.session_state.selected_area_name:
-                    st.info(f"**Area:** {st.session_state.selected_area_name[:30]}...")
+                    st.info(f"**Selected Area:** {st.session_state.selected_area_name}")
                     
-                    # Use current year for analysis
-                    current_year = datetime.now().year
-                    start_date = st.date_input(
-                        "📅 Start Date",
-                        value=datetime(current_year, 1, 1)
-                    )
-                    end_date = st.date_input(
-                        "📅 End Date",
-                        value=datetime(current_year, 12, 31)
-                    )
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        start_date = st.date_input(
+                            "📅 Start Date",
+                            value=datetime(2024, 1, 1),
+                            key="climate_start_date"
+                        )
+                    with col_b:
+                        end_date = st.date_input(
+                            "📅 End Date",
+                            value=datetime(2024, 12, 31),
+                            key="climate_end_date"
+                        )
                     
                     # Precipitation calibration for arid regions
                     region_type = get_region_type(st.session_state.selected_area_name)
                     if region_type in ["Semi-arid", "Arid"]:
                         st.markdown(f"""
-                        <div style="background: rgba(255, 170, 68, 0.1); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
-                            <p style="color: #FFAA44; margin: 0; font-size: 0.85rem;">
+                        <div style="background: rgba(255, 170, 68, 0.1); padding: 10px; border-radius: 8px; margin-bottom: 10px;">
+                            <p style="color: #FFAA44; margin: 0; font-size: 13px;">
                             <strong>⚠️ {region_type} Region Detected</strong><br>
-                            CHIRPS precipitation data tends to overestimate in arid/semi-arid areas.<br>
+                            CHIRPS precipitation data may overestimate in arid regions.<br>
                             Recommended calibration: 0.7-0.8x
                             </p>
                         </div>
@@ -2601,7 +2373,8 @@ def main():
                             max_value=1.0,
                             value=0.75,
                             step=0.05,
-                            help="Reduce to calibrate for arid regions. 0.75 is recommended for North Africa."
+                            key="precip_scale_arid",
+                            help="Reduce to calibrate for arid regions"
                         )
                         st.session_state.precip_scale = precip_scale
                     else:
@@ -2611,7 +2384,8 @@ def main():
                             max_value=1.5,
                             value=1.0,
                             step=0.05,
-                            help="Adjust precipitation values if needed."
+                            key="precip_scale_normal",
+                            help="Adjust precipitation values if needed"
                         )
                         st.session_state.precip_scale = precip_scale
                     
@@ -2622,7 +2396,7 @@ def main():
                             st.rerun()
                     
                     with col_next:
-                        if st.button("✅ Save", type="primary", use_container_width=True):
+                        if st.button("✅ Save Climate Settings", type="primary", use_container_width=True):
                             st.session_state.climate_parameters = {
                                 'start_date': start_date,
                                 'end_date': end_date,
@@ -2631,27 +2405,27 @@ def main():
                             st.session_state.current_step = 3
                             st.rerun()
                 else:
-                    st.warning("Select an area first")
-                    if st.button("⬅️ Back to Area", use_container_width=True):
+                    st.warning("Please go back to Step 1 and select an area first.")
+                    if st.button("⬅️ Go to Area Selection", use_container_width=True):
                         st.session_state.current_step = 1
                         st.rerun()
                 
                 st.markdown('</div>', unsafe_allow_html=True)
         
-        # Step 3: View Map / Soil Settings
+        # Step 3: Preview
         elif st.session_state.current_step == 3:
             if analysis_type == "Vegetation & Climate":
                 st.markdown('<div class="card">', unsafe_allow_html=True)
-                st.markdown('<div class="card-header"><div class="card-icon">🗺️</div><h3 style="margin: 0;">Preview</h3></div>', unsafe_allow_html=True)
+                st.markdown('<div class="card-title"><div class="icon">🗺️</div><h3 style="margin: 0;">Step 3: Preview</h3></div>', unsafe_allow_html=True)
                 
                 if st.session_state.selected_area_name and st.session_state.analysis_parameters:
                     st.info(f"""
-                    **Area:** {st.session_state.selected_area_name[:30]}...
+                    **Area:** {st.session_state.selected_area_name}
                     
                     **Parameters:**
-                    • {st.session_state.analysis_parameters['start_date'].strftime('%Y-%m-%d')} to {st.session_state.analysis_parameters['end_date'].strftime('%Y-%m-%d')}
-                    • {st.session_state.analysis_parameters['collection_choice']}
-                    • {', '.join(st.session_state.analysis_parameters['selected_indices'])}
+                    • Period: {st.session_state.analysis_parameters['start_date']} to {st.session_state.analysis_parameters['end_date']}
+                    • Satellite: {st.session_state.analysis_parameters['collection_choice']}
+                    • Indices: {', '.join(st.session_state.analysis_parameters['selected_indices'])}
                     """)
                     
                     col_back, col_next = st.columns(2)
@@ -2667,25 +2441,25 @@ def main():
                             st.rerun()
                 else:
                     st.warning("No parameters set")
-                    if st.button("⬅️ Back to Parameters", use_container_width=True):
+                    if st.button("⬅️ Back", use_container_width=True):
                         st.session_state.current_step = 2
                         st.rerun()
                 
                 st.markdown('</div>', unsafe_allow_html=True)
             
-            else:  # Climate & Soil - Step 3 Soil
+            else:  # Climate & Soil
                 st.markdown('<div class="card">', unsafe_allow_html=True)
-                st.markdown('<div class="card-header"><div class="card-icon">🌱</div><h3 style="margin: 0;">Soil Settings</h3></div>', unsafe_allow_html=True)
+                st.markdown('<div class="card-title"><div class="icon">🌱</div><h3 style="margin: 0;">Step 3: Soil Settings</h3></div>', unsafe_allow_html=True)
                 
                 if st.session_state.selected_area_name:
-                    st.info(f"**Area:** {st.session_state.selected_area_name[:30]}...")
+                    st.info(f"**Selected Area:** {st.session_state.selected_area_name}")
                     
                     st.markdown("""
-                    <div style="background: rgba(0, 255, 136, 0.1); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
-                        <p style="color: #CCCCCC; margin: 0; font-size: 0.85rem;">
+                    <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                        <p style="color: #CCCCCC; margin: 0; font-size: 13px;">
                         <strong>📊 Soil Data Sources:</strong><br>
                         • ISDAsoil (Africa) / GSOC (Global): Soil organic carbon<br>
-                        • OpenLandMap: Soil texture classes<br>
+                        • OpenLandMap: Soil texture classes (USDA)<br>
                         • Depth: 20cm (Africa) / 30cm (Global)
                         </p>
                     </div>
@@ -2705,14 +2479,14 @@ def main():
                             st.session_state.current_step = 4
                             st.rerun()
                 else:
-                    st.warning("Select an area first")
-                    if st.button("⬅️ Back to Area", use_container_width=True):
+                    st.warning("Please go back to Step 1 and select an area first.")
+                    if st.button("⬅️ Go to Area Selection", use_container_width=True):
                         st.session_state.current_step = 1
                         st.rerun()
                 
                 st.markdown('</div>', unsafe_allow_html=True)
         
-        # Step 4: Run Analysis
+        # Step 4: Run analysis
         elif st.session_state.current_step == 4:
             if analysis_type == "Vegetation & Climate":
                 if not st.session_state.auto_show_results:
@@ -2748,13 +2522,15 @@ def main():
                         st.session_state.auto_show_results = True
                         st.rerun()
             
-            else:  # Climate & Soil - Step 4 Run
+            else:  # Climate & Soil
                 st.markdown('<div class="card">', unsafe_allow_html=True)
-                st.markdown('<div class="card-header"><div class="card-icon">🚀</div><h3 style="margin: 0;">Run Analysis</h3></div>', unsafe_allow_html=True)
+                st.markdown('<div class="card-title"><div class="icon">🚀</div><h3 style="margin: 0;">Step 4: Run Analysis</h3></div>', unsafe_allow_html=True)
                 
                 if st.session_state.selected_area_name:
-                    st.info(f"**Area:** {st.session_state.selected_area_name[:30]}...")
+                    st.info(f"**Selected Area:** {st.session_state.selected_area_name}")
                     st.info("**Analysis Type:** Climate Classification + Soil Properties + Daily/Monthly Climate")
+                    
+                    enhanced_analysis = st.session_state.soil_parameters.get('enhanced_analysis', True) if hasattr(st.session_state, 'soil_parameters') else True
                     
                     col_back, col_next = st.columns(2)
                     with col_back:
@@ -2807,7 +2583,7 @@ def main():
         elif st.session_state.current_step == 5:
             if analysis_type == "Vegetation & Climate":
                 st.markdown('<div class="card">', unsafe_allow_html=True)
-                st.markdown('<div class="card-header"><div class="card-icon">📊</div><h3 style="margin: 0;">Results</h3></div>', unsafe_allow_html=True)
+                st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Step 5: Results</h3></div>', unsafe_allow_html=True)
                 
                 if st.session_state.analysis_results:
                     col_back, col_new = st.columns(2)
@@ -2832,9 +2608,9 @@ def main():
                 
                 st.markdown('</div>', unsafe_allow_html=True)
             
-            else:  # Climate & Soil - Results
+            else:  # Climate & Soil
                 st.markdown('<div class="card">', unsafe_allow_html=True)
-                st.markdown('<div class="card-header"><div class="card-icon">📊</div><h3 style="margin: 0;">Results</h3></div>', unsafe_allow_html=True)
+                st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Step 5: Results</h3></div>', unsafe_allow_html=True)
                 
                 if st.session_state.climate_soil_results:
                     col_back, col_new = st.columns(2)
@@ -2863,63 +2639,331 @@ def main():
         # Right column content
         if st.session_state.current_step <= 3:
             st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-            st.markdown('<div style="padding: 0.75rem 1rem;"><h3 style="margin: 0;">🗺️ Map Preview</h3></div>', unsafe_allow_html=True)
+            st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">🗺️ Map Preview</h3></div>', unsafe_allow_html=True)
             
             map_center = [0, 20]
             map_zoom = 2
+            bounds_data = None
             
             if st.session_state.selected_coordinates:
                 map_center = st.session_state.selected_coordinates['center']
                 map_zoom = st.session_state.selected_coordinates['zoom']
+                bounds_data = st.session_state.selected_coordinates['bounds']
             
             mapbox_html = f'''
             <!DOCTYPE html>
             <html>
             <head>
-                <meta charset="utf-8" />
-                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-                <title>Map</title>
-                <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
-                <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
-                <style>
-                    body {{ margin: 0; padding: 0; background: #0A0A0A; }}
-                    #map {{ width: 100%; height: 500px; border-radius: 12px; }}
-                    .mapboxgl-ctrl-group {{ background: #141414 !important; border-color: #2A2A2A !important; }}
-                    .mapboxgl-ctrl button {{ background-color: transparent !important; }}
-                </style>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+              <title>KHISBA GIS - 3D Global Map</title>
+              <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+              <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+              <style>
+                body {{ margin: 0; padding: 0; background: #000000; }}
+                #map {{ position: absolute; top: 0; bottom: 0; width: 100%; border-radius: 8px; }}
+                .layer-container {{ position: absolute; top: 10px; right: 10px; z-index: 1000; }}
+                .layer-main-btn {{
+                  background: rgba(10, 10, 10, 0.95);
+                  color: #ffffff;
+                  border: 2px solid #222222;
+                  border-radius: 6px;
+                  padding: 10px 15px;
+                  font-family: 'Inter', sans-serif;
+                  font-size: 12px;
+                  cursor: pointer;
+                  display: flex;
+                  align-items: center;
+                  gap: 8px;
+                  min-width: 140px;
+                }}
+                .layer-main-btn:hover {{ border-color: #00ff88; }}
+                .layer-main-btn.active {{ background: #00ff88; color: #000000; border-color: #00ff88; }}
+                .layer-dropdown {{
+                  display: none;
+                  position: absolute;
+                  top: 100%;
+                  right: 0;
+                  background: rgba(10, 10, 10, 0.95);
+                  border: 2px solid #222222;
+                  border-radius: 6px;
+                  margin-top: 5px;
+                  min-width: 140px;
+                }}
+                .layer-dropdown.show {{ display: block; }}
+                .layer-option {{
+                  background: transparent;
+                  color: #ffffff;
+                  border: none;
+                  padding: 10px 15px;
+                  font-family: 'Inter', sans-serif;
+                  font-size: 12px;
+                  cursor: pointer;
+                  text-align: left;
+                  width: 100%;
+                  display: flex;
+                  align-items: center;
+                  gap: 8px;
+                }}
+                .layer-option:hover {{ background: rgba(17, 17, 17, 0.95); color: #00ff88; }}
+                .layer-option.active {{ background: #00ff88; color: #000000; }}
+                .coordinates-display {{
+                  position: absolute;
+                  bottom: 10px;
+                  left: 10px;
+                  background: rgba(10, 10, 10, 0.95);
+                  color: white;
+                  padding: 8px 12px;
+                  border-radius: 6px;
+                  border: 2px solid #222222;
+                  font-family: 'Inter', monospace;
+                  font-size: 11px;
+                  z-index: 1000;
+                  display: flex;
+                  gap: 15px;
+                }}
+                .selected-area-badge {{
+                  position: absolute;
+                  top: 10px;
+                  left: 10px;
+                  background: rgba(10, 10, 10, 0.95);
+                  color: white;
+                  padding: 10px 15px;
+                  border-radius: 6px;
+                  border: 2px solid #00ff88;
+                  font-family: 'Inter', sans-serif;
+                  z-index: 1000;
+                  max-width: 250px;
+                }}
+                .area-title {{ color: #00ff88; font-weight: 600; font-size: 12px; margin-bottom: 5px; }}
+                .area-details {{ color: #cccccc; font-size: 10px; line-height: 1.3; }}
+                .map-controls {{
+                  position: absolute;
+                  bottom: 10px;
+                  right: 10px;
+                  display: flex;
+                  gap: 5px;
+                  z-index: 1000;
+                }}
+                .control-btn {{
+                  background: rgba(10, 10, 10, 0.95);
+                  color: #ffffff;
+                  border: 2px solid #222222;
+                  border-radius: 6px;
+                  padding: 8px 12px;
+                  font-family: 'Inter', sans-serif;
+                  font-size: 11px;
+                  cursor: pointer;
+                  display: flex;
+                  align-items: center;
+                  gap: 5px;
+                }}
+                .control-btn:hover {{ border-color: #00ff88; }}
+              </style>
             </head>
             <body>
-                <div id="map"></div>
-                <script>
-                    mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
+              <div id="map"></div>
+              
+              <div class="layer-container">
+                <button class="layer-main-btn" id="layerMainBtn">
+                  <span>🛰️ Satellite View</span>
+                  <span style="margin-left: auto;">▼</span>
+                </button>
+                <div class="layer-dropdown" id="layerDropdown">
+                  <button class="layer-option active" data-style="mapbox://styles/mapbox/satellite-streets-v12">🛰️ Satellite View</button>
+                  <button class="layer-option" data-style="mapbox://styles/mapbox/outdoors-v12">🗺️ Outdoors View</button>
+                  <button class="layer-option" data-style="mapbox://styles/mapbox/light-v11">☀️ Light View</button>
+                  <button class="layer-option" data-style="mapbox://styles/mapbox/dark-v11">🌙 Dark View</button>
+                  <button class="layer-option" data-style="mapbox://styles/mapbox/streets-v12">🏙️ Streets View</button>
+                </div>
+              </div>
+              
+              <div class="coordinates-display">
+                <div class="coordinate-item">
+                  <div style="color: #999999; font-size: 9px;">LATITUDE</div>
+                  <div style="color: #00ff88; font-weight: 600;" id="lat-display">0.00°</div>
+                </div>
+                <div class="coordinate-item">
+                  <div style="color: #999999; font-size: 9px;">LONGITUDE</div>
+                  <div style="color: #00ff88; font-weight: 600;" id="lon-display">0.00°</div>
+                </div>
+              </div>
+              
+              {f'''
+              <div class="selected-area-badge">
+                <div class="area-title">📍 SELECTED AREA</div>
+                <div class="area-details">
+                  <strong>{st.session_state.selected_area_name}</strong><br>
+                  Coordinates: {map_center[1]:.4f}°, {map_center[0]:.4f}°
+                </div>
+              </div>
+              ''' if st.session_state.selected_area_name else ''}
+              
+              <div class="map-controls">
+                <button class="control-btn" onclick="resetView()"><span>↺</span> Reset</button>
+                <button class="control-btn" onclick="toggle3D()"><span>📐</span> 3D</button>
+                <button class="control-btn" onclick="toggleFullscreen()"><span>⛶</span> Full</button>
+              </div>
+              
+              <script>
+                mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
+
+                const map = new mapboxgl.Map({{
+                  container: 'map',
+                  style: 'mapbox://styles/mapbox/satellite-streets-v12',
+                  center: [{map_center[0]}, {map_center[1]}],
+                  zoom: {map_zoom},
+                  pitch: 45,
+                  bearing: 0
+                }});
+
+                map.addControl(new mapboxgl.NavigationControl({{
+                  showCompass: true,
+                  showZoom: true,
+                  visualizePitch: true
+                }}), 'top-right');
+
+                // Layer dropdown
+                const layerMainBtn = document.getElementById('layerMainBtn');
+                const layerDropdown = document.getElementById('layerDropdown');
+                const layerOptions = document.querySelectorAll('.layer-option');
+                
+                layerMainBtn.addEventListener('click', (e) => {{
+                  e.stopPropagation();
+                  layerDropdown.classList.toggle('show');
+                }});
+                
+                document.addEventListener('click', (e) => {{
+                  if (!document.querySelector('.layer-container').contains(e.target)) {{
+                    layerDropdown.classList.remove('show');
+                  }}
+                }});
+                
+                layerOptions.forEach(option => {{
+                  option.addEventListener('click', (e) => {{
+                    e.stopPropagation();
+                    layerOptions.forEach(opt => opt.classList.remove('active'));
+                    option.classList.add('active');
+                    layerMainBtn.innerHTML = `<span>${{option.textContent.trim()}}</span><span style="margin-left: auto;">▼</span>`;
+                    map.setStyle(option.dataset.style);
+                    layerDropdown.classList.remove('show');
                     
-                    const map = new mapboxgl.Map({{
-                        container: 'map',
-                        style: 'mapbox://styles/mapbox/satellite-streets-v12',
-                        center: [{map_center[0]}, {map_center[1]}],
-                        zoom: {map_zoom},
-                        pitch: 0
+                    setTimeout(() => {{
+                      if ({json.dumps(bounds_data) if bounds_data else 'null'}) {{
+                        addSelectedArea();
+                      }}
+                    }}, 500);
+                  }});
+                }});
+
+                function addSelectedArea() {{
+                  const bounds = {json.dumps(bounds_data) if bounds_data else 'null'};
+                  if (!bounds) return;
+                  
+                  if (map.getSource('selected-area')) {{
+                    map.removeLayer('selected-area-fill');
+                    map.removeLayer('selected-area-border');
+                    map.removeSource('selected-area');
+                  }}
+                  
+                  map.addSource('selected-area', {{
+                    'type': 'geojson',
+                    'data': {{
+                      'type': 'Feature',
+                      'geometry': {{
+                        'type': 'Polygon',
+                        'coordinates': [[
+                          [bounds[0][1], bounds[0][0]],
+                          [bounds[1][1], bounds[0][0]],
+                          [bounds[1][1], bounds[1][0]],
+                          [bounds[0][1], bounds[1][0]],
+                          [bounds[0][1], bounds[0][0]]
+                        ]]
+                      }}
+                    }}
+                  }});
+
+                  map.addLayer({{
+                    'id': 'selected-area-fill',
+                    'type': 'fill',
+                    'source': 'selected-area',
+                    'paint': {{
+                      'fill-color': '#00ff88',
+                      'fill-opacity': 0.15,
+                      'fill-outline-color': '#00ff88'
+                    }}
+                  }});
+
+                  map.addLayer({{
+                    'id': 'selected-area-border',
+                    'type': 'line',
+                    'source': 'selected-area',
+                    'paint': {{
+                      'line-color': '#00ff88',
+                      'line-width': 3,
+                      'line-opacity': 0.8,
+                      'line-dasharray': [2, 1]
+                    }}
+                  }});
+                }}
+
+                function resetView() {{
+                  map.flyTo({{
+                    center: [{map_center[0]}, {map_center[1]}],
+                    zoom: {map_zoom},
+                    pitch: 45,
+                    bearing: 0,
+                    duration: 1500
+                  }});
+                }}
+
+                function toggle3D() {{
+                  const currentPitch = map.getPitch();
+                  map.flyTo({{
+                    pitch: currentPitch === 0 ? 60 : 0,
+                    duration: 1000
+                  }});
+                }}
+
+                function toggleFullscreen() {{
+                  const container = document.getElementById('map');
+                  if (!document.fullscreenElement) {{
+                    container.requestFullscreen();
+                  }} else {{
+                    document.exitFullscreen();
+                  }}
+                }}
+
+                map.on('load', () => {{
+                  map.on('mousemove', (e) => {{
+                    document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(4) + '°';
+                    document.getElementById('lon-display').textContent = e.lngLat.lng.toFixed(4) + '°';
+                  }});
+
+                  {f'''if ({json.dumps(bounds_data) if bounds_data else 'null'}) {{
+                    addSelectedArea();
+                    map.flyTo({{
+                      center: [{map_center[0]}, {map_center[1]}],
+                      zoom: {map_zoom},
+                      pitch: 45,
+                      duration: 2000
                     }});
-                    
-                    map.addControl(new mapboxgl.NavigationControl({{
-                        showCompass: true,
-                        showZoom: true
-                    }}), 'top-right');
-                </script>
+                  }}''' if bounds_data else ''}
+                }});
+              </script>
             </body>
             </html>
             '''
             
-            st.components.v1.html(mapbox_html, height=500)
+            st.components.v1.html(mapbox_html, height=550)
             st.markdown('</div>', unsafe_allow_html=True)
         
         elif st.session_state.current_step == 5:
             # Display results in right column
             if analysis_type == "Vegetation & Climate":
                 if st.session_state.analysis_results:
-                    # Vegetation Indices
                     st.markdown('<div class="card chart-container">', unsafe_allow_html=True)
-                    st.markdown('<div style="margin-bottom: 1rem;"><h3 style="margin: 0;">🌿 Vegetation Indices</h3></div>', unsafe_allow_html=True)
+                    st.markdown('<div style="margin-bottom: 15px;"><h3 style="margin: 0;">🌿 Vegetation Indices</h3></div>', unsafe_allow_html=True)
                     
                     for index_name in st.session_state.analysis_results.keys():
                         fig = create_modern_vegetation_chart(
@@ -2929,7 +2973,6 @@ def main():
                         )
                         st.plotly_chart(fig, use_container_width=True)
                         
-                        # Statistics
                         values = st.session_state.analysis_results[index_name]['values']
                         if values:
                             col1, col2, col3 = st.columns(3)
@@ -2942,39 +2985,23 @@ def main():
                     
                     st.markdown('</div>', unsafe_allow_html=True)
                     
-                    # Climate data
                     if st.session_state.climate_data is not None and not st.session_state.climate_data.empty:
                         st.markdown('<div class="card chart-container">', unsafe_allow_html=True)
-                        st.markdown('<div style="margin-bottom: 1rem;"><h3 style="margin: 0;">🌤️ Climate Data</h3></div>', unsafe_allow_html=True)
+                        st.markdown('<div style="margin-bottom: 15px;"><h3 style="margin: 0;">🌤️ Climate Data</h3></div>', unsafe_allow_html=True)
                         
                         climate_df = st.session_state.climate_data
                         
-                        # Create monthly aggregation for better visualization
-                        climate_df['month'] = pd.to_datetime(climate_df['date']).dt.month
-                        climate_df['month_name'] = pd.to_datetime(climate_df['date']).dt.strftime('%b')
-                        
-                        monthly_temp = climate_df.groupby(['month', 'month_name'])['temperature'].mean().reset_index()
-                        monthly_temp = monthly_temp.sort_values('month')
-                        
-                        monthly_precip = climate_df.groupby(['month', 'month_name'])['precipitation'].sum().reset_index()
-                        monthly_precip = monthly_precip.sort_values('month')
-                        
-                        # Temperature chart
-                        fig_temp = go.Figure()
-                        fig_temp.add_trace(go.Scatter(
-                            x=monthly_temp['month_name'],
-                            y=monthly_temp['temperature'],
-                            mode='lines+markers',
-                            line=dict(color='#FF6B6B', width=3, shape='spline'),
-                            marker=dict(size=8, color='#FF6B6B'),
+                        # Daily Temperature Chart
+                        fig_daily_temp = go.Figure()
+                        fig_daily_temp.add_trace(go.Scatter(
+                            x=climate_df['date'],
+                            y=climate_df['temperature'],
+                            mode='lines',
+                            line=dict(color='#FF6B6B', width=2, shape='spline'),
                             name='Temperature'
                         ))
-                        fig_temp.update_layout(
-                            title=dict(
-                                text=f'<b>Monthly Temperature</b> {get_accuracy_badge("ERA5-Land", get_region_type(st.session_state.selected_area_name))}',
-                                font=dict(size=14, color='#FFFFFF'),
-                                x=0.5
-                            ),
+                        fig_daily_temp.update_layout(
+                            title='<b>Daily Temperature</b>',
                             plot_bgcolor='rgba(0,0,0,0)',
                             paper_bgcolor='rgba(0,0,0,0)',
                             font=dict(color='#FFFFFF'),
@@ -2983,31 +3010,27 @@ def main():
                             height=300,
                             margin=dict(l=40, r=20, t=60, b=40)
                         )
-                        st.plotly_chart(fig_temp, use_container_width=True)
+                        st.plotly_chart(fig_daily_temp, use_container_width=True)
                         
-                        # Precipitation chart
-                        fig_precip = go.Figure()
-                        fig_precip.add_trace(go.Bar(
-                            x=monthly_precip['month_name'],
-                            y=monthly_precip['precipitation'],
+                        # Daily Precipitation Chart
+                        fig_daily_precip = go.Figure()
+                        fig_daily_precip.add_trace(go.Bar(
+                            x=climate_df['date'],
+                            y=climate_df['precipitation'],
                             marker_color='#4A90E2',
                             name='Precipitation'
                         ))
-                        fig_precip.update_layout(
-                            title=dict(
-                                text=f'<b>Monthly Precipitation</b> {get_accuracy_badge("CHIRPS", get_region_type(st.session_state.selected_area_name))}',
-                                font=dict(size=14, color='#FFFFFF'),
-                                x=0.5
-                            ),
+                        fig_daily_precip.update_layout(
+                            title='<b>Daily Precipitation</b>',
                             plot_bgcolor='rgba(0,0,0,0)',
                             paper_bgcolor='rgba(0,0,0,0)',
                             font=dict(color='#FFFFFF'),
                             xaxis=dict(title='', gridcolor='#333333'),
                             yaxis=dict(title='Precipitation (mm)', gridcolor='#333333'),
-                            height=300,
+                            height=250,
                             margin=dict(l=40, r=20, t=60, b=40)
                         )
-                        st.plotly_chart(fig_precip, use_container_width=True)
+                        st.plotly_chart(fig_daily_precip, use_container_width=True)
                         
                         st.markdown('</div>', unsafe_allow_html=True)
             
@@ -3019,7 +3042,7 @@ def main():
                     if enhanced_results:
                         # Climate Classification
                         st.markdown('<div class="card chart-container">', unsafe_allow_html=True)
-                        st.markdown('<div style="margin-bottom: 1rem;"><h3 style="margin: 0;">🌤️ Climate Classification</h3></div>', unsafe_allow_html=True)
+                        st.markdown('<div style="margin-bottom: 15px;"><h3 style="margin: 0;">🌤️ Climate Classification</h3></div>', unsafe_allow_html=True)
                         
                         climate_data = enhanced_results['climate_data']
                         location_name = enhanced_results['location_name']
@@ -3032,27 +3055,23 @@ def main():
                         
                         st.info(f"**Climate Zone:** {climate_data['climate_zone']}")
                         
-                        # Climate classification gauges
-                        fig_temp, fig_precip = analyzer.create_climate_classification_chart(location_name, climate_data)
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.plotly_chart(fig_temp, use_container_width=True)
-                        with col2:
-                            st.plotly_chart(fig_precip, use_container_width=True)
+                        # Climate classification chart
+                        import matplotlib.pyplot as plt
+                        fig = analyzer.create_climate_classification_chart(location_name, climate_data)
+                        st.pyplot(fig)
+                        plt.close(fig)
                         
                         st.markdown('</div>', unsafe_allow_html=True)
                         
                         # Monthly Climate Charts with ALL original charts
                         if enhanced_results.get('climate_df') is not None:
                             st.markdown('<div class="card chart-container">', unsafe_allow_html=True)
-                            st.markdown('<div style="margin-bottom: 1rem;"><h3 style="margin: 0;">📊 Detailed Climate Analysis</h3></div>', unsafe_allow_html=True)
+                            st.markdown('<div style="margin-bottom: 15px;"><h3 style="margin: 0;">📊 Detailed Climate Analysis</h3></div>', unsafe_allow_html=True)
                             
                             precip_scale = st.session_state.get('precip_scale', 1.0)
                             analyzer.display_enhanced_climate_charts(
                                 location_name, 
                                 enhanced_results['climate_df'], 
-                                enhanced_results.get('daily_climate_df'),
                                 precip_scale
                             )
                             
@@ -3061,38 +3080,23 @@ def main():
                         # Soil Analysis
                         if enhanced_results.get('soil_data') and enhanced_results['soil_data'].get('soil_data'):
                             st.markdown('<div class="card chart-container">', unsafe_allow_html=True)
-                            st.markdown('<div style="margin-bottom: 1rem;"><h3 style="margin: 0;">🌱 Soil Analysis</h3></div>', unsafe_allow_html=True)
+                            st.markdown('<div style="margin-bottom: 15px;"><h3 style="margin: 0;">🌱 Soil Analysis</h3></div>', unsafe_allow_html=True)
                             
-                            soil_data = enhanced_results['soil_data']['soil_data']
-                            
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.metric("🏺 Soil Texture", soil_data['texture_name'])
-                            with col2:
-                                st.metric("🧪 Soil Organic Matter", f"{soil_data['final_som_estimate']:.2f}%")
-                            
-                            fig_texture, fig_som = analyzer.create_soil_analysis_chart(soil_data, location_name)
-                            st.plotly_chart(fig_texture, use_container_width=True)
-                            st.plotly_chart(fig_som, use_container_width=True)
-                            
-                            # Soil data details
-                            with st.expander("📋 Detailed Soil Properties"):
-                                st.write(f"**Bulk Density:** {soil_data['bulk_density']} g/cm³")
-                                st.write(f"**Soil Depth:** {soil_data['depth_cm']} cm")
-                                st.write(f"**SOC Stock:** {soil_data['soc_stock']:.2f} t/ha")
-                                st.write(f"**Clay Content:** {soil_data['clay_content']}%")
-                                st.write(f"**Silt Content:** {soil_data['silt_content']}%")
-                                st.write(f"**Sand Content:** {soil_data['sand_content']}%")
-                                st.write(f"**Data Source:** {'ISDAsoil (Africa)' if soil_data.get('is_africa') else 'GSOC (Global)'}")
+                            analyzer.display_soil_analysis(enhanced_results['soil_data'])
                             
                             st.markdown('</div>', unsafe_allow_html=True)
 
     # Footer
     st.markdown("""
-    <div style="text-align: center; color: #666666; font-size: 0.7rem; padding: 1.5rem 0 0.5rem 0; border-top: 1px solid #222222; margin-top: 0.5rem;">
-        <p style="margin: 0.25rem 0;">KHISBA GIS • Climate & Soil Analyzer</p>
-        <p style="margin: 0.25rem 0;">Data sources: ERA5-Land (Temperature), CHIRPS (Precipitation), WorldClim (Climate Normals), ISDAsoil/GSOC (Soil Carbon), OpenLandMap (Soil Texture)</p>
-        <p style="margin: 0.25rem 0; color: #999999;">🎯 All temperature values are converted from Kelvin to Celsius. Precipitation is calibrated for arid regions.</p>
+    <div style="text-align: center; color: #666666; font-size: 12px; padding: 30px 0 20px 0; border-top: 1px solid #222222; margin-top: 20px;">
+        <p style="margin: 5px 0;">KHISBA GIS • Climate & Soil Analyzer • Accurate Precipitation & Temperature Data</p>
+        <p style="margin: 5px 0;">Data sources: ERA5-Land (Temperature), CHIRPS (Precipitation), WorldClim (Climate Normals), ISDAsoil/GSOC (Soil Carbon)</p>
+        <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
+            <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">🌡️ Kelvin → Celsius</span>
+            <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">💧 CHIRPS Calibrated</span>
+            <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">🌱 3-Layer Soil Moisture</span>
+            <span style="background: #111111; padding: 4px 12px; border-radius: 20px; border: 1px solid #222222;">v3.0</span>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
