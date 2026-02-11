@@ -748,7 +748,6 @@ class EnhancedClimateSoilAnalyzer:
         
         som_value = soil_data['final_som_estimate']
         
-        # Gauge chart for SOM
         fig_som.add_trace(go.Indicator(
             mode="gauge+number+delta",
             value=som_value,
@@ -786,11 +785,11 @@ class EnhancedClimateSoilAnalyzer:
         return fig_texture, fig_som
 
     # =============================================================================
-    # ENHANCED CLIMATE ANALYSIS METHODS
+    # ENHANCED CLIMATE ANALYSIS METHODS WITH ALL SOIL LAYERS
     # =============================================================================
 
     def get_daily_climate_data_for_analysis(self, geometry, start_date, end_date):
-        """Get enhanced daily climate data for comprehensive analysis"""
+        """Get enhanced daily climate data for comprehensive analysis with all soil layers"""
         try:
             era5 = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR") \
                 .filterDate(start_date, end_date) \
@@ -814,9 +813,18 @@ class EnhancedClimateSoilAnalyzer:
                                       .select('precipitation') \
                                       .sum()
                 
-                soil_moisture = era5.filterDate(month_start, month_end) \
-                                   .select('volumetric_soil_water_layer_1') \
-                                   .mean()
+                # Get soil moisture for all three layers
+                soil_moisture_1 = era5.filterDate(month_start, month_end) \
+                                     .select('volumetric_soil_water_layer_1') \
+                                     .mean()  # 0-7cm
+                
+                soil_moisture_2 = era5.filterDate(month_start, month_end) \
+                                     .select('volumetric_soil_water_layer_2') \
+                                     .mean()  # 7-28cm
+                
+                soil_moisture_3 = era5.filterDate(month_start, month_end) \
+                                     .select('volumetric_soil_water_layer_3') \
+                                     .mean()  # 28-100cm
                 
                 temp_max = era5.filterDate(month_start, month_end) \
                               .select('temperature_2m_max') \
@@ -834,8 +842,10 @@ class EnhancedClimateSoilAnalyzer:
                 return ee.Image.cat([
                     temp_monthly.rename('temperature_2m'),
                     precip_monthly.rename('total_precipitation'),
-                    soil_moisture.rename('soil_moisture'),
-                    pet
+                    soil_moisture_1.rename('soil_moisture_1'),  # 0-7cm
+                    soil_moisture_2.rename('soil_moisture_2'),  # 7-28cm
+                    soil_moisture_3.rename('soil_moisture_3'),  # 28-100cm
+                    pet.rename('potential_evaporation')
                 ]).set('system:time_start', month_start.millis())
             
             start = ee.Date(start_date)
@@ -852,7 +862,7 @@ class EnhancedClimateSoilAnalyzer:
             return None
 
     def extract_monthly_statistics(self, monthly_collection, geometry):
-        """Extract monthly statistics for analysis"""
+        """Extract monthly statistics for analysis with all soil layers"""
         try:
             centroid = geometry.centroid()
             series = monthly_collection.getRegion(centroid, 10000).getInfo()
@@ -869,7 +879,16 @@ class EnhancedClimateSoilAnalyzer:
             df['month_name'] = df['datetime'].dt.strftime('%b')
             df['year'] = df['datetime'].dt.year
             
-            required_columns = ['temperature_2m', 'total_precipitation', 'potential_evaporation', 'soil_moisture']
+            # Rename columns for clarity
+            column_mapping = {
+                'soil_moisture_1': 'soil_moisture_0_7cm',
+                'soil_moisture_2': 'soil_moisture_7_28cm',
+                'soil_moisture_3': 'soil_moisture_28_100cm'
+            }
+            df = df.rename(columns=column_mapping)
+            
+            required_columns = ['temperature_2m', 'total_precipitation', 'potential_evaporation', 
+                               'soil_moisture_0_7cm', 'soil_moisture_7_28cm', 'soil_moisture_28_100cm']
             for col in required_columns:
                 if col in df.columns:
                     df[col] = df[col].fillna(0)
@@ -880,7 +899,7 @@ class EnhancedClimateSoilAnalyzer:
             return None
 
     def create_modern_climate_charts(self, climate_df, location_name):
-        """Create modern, smooth climate charts optimized for mobile"""
+        """Create modern, smooth climate charts optimized for mobile with all soil layers"""
         charts = {}
         
         if climate_df is None or climate_df.empty:
@@ -889,7 +908,6 @@ class EnhancedClimateSoilAnalyzer:
         # 1. Temperature Chart
         fig_temp = go.Figure()
         
-        # Smooth temperature line
         fig_temp.add_trace(go.Scatter(
             x=climate_df['month_name'],
             y=climate_df['temperature_2m'],
@@ -946,7 +964,6 @@ class EnhancedClimateSoilAnalyzer:
         # 2. Precipitation & Evaporation Chart
         fig_water = go.Figure()
         
-        # Precipitation bars
         fig_water.add_trace(go.Bar(
             x=climate_df['month_name'],
             y=climate_df['total_precipitation'],
@@ -959,7 +976,6 @@ class EnhancedClimateSoilAnalyzer:
             textfont=dict(size=11, color='#CCCCCC')
         ))
         
-        # Evaporation line
         fig_water.add_trace(go.Scatter(
             x=climate_df['month_name'],
             y=climate_df['potential_evaporation'],
@@ -1020,14 +1036,15 @@ class EnhancedClimateSoilAnalyzer:
         
         charts['water_balance'] = fig_water
         
-        # 3. Soil Moisture Chart
+        # 3. Soil Moisture Chart - ALL THREE LAYERS
         fig_soil = go.Figure()
         
+        # Layer 1: 0-7cm (Surface)
         fig_soil.add_trace(go.Scatter(
             x=climate_df['month_name'],
-            y=climate_df['soil_moisture'],
+            y=climate_df['soil_moisture_0_7cm'],
             mode='lines+markers',
-            name='Soil Moisture',
+            name='Surface (0-7cm)',
             line=dict(
                 color='#00FF88',
                 width=3,
@@ -1043,9 +1060,53 @@ class EnhancedClimateSoilAnalyzer:
             fillcolor='rgba(0, 255, 136, 0.1)'
         ))
         
+        # Layer 2: 7-28cm (Root zone)
+        if 'soil_moisture_7_28cm' in climate_df.columns:
+            fig_soil.add_trace(go.Scatter(
+                x=climate_df['month_name'],
+                y=climate_df['soil_moisture_7_28cm'],
+                mode='lines+markers',
+                name='Root zone (7-28cm)',
+                line=dict(
+                    color='#4A90E2',
+                    width=3,
+                    shape='spline',
+                    smoothing=1.3
+                ),
+                marker=dict(
+                    size=8,
+                    color='#4A90E2',
+                    line=dict(width=1, color='#FFFFFF')
+                ),
+                fill='tonexty',
+                fillcolor='rgba(74, 144, 226, 0.1)'
+            ))
+        
+        # Layer 3: 28-100cm (Deep storage)
+        if 'soil_moisture_28_100cm' in climate_df.columns:
+            fig_soil.add_trace(go.Scatter(
+                x=climate_df['month_name'],
+                y=climate_df['soil_moisture_28_100cm'],
+                mode='lines+markers',
+                name='Deep (28-100cm)',
+                line=dict(
+                    color='#FFAA44',
+                    width=3,
+                    shape='spline',
+                    smoothing=1.3
+                ),
+                marker=dict(
+                    size=8,
+                    color='#FFAA44',
+                    line=dict(width=1, color='#FFFFFF')
+                ),
+                fill='tonexty',
+                fillcolor='rgba(255, 170, 68, 0.1)'
+            ))
+        
         fig_soil.update_layout(
             title=dict(
-                text='<b>Soil Moisture (0-7cm)</b>',
+                text='<b>Soil Moisture by Depth</b>',
                 font=dict(size=16, color='#FFFFFF'),
                 x=0.5
             ),
@@ -1058,7 +1119,76 @@ class EnhancedClimateSoilAnalyzer:
                 tickfont=dict(size=12, color='#CCCCCC')
             ),
             yaxis=dict(
-                title='Volumetric Water (m³/m³)',
+                title='Volumetric Water Content (m³/m³)',
+                gridcolor='#333333',
+                tickfont=dict(size=12, color='#CCCCCC'),
+                tickformat='.2f',
+                range=[0, max(climate_df[['soil_moisture_0_7cm', 'soil_moisture_7_28cm', 'soil_moisture_28_100cm']].max()) * 1.1]
+            ),
+            height=400,
+            margin=dict(l=40, r=20, t=50, b=40),
+            hovermode='x unified',
+            legend=dict(
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='center',
+                x=0.5,
+                font=dict(size=11, color='#FFFFFF')
+            )
+        )
+        
+        charts['soil_moisture'] = fig_soil
+        
+        # 4. Soil Moisture Comparison Chart (Stacked Area)
+        fig_soil_comparison = go.Figure()
+        
+        fig_soil_comparison.add_trace(go.Scatter(
+            x=climate_df['month_name'],
+            y=climate_df['soil_moisture_28_100cm'],
+            mode='lines',
+            name='Deep (28-100cm)',
+            line=dict(width=0),
+            stackgroup='one',
+            fillcolor='rgba(255, 170, 68, 0.7)'
+        ))
+        
+        fig_soil_comparison.add_trace(go.Scatter(
+            x=climate_df['month_name'],
+            y=climate_df['soil_moisture_7_28cm'],
+            mode='lines',
+            name='Root zone (7-28cm)',
+            line=dict(width=0),
+            stackgroup='one',
+            fillcolor='rgba(74, 144, 226, 0.7)'
+        ))
+        
+        fig_soil_comparison.add_trace(go.Scatter(
+            x=climate_df['month_name'],
+            y=climate_df['soil_moisture_0_7cm'],
+            mode='lines',
+            name='Surface (0-7cm)',
+            line=dict(width=0),
+            stackgroup='one',
+            fillcolor='rgba(0, 255, 136, 0.7)'
+        ))
+        
+        fig_soil_comparison.update_layout(
+            title=dict(
+                text='<b>Soil Moisture Distribution</b>',
+                font=dict(size=16, color='#FFFFFF'),
+                x=0.5
+            ),
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#FFFFFF', size=12),
+            xaxis=dict(
+                title='',
+                gridcolor='#333333',
+                tickfont=dict(size=12, color='#CCCCCC')
+            ),
+            yaxis=dict(
+                title='Total Volumetric Water (m³/m³)',
                 gridcolor='#333333',
                 tickfont=dict(size=12, color='#CCCCCC'),
                 tickformat='.2f'
@@ -1066,15 +1196,22 @@ class EnhancedClimateSoilAnalyzer:
             height=350,
             margin=dict(l=40, r=20, t=50, b=40),
             hovermode='x unified',
-            showlegend=False
+            legend=dict(
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='center',
+                x=0.5,
+                font=dict(size=11, color='#FFFFFF')
+            )
         )
         
-        charts['soil_moisture'] = fig_soil
+        charts['soil_comparison'] = fig_soil_comparison
         
         return charts
 
     def display_enhanced_climate_charts(self, location_name, climate_df):
-        """Display enhanced climate charts for a location"""
+        """Display enhanced climate charts for a location with all soil layers"""
         if climate_df is None or climate_df.empty:
             st.warning("No climate data available for this location.")
             return
@@ -1084,37 +1221,68 @@ class EnhancedClimateSoilAnalyzer:
         
         if charts:
             # Display charts in tabs
-            tab1, tab2, tab3 = st.tabs(["🌡️ Temperature", "💧 Water Balance", "🌱 Soil Moisture"])
+            tab1, tab2, tab3, tab4 = st.tabs(["🌡️ Temperature", "💧 Water Balance", "🌱 Soil Layers", "📊 Soil Distribution"])
             
             with tab1:
                 st.plotly_chart(charts['temperature'], use_container_width=True)
                 
+                # Temperature metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    avg_temp = climate_df['temperature_2m'].mean()
+                    st.metric("🌡️ Average", f"{avg_temp:.1f}°C")
+                with col2:
+                    max_temp = climate_df['temperature_2m'].max()
+                    st.metric("📈 Maximum", f"{max_temp:.1f}°C")
+                with col3:
+                    min_temp = climate_df['temperature_2m'].min()
+                    st.metric("📉 Minimum", f"{min_temp:.1f}°C")
+                
             with tab2:
                 st.plotly_chart(charts['water_balance'], use_container_width=True)
                 
+                # Water balance metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    total_precip = climate_df['total_precipitation'].sum()
+                    st.metric("💧 Total Precip", f"{total_precip:.0f} mm")
+                with col2:
+                    total_evap = climate_df['potential_evaporation'].sum()
+                    st.metric("☀️ Total Evap", f"{total_evap:.0f} mm")
+                with col3:
+                    water_balance = total_precip - total_evap
+                    status = "Surplus" if water_balance > 0 else "Deficit"
+                    st.metric("💦 Net Balance", f"{water_balance:.0f} mm", delta=status, delta_color="normal")
+                
             with tab3:
                 st.plotly_chart(charts['soil_moisture'], use_container_width=True)
+                
+                # Soil moisture metrics for each layer
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    avg_surface = climate_df['soil_moisture_0_7cm'].mean()
+                    st.metric("🌱 Surface (0-7cm)", f"{avg_surface:.3f} m³/m³")
+                with col2:
+                    avg_root = climate_df['soil_moisture_7_28cm'].mean()
+                    st.metric("🌿 Root zone (7-28cm)", f"{avg_root:.3f} m³/m³")
+                with col3:
+                    avg_deep = climate_df['soil_moisture_28_100cm'].mean()
+                    st.metric("🌳 Deep (28-100cm)", f"{avg_deep:.3f} m³/m³")
             
-            # Summary metrics
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                avg_temp = climate_df['temperature_2m'].mean()
-                st.metric("🌡️ Avg Temp", f"{avg_temp:.1f}°C")
-            
-            with col2:
-                total_precip = climate_df['total_precipitation'].sum()
-                st.metric("💧 Total Precip", f"{total_precip:.0f} mm")
-            
-            with col3:
-                avg_soil = climate_df['soil_moisture'].mean()
-                st.metric("🌱 Avg Soil Moisture", f"{avg_soil:.2f} m³/m³")
-            
-            with col4:
-                water_balance = total_precip - climate_df['potential_evaporation'].sum()
-                status = "Surplus" if water_balance > 0 else "Deficit"
-                color = "green" if water_balance > 0 else "red"
-                st.metric("💦 Water Balance", f"{water_balance:.0f} mm", status)
+            with tab4:
+                st.plotly_chart(charts['soil_comparison'], use_container_width=True)
+                
+                # Soil moisture summary
+                st.markdown("""
+                <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 12px; margin-top: 0.5rem;">
+                    <p style="color: #CCCCCC; margin: 0; font-size: 0.9rem;">
+                    <strong>📊 Soil Moisture Interpretation:</strong><br>
+                    • <span style="color: #00FF88;">Surface (0-7cm):</span> Rapid response to rainfall, high evaporation<br>
+                    • <span style="color: #4A90E2;">Root zone (7-28cm):</span> Available for plant uptake, moderate retention<br>
+                    • <span style="color: #FFAA44;">Deep (28-100cm):</span> Groundwater recharge, stable moisture
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
         else:
             st.warning("Could not generate climate charts.")
 
@@ -1724,7 +1892,7 @@ def main():
                                                         key="admin2_select"
                                                     )
                 except Exception as e:
-                    st.error(f"Error loading boundaries")
+                    st.error("Error loading boundaries")
                     selected_country = None
                     selected_admin1 = None
                     selected_admin2 = None
@@ -2226,7 +2394,7 @@ def main():
                         
                         st.markdown('</div>', unsafe_allow_html=True)
                         
-                        # Enhanced climate charts
+                        # Enhanced climate charts with ALL SOIL LAYERS
                         if enhanced_results.get('climate_df') is not None:
                             st.markdown('<div class="card chart-container">', unsafe_allow_html=True)
                             st.markdown('<div style="margin-bottom: 1rem;"><h3 style="margin: 0;">📊 Climate Analysis</h3></div>', unsafe_allow_html=True)
